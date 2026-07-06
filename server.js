@@ -1,10 +1,11 @@
 import express from 'express';
+import config from './src/config/env.js';
+import { poolPromise } from './src/config/db.js';
 
-const PORT = process.env.PORT || 7001
 const app = express();
 
 app.get('/', (req, res) => {
-    res.send('Hello world');
+    res.send('Beneficiary Enrollment');
 });
 
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+app.listen(config.PORT, () => console.log(`Server is running on port ${config.PORT}`));
