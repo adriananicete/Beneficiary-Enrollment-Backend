@@ -3,8 +3,8 @@ import config from './src/config/env.js';
 import { poolPromise } from './src/config/db.js';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import authRoutes from './src/routes/authRoutes.js'
-import { verifyToken } from './src/middlewares/verifyToken.js';
+import authRoutes from './src/routes/authRoutes.js';
+import enrollmentRoutes from './src/routes/enrollmentRoutes.js';
 
 const app = express();
 
@@ -20,5 +20,6 @@ app.get('/', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/enrollment', enrollmentRoutes)
 
 app.listen(config.PORT, () => console.log(`Server is running on port ${config.PORT}`));
