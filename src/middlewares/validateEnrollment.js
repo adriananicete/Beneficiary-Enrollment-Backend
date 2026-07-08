@@ -65,6 +65,15 @@ export const validateEnrollment = (req, res, next) => {
       return res.status(400).json({ error: `${i} is required` });
   }
 
+  const emailDomain = email.split("@")[1];
+  const validDomains = {
+    1: "hcl.com",
+    2: "coforge.com",
+  };
+
+  if (emailDomain !== validDomains[companyId])
+    return res.status(400).json({ error: "Invalid Email" });
+
   if (
     !beneficiaries ||
     !Array.isArray(beneficiaries) ||
