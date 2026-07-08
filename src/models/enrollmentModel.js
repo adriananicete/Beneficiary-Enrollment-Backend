@@ -29,10 +29,9 @@ const insertEnrollment = async (pool, enrollmentData) => {
     .input("placeOfWork", sql.NVarChar, enrollmentData.placeOfWork)
     .input("sourceOfIncome", sql.NVarChar, enrollmentData.sourceOfIncome)
     .input("amountOfInsurance", sql.Decimal, enrollmentData.amountOfInsurance)
-    .input("consentTerms", sql.Bit, enrollmentData.consentTerms )
+    .input("consentTerms", sql.Bit, enrollmentData.consentTerms)
     .input("consentPrivacy", sql.Bit, enrollmentData.consentPrivacy)
-    .input("signaturePath", sql.NVarChar, enrollmentData.signaturePath)
-    .query(`
+    .input("signaturePath", sql.NVarChar, enrollmentData.signaturePath).query(`
             INSERT INTO enrollment.Enrollments (
               [ReferenceNumber],
               [CompanyID],
@@ -97,34 +96,103 @@ const insertEnrollment = async (pool, enrollmentData) => {
               );SELECT SCOPE_IDENTITY() AS EnrollmentID;
         `);
 
-        return result.recordset[0];
+  return result.recordset[0];
 };
 
 const findEnrollmentByEmailAndCompany = async (pool, email, companyId) => {
-  const result = await pool.request()
-  .input('email', sql.NVarChar, email)
-  .input('companyId', sql.Int, companyId )
-  .query(
-    `SELECT [EnrollmentId] FROM [enrollment].[Enrollments] WHERE email = @email AND companyId = @companyId`
-  );
+  const result = await pool
+    .request()
+    .input("email", sql.NVarChar, email)
+    .input("companyId", sql.Int, companyId)
+    .query(
+      `SELECT [EnrollmentId] FROM [enrollment].[Enrollments] WHERE email = @email AND companyId = @companyId`,
+    );
 
   return result.recordset[0];
 };
 
 const insertBeneficiary = async (pool, beneficiaryData) => {
-  const result = await pool.request()
-    .input('enrollmentId', sql.Int, beneficiaryData.enrollmentId)
-    .input('fullName', sql.NVarChar, beneficiaryData.fullName)
-    .input('age', sql.Int, beneficiaryData.age)
-    .input('relationship', sql.NVarChar, beneficiaryData.relationship)
-    .input('coveragePercent', sql.Decimal, beneficiaryData.coveragePercent ?? null)
+  const result = await pool
+    .request()
+    .input("enrollmentId", sql.Int, beneficiaryData.enrollmentId)
+    .input("fullName", sql.NVarChar, beneficiaryData.fullName)
+    .input("age", sql.Int, beneficiaryData.age)
+    .input("relationship", sql.NVarChar, beneficiaryData.relationship)
+    .input(
+      "coveragePercent",
+      sql.Decimal,
+      beneficiaryData.coveragePercent ?? null,
+    )
     .query(
       `INSERT INTO [enrollment].[Beneficiaries]
         (EnrollmentId, FullName, Age, Relationship, CoveragePercent)
-        VALUES (@enrollmentId, @fullName, @age, @relationship, @coveragePercent)`
-    )
+        VALUES (@enrollmentId, @fullName, @age, @relationship, @coveragePercent)`,
+    );
+};
+
+const getEnrollmentsByCompany = async (
+  pool,
+  companyId,
+  role,
+  search,
+  page = 1,
+  limit = 10,
+) => {
+  const offset = (page - 1) * limit;
+  let whereClause = "WHERE 1=1";
+
+  if (role === "admin") {
+    whereClause += " AND CompanyID = @companyId";
+  }
+
+  if (search) {
+    whereClause +=
+      " AND (InsuredName LIKE @search OR Email LIKE @search OR ReferenceNumber LIKE @search)";
+  }
+
+  const countRequest = pool.request();
+
+  if (role === "admin") {
+    countRequest.input("companyId", sql.Int, companyId);
+  }
+
+  if (search) {
+    countRequest.input("search", sql.NVarChar, `%${search}%`);
+  }
+  const result = await countRequest
+    .input("offset", sql.Int, offset)
+    .input("limit", sql.Int, limit).query(`
+      SELECT * FROM (
+    SELECT 
+        EnrollmentID,
+        ReferenceNumber,
+        CompanyID,
+        InsuredName,
+        Email,
+        ContactNo,
+        CreatedAt,
+        ROW_NUMBER() OVER (ORDER BY CreatedAt DESC) AS RowNum
+    FROM enrollment.Enrollments ${whereClause}
+) AS Sub
+WHERE RowNum > @offset AND RowNum <= @offset + @limit;
+
+    SELECT COUNT(*) AS total FROM enrollment.Enrollments ${whereClause}
+      `);
+
+  const enrollments = result.recordsets[0];
+  const total = result.recordsets[1][0].total;
+
+  return {
+    enrollments,
+    total,
+    page,
+    totalPages: Math.ceil(total / limit),
+  };
 };
 
 export default {
-  insertEnrollment, findEnrollmentByEmailAndCompany, insertBeneficiary
-}
+  insertEnrollment,
+  findEnrollmentByEmailAndCompany,
+  insertBeneficiary,
+  getEnrollmentsByCompany,
+};
