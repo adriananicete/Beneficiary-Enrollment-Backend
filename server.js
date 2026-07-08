@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import authRoutes from './src/routes/authRoutes.js';
 import enrollmentRoutes from './src/routes/enrollmentRoutes.js';
+import adminRoutes from './src/routes/adminRoutes.js'
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.get('/', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/enrollment', enrollmentRoutes)
+app.use('/api/enrollment', enrollmentRoutes);
+app.use('/api/admin', adminRoutes)
 
 app.listen(config.PORT, () => console.log(`Server is running on port ${config.PORT}`));

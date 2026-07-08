@@ -7,6 +7,7 @@ async function seed() {
 
     const pool = await poolPromise;
     const hashedPassword = await bcrypt.hash(password, 10);
+    
     const hclResults = await pool
       .request()
       .input("name", sql.NVarChar, "HCL")
