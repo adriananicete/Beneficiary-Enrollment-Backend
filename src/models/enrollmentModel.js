@@ -326,6 +326,36 @@ const updateBeneficiary = async (pool, beneficiaryId, beneficiaryData) => {
     `);
 };
 
+const getEnrollmentsForExport = async (pool, companyId, role) => {
+  let whereClause = '';
+  const queryRequest = pool.request();
+
+  if(role === 'admin') {
+    queryRequest.input('companyId', sql.Int, companyId);
+    whereClause = 'WHERE CompanyID = @companyId'
+  }
+
+  const result = await queryRequest
+  .query(`
+      SELECT 
+      ReferenceNumber,
+      CompanyID,
+      InsuredName,
+      Email,
+      ContactNo,
+      DateOfBirth,
+      Gender,
+      CivilStatus,
+      AmountOfInsurance,
+      CreatedAt
+      FROM enrollment.Enrollments
+      ${whereClause}
+      ORDER BY CreatedAt DESC;
+    `)
+
+    return result.recordset
+};
+
 export default {
   insertEnrollment,
   findEnrollmentByEmailAndCompany,
@@ -333,5 +363,6 @@ export default {
   getEnrollmentsByCompany,
   getEnrollmentById,
   updateEnrollment,
-  updateBeneficiary
+  updateBeneficiary,
+  getEnrollmentsForExport
 };
