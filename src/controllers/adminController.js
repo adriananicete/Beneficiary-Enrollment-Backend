@@ -1,5 +1,6 @@
 import { sql, poolPromise } from "../config/db.js";
 import EnrollmentModel from "../models/enrollmentModel.js";
+import { generateExcelReport } from "../services/exportService.js";
 
 export const getEnrollment = async (req, res) => {
   try {
@@ -100,11 +101,38 @@ export const editEnrollment = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: `Enrollment form: ${enrollment.enrollment?.ReferenceNumber} updated succesfully`
-    })
+      message: `Enrollment form: ${enrollment.enrollment?.ReferenceNumber} updated succesfully`,
+    });
   } catch (error) {
     console.error(error);
     if (transaction) await transaction.rollback();
-    return res.status(500).json({error: error.message})
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+export const exportEnrollments = async (req, res) => {
+  try {
+    const { companyID, role } = req.admin;
+
+    const pool = await poolPromise;
+
+    const getExcelReport = await EnrollmentModel.getEnrollmentsForExport(
+      pool,
+      companyID,
+      role,
+    );
+
+    const enrollmentReport = generateExcelReport(getExcelReport)
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+
+    res.setHeader('Content-Disposition', 'attachment; filename=enrollments.xlsx');
+
+    await enrollmentReport.xlsx.write(res);
+
+    res.end()
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({error: error.message});
   }
 };
