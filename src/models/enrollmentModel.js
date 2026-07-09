@@ -310,11 +310,14 @@ const updateBeneficiary = async (pool, beneficiaryId, beneficiaryData) => {
   const result = await pool
     .request()
     .input("beneficiaryId", sql.Int, beneficiaryId)
-    .input('fullName', sql.NVarChar, beneficiaryData.fullName)
-    .input('age', sql.Int, beneficiaryData.age)
-    .input('relationship', sql.NVarChar, beneficiaryData.relationship)
-    .input('coveragePercent', sql.Decimal, beneficiaryData.coveragePercent ?? null)
-    .query(`
+    .input("fullName", sql.NVarChar, beneficiaryData.fullName)
+    .input("age", sql.Int, beneficiaryData.age)
+    .input("relationship", sql.NVarChar, beneficiaryData.relationship)
+    .input(
+      "coveragePercent",
+      sql.Decimal,
+      beneficiaryData.coveragePercent ?? null,
+    ).query(`
       UPDATE enrollment.Beneficiaries 
       SET 
           fullName = @fullName,
@@ -327,16 +330,15 @@ const updateBeneficiary = async (pool, beneficiaryId, beneficiaryData) => {
 };
 
 const getEnrollmentsForExport = async (pool, companyId, role) => {
-  let whereClause = '';
+  let whereClause = "";
   const queryRequest = pool.request();
 
-  if(role === 'admin') {
-    queryRequest.input('companyId', sql.Int, companyId);
-    whereClause = 'WHERE CompanyID = @companyId'
+  if (role === "admin") {
+    queryRequest.input("companyId", sql.Int, companyId);
+    whereClause = "WHERE CompanyID = @companyId";
   }
 
-  const result = await queryRequest
-  .query(`
+  const result = await queryRequest.query(`
       SELECT 
       ReferenceNumber,
       CompanyID,
@@ -351,9 +353,25 @@ const getEnrollmentsForExport = async (pool, companyId, role) => {
       FROM enrollment.Enrollments
       ${whereClause}
       ORDER BY CreatedAt DESC;
-    `)
+    `);
 
-    return result.recordset
+  return result.recordset;
+};
+
+const getEnrollmentStats = async (pool, companyId, role) => {
+  const queryRequest = pool.request();
+  let whereClause = "";
+
+  if (role === "admin") {
+    queryRequest.input("companyId", sql.Int, companyId);
+    whereClause = "WHERE CompanyID = @companyId";
+  }
+
+  const result = await queryRequest.query(`
+      SELECT COUNT(*) AS totalEnrollees FROM enrollment.Enrollments ${whereClause}
+    `);
+
+    return result.recordset[0]
 };
 
 export default {
@@ -364,5 +382,6 @@ export default {
   getEnrollmentById,
   updateEnrollment,
   updateBeneficiary,
-  getEnrollmentsForExport
+  getEnrollmentsForExport,
+  getEnrollmentStats,
 };
