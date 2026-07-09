@@ -122,17 +122,41 @@ export const exportEnrollments = async (req, res) => {
       role,
     );
 
-    const enrollmentReport = generateExcelReport(getExcelReport)
+    const enrollmentReport = generateExcelReport(getExcelReport);
 
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
 
-    res.setHeader('Content-Disposition', 'attachment; filename=enrollments.xlsx');
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=enrollments.xlsx",
+    );
 
     await enrollmentReport.xlsx.write(res);
 
-    res.end()
+    res.end();
   } catch (error) {
     console.error(error);
-    return res.status(500).json({error: error.message});
+    return res.status(500).json({ error: error.message });
+  }
+};
+
+export const getDashboardStats = async (req, res) => {
+  try {
+    const { companyID, role } = req.admin;
+
+    const pool = await poolPromise;
+
+    const dashBoardStats = await EnrollmentModel.getEnrollmentStats(pool, companyID, role);
+
+    return res.status(200).json({
+      success: true,
+      data: dashBoardStats
+    })
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: error.message });
   }
 };
