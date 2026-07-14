@@ -1,63 +1,34 @@
 export const validateEnrollment = (req, res, next) => {
   const {
-    companyId,
-    insuredName,
-    nationality,
-    tin,
-    region,
-    province,
-    cityMunicipality,
-    barangay,
-    streetNumber,
-    zipCode,
-    placeOfBirth,
-    dateOfBirth,
-    civilStatus,
-    gender,
-    heightFeet,
-    heightInches,
-    weight,
-    sssGsisNo,
-    contactNo,
-    officeNo,
-    email,
-    occupation,
-    placeOfWork,
-    sourceOfIncome,
-    amountOfInsurance,
-    consentPrivacy,
-    consentTerms,
-    beneficiaries,
+    beneficiaries
   } = req.body;
 
   const requiredFields = [
-    "companyId",
-    "insuredName",
+    "employer_id",
+    "employee_id_number",
+    "first_name",
+    "last_name",
+    "address_line",
+    "position_title",
     "nationality",
-    "tin",
-    "region",
-    "province",
-    "cityMunicipality",
-    "barangay",
-    "streetNumber",
-    "zipCode",
-    "placeOfBirth",
-    "dateOfBirth",
-    "civilStatus",
+    "tin_id",
+    "barangay_id",
+    "zip_code",
+    "birthplace",
+    "birthdate",
+    "civil_status",
     "gender",
-    "heightFeet",
-    "heightInches",
+    "height",
     "weight",
-    "contactNo",
-    "officeNo",
-    "email",
-    "sssGsisNo",
+    "sss_gsis_no",
+    "contact_no",
+    "office_no",
+    "email_address",
     "occupation",
-    "placeOfWork",
-    "sourceOfIncome",
-    "amountOfInsurance",
-    "consentPrivacy",
-    "consentTerms",
+    "source_of_income",
+    "coverage_amount",
+    "consent_privacy",
+    "consent_terms",
   ];
 
   for (let i of requiredFields) {
@@ -65,14 +36,14 @@ export const validateEnrollment = (req, res, next) => {
       return res.status(400).json({ error: `${i} is required` });
   }
 
-  const emailDomain = email.split("@")[1];
-  const validDomains = {
-    1: "hcl.com",
-    2: "coforge.com",
-  };
+  // const emailDomain = email.split("@")[1];
+  // const validDomains = {
+  //   1: "hcl.com",
+  //   2: "coforge.com",
+  // };
 
-  if (emailDomain !== validDomains[companyId])
-    return res.status(400).json({ error: "Invalid Email" });
+  // if (emailDomain !== validDomains[companyId])
+  //   return res.status(400).json({ error: "Invalid Email" });
 
   if (
     !beneficiaries ||
@@ -84,7 +55,7 @@ export const validateEnrollment = (req, res, next) => {
       .json({ error: "At least one beneficiary is required" });
 
   for (let i of beneficiaries) {
-    if (!i.fullName)
+    if (!i.full_name)
       return res
         .status(400)
         .json({ error: "Beneficiary fullName is required" });
@@ -94,6 +65,19 @@ export const validateEnrollment = (req, res, next) => {
       return res
         .status(400)
         .json({ error: "Beneficiary relationship is required" });
+    if (!i.coverage_percent) {
+      return res
+        .status(400)
+        .json({ error: "Beneficiary coverage percent is required" });
+    }
   }
+
+  const totalSumOfCoveragePercent = beneficiaries.reduce(
+    (acc, cur) => acc + cur.coverage_percent,
+    0,
+  );
+
+  if(totalSumOfCoveragePercent !== 100) return res.status(400).json({error: 'Coverage Percent should be 100%'});
+  
   next();
 };
