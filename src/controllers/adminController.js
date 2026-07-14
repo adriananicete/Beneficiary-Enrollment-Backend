@@ -4,7 +4,7 @@ import { generateExcelReport } from "../services/exportService.js";
 
 export const getEnrollment = async (req, res) => {
   try {
-    const { companyID, role } = req.admin;
+    const { companyID, role } = req.user;
     const { search, page, limit } = req.query;
 
     const pool = await poolPromise;
@@ -34,7 +34,7 @@ export const getEnrollment = async (req, res) => {
 export const getEnrollmentDetails = async (req, res) => {
   try {
     const { id } = req.params;
-    const { companyID, role } = req.admin;
+    const { companyID, role } = req.user;
 
     const pool = await poolPromise;
 
@@ -63,7 +63,7 @@ export const editEnrollment = async (req, res) => {
   let transaction;
   try {
     const { id } = req.params;
-    const { companyID, role } = req.admin;
+    const { companyID, role } = req.user;
 
     if (role === "superadmin")
       return res.status(403).json({ error: "Cannot access this action" });
@@ -112,7 +112,7 @@ export const editEnrollment = async (req, res) => {
 
 export const exportEnrollments = async (req, res) => {
   try {
-    const { companyID, role } = req.admin;
+    const { companyID, role } = req.user;
 
     const pool = await poolPromise;
 
@@ -145,7 +145,7 @@ export const exportEnrollments = async (req, res) => {
 
 export const getDashboardStats = async (req, res) => {
   try {
-    const { companyID, role } = req.admin;
+    const { companyID, role } = req.user;
 
     const pool = await poolPromise;
 

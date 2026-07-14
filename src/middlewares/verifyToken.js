@@ -10,7 +10,7 @@ export const verifyToken = (req, res, next) => {
   try {
     const decoded = jwt.verify(token, config.jwtSecret);
 
-    req.admin = decoded;
+    req.user = decoded;
 
     next();
   } catch (error) {

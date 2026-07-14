@@ -1,36 +1,38 @@
 import AdminModel from "../models/adminModel.js";
+import UserModel from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import config from "../config/env.js";
 import { REMEMBER_ME_EXPIRY, SESSION_EXPIRY } from "../utils/constants.js";
+import { poolPromise } from "../config/db.js";
 
-export const login = async (req, res) => {
+export const login = async (req, res, next) => {
   try {
+    const pool = await poolPromise;
+
     const { username, password, rememberMe } = req.body;
     if (!username || !password)
       return res.status(400).json({ error: "All fields required" });
 
-    const admin = await AdminModel.findAdminByUsername(username);
-    if (!admin) return res.status(401).json({ error: "Invalid Credentials" });
+    const user = await UserModel.findUserByUsername(pool, username);
+    if (!user) return res.status(401).json({ error: "Invalid Credentials" });
 
     const isPasswordMatched = await bcrypt.compare(
       password,
-      admin.PasswordHash,
+      user.us01_password,
     );
     if (!isPasswordMatched)
       return res.status(401).json({ error: "Invalid Credentials" });
 
     const token = jwt.sign(
       {
-        adminID: admin.AdminID,
-        companyID: admin.CompanyID,
-        username: admin.Username,
-        role: admin.Role
+        user_id: user.us01_user_id,
+        username: user.us01_username,
+        role_id: user.us02_role_id,
+        role_name: user.us02_role_name,
       },
       config.jwtSecret,
-      {
-        expiresIn: rememberMe ? "30d" : "8h",
-      },
+      { expiresIn: rememberMe ? '30d' : '8h' },
     );
 
     res.cookie("token", token, {
@@ -45,12 +47,11 @@ export const login = async (req, res) => {
       message: "Login successfully",
     });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: error.message });
+    next(error);
   }
 };
 
-export const logout = (req, res) => {
+export const logout = (req, res, next) => {
   try {
     res.clearCookie("token", {
       httpOnly: true,
@@ -63,7 +64,6 @@ export const logout = (req, res) => {
       message: "Admin Logged out",
     });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: error.message });
+    next(error);
   }
 };
