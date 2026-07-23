@@ -6,9 +6,10 @@ import ApplicationModel from "../models/applicationModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AgreementModel from "../models/agreementModel.js";
 import UserModel from "../models/userModel.js";
-import bcrypt, { hash } from "bcrypt";
+import bcrypt from "bcrypt";
 import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
+import { AppError } from "../utils/AppError.js";
 
 const createEnrollment = async (enrollmentData) => {
   const pool = await poolPromise;
@@ -77,7 +78,7 @@ const createEnrollment = async (enrollmentData) => {
     const userId = await UserModel.createUser(transaction, {
       us01_username: enrollmentData.employee_id_number,
       us01_password: hashedPassword,
-      us01_firstname: enrollmentData.first_name,
+      us01_first_name: enrollmentData.first_name,
       us01_middle_name: enrollmentData.middle_name,
       us01_last_name: enrollmentData.last_name,
       us01_email_address: enrollmentData.email_address,
@@ -105,6 +106,51 @@ const createEnrollment = async (enrollmentData) => {
   }
 };
 
+const updateEnrollment = async (userId ,enrollmentData) => {
+
+  const pool = await poolPromise;
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+
+  try {
+    await ClientModel.updateClient(transaction, {...enrollmentData, modified_by: userId});
+
+    await AddressModel.updateClientAddress(transaction, {...enrollmentData, modified_by: userId});
+
+    for (let beneficiary of enrollmentData.beneficiaries) {
+      await BeneficiaryModel.updateBeneficiary(transaction,{...beneficiary, modified_by: userId })
+    }
+
+    await transaction.commit();
+  } catch (error) {
+    await transaction.rollback();
+    console.error('Service Error:', error)
+    throw error;
+  }
+};
+
+const getFullEnrollmentDetails = async (pool, clientId) => {
+
+  const enrollmentDetails = await ClientModel.getEnrollmentByClientId(
+    pool,
+    clientId,
+  );
+
+  if (!enrollmentDetails || enrollmentDetails.length === 0)
+    throw new AppError('Enrollment not found', 404);
+
+  const enrollmentBenefitsById =
+    await ClientModel.getEnrollmentBenefitsByClientId(pool, clientId);
+
+
+  return {
+    enrollment: enrollmentDetails,
+    benefits: enrollmentBenefitsById,
+  };
+};
+
 export default {
   createEnrollment,
+  getFullEnrollmentDetails,
+  updateEnrollment
 };

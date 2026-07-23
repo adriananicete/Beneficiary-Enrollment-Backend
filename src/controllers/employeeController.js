@@ -1,76 +1,88 @@
-import UserModel from '../models/userModel.js';
-import { poolPromise } from '../config/db.js';
-import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
-import config from '../config/env.js';
-import { SESSION_EXPIRY } from '../utils/constants.js';
+import UserModel from "../models/userModel.js";
+import { poolPromise } from "../config/db.js";
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import config from "../config/env.js";
+import { SESSION_EXPIRY } from "../utils/constants.js";
 
 export const login = async (req, res, next) => {
-    try {
-        const { username, password } = req.body;
-        
-        const pool = await poolPromise;
+  try {
+    const { username, password } = req.body;
 
-        const user = await UserModel.findUserByUsername(pool, username);
-        if(!user) return res.status(401).json({error: 'Invalid credentials'});
+    const pool = await poolPromise;
 
-        const isPasswordMatch = await bcrypt.compare(password, user.us01_password);
-        if(!isPasswordMatch) return res.status(401).json({error: 'Invalid credentials'});
+    const user = await UserModel.findUserByUsername(pool, username);
 
-        if(!user.us01_last_login) return res.status(200).json({mustChangePassword: true});
+    if (error.originalError?.number === 50001)
+      return res.status(401).json({ error: "Invalid credentials" });
 
-        const token = jwt.sign({user_id: user.us01_user_id, username: user.us01_username, role_id: user.us02_role_id, role_name: user.us02_role_name }, config.jwtSecret, { expiresIn: '8h' });
+    if (!user) return res.status(401).json({ error: "Invalid credentials" });
 
-        res.cookie('token', token, {
-            httpOnly: true,
-            secure: false,
-            sameSite: "Strict",
-            maxAge: SESSION_EXPIRY
-        });
+    const isPasswordMatch = await bcrypt.compare(password, user.us01_password);
+    if (!isPasswordMatch)
+      return res.status(401).json({ error: "Invalid credentials" });
 
-        return res.status(200).json({
-            success: true,
-            message: "Login successfully"
-        });
-    } catch (error) {
-        next(error);
-    }
+    if (!user.us01_last_login)
+      return res.status(200).json({ mustChangePassword: true });
+
+    const token = jwt.sign(
+      {
+        user_id: user.us01_user_id,
+        username: user.us01_username,
+        role_id: user.us02_role_id,
+        role_name: user.us02_role_name,
+      },
+      config.jwtSecret,
+      { expiresIn: "8h" },
+    );
+
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: false,
+      sameSite: "Strict",
+      maxAge: SESSION_EXPIRY,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successfully",
+    });
+  } catch (error) {
+    if (error.originalError?.number === 50001)
+      return res.status(401).json({ error: "Invalid credentials" });
+    next(error);
+  }
 };
 
 export const logout = async (req, res, next) => {
-    try {
-        res.clearCookie('token', {
-            httpOnly: true,
-            secure: false,
-            sameSite: 'Strict',
-        });
+  try {
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: false,
+      sameSite: "Strict",
+    });
 
-        return res.status(200).json({
-            success: true,
-            message: 'Logout successful'
-        });
-    } catch (error) {
-        next(error);
-    }
+    return res.status(200).json({
+      success: true,
+      message: "Logout successful",
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const getMyEnrollment = async (req, res, next) => {
-    try {
-        const { user_id, role_name } = req.user;
-
-        
-    } catch (error) {
-        next(error);
-    }
+  try {
+    const { user_id, role_name } = req.user;
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const editMyEnrollment = async (req, res, next) => {
-    try {
-        const { user_id, role_name } = req.user;
-
-        
-    } catch (error) {
-        next(error);
-    }
+  try {
+    const { user_id, role_name } = req.user;
+  } catch (error) {
+    next(error);
+  }
 };
-

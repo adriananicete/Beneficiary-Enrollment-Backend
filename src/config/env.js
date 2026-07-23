@@ -5,12 +5,12 @@ const envVar = [
   "DB_NAME",
   "DB_PORT",
   "JWT_SECRET",
-  "SMTP_HOST",
-  "SMTP_PORT",
   "SMTP_USER",
-  "SMTP_CLIENT_ID",
-  "SMTP_TENANT_ID",
-  "SMTP_CLIENT_SECRET",
+  "AZURE_CLIENT_ID",
+  "AZURE_TENANT_ID",
+  "AZURE_CLIENT_SECRET",
+  "SMTP_HOST",
+  "SMTP_PORT"
 ];
 
 for (let i of envVar) {
@@ -32,9 +32,9 @@ const config = {
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT),
     user: process.env.SMTP_USER,
-    clientId: process.env.SMTP_CLIENT_ID,
-    tenantId: process.env.SMTP_TENANT_ID,
-    clientSecret: process.env.SMTP_CLIENT_SECRET,
+    clientId: process.env.AZURE_CLIENT_ID,
+    tenantId: process.env.AZURE_TENANT_ID,
+    clientSecret: process.env.AZURE_CLIENT_SECRET,
   },
 };
 

@@ -1,162 +1,136 @@
-import { sql, poolPromise } from "../config/db.js";
-import EnrollmentModel from "../models/enrollmentModel.js";
+import EnrollmentService from "../services/enrollmentService.js";
+import ClientModel from "../models/clientModel.js";
 import { generateExcelReport } from "../services/exportService.js";
+import { poolPromise } from "../config/db.js";
 
-export const getEnrollment = async (req, res) => {
+export const getEnrollment = async (req, res, next) => {
   try {
-    const { companyID, role } = req.user;
-    const { search, page, limit } = req.query;
+    const { user_id } = req.user;
 
     const pool = await poolPromise;
 
-    const parsedPage = Number(page) || 1;
-    const parsedLimit = Number(limit) || 10;
-
-    const getEnrollementData = await EnrollmentModel.getEnrollmentsByCompany(
-      pool,
-      companyID,
-      role,
-      search,
-      parsedPage,
-      parsedLimit,
-    );
+    const getEnrollementData = await ClientModel.getHrEmployees(pool, user_id);
 
     return res.status(200).json({
       success: true,
       data: getEnrollementData,
     });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: error.message });
+    next(error);
   }
 };
 
-export const getEnrollmentDetails = async (req, res) => {
+export const getEnrollmentDetails = async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const { companyID, role } = req.user;
+    const { client_id } = req.params;
 
     const pool = await poolPromise;
 
-    const enrollmentDetails = await EnrollmentModel.getEnrollmentById(pool, id);
-
-    if (!enrollmentDetails.enrollment)
-      return res.status(404).json({ error: "Enrollment ID not found" });
-
-    if (
-      role === "admin" &&
-      enrollmentDetails.enrollment?.CompanyID !== companyID
-    )
-      return res.status(403).json({ error: "Forbidden" });
-
-    return res.status(200).json({
-      success: true,
-      data: enrollmentDetails,
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: error.message });
-  }
-};
-
-export const editEnrollment = async (req, res) => {
-  let transaction;
-  try {
-    const { id } = req.params;
-    const { companyID, role } = req.user;
-
-    if (role === "superadmin")
-      return res.status(403).json({ error: "Cannot access this action" });
-
-    const pool = await poolPromise;
-
-    const enrollment = await EnrollmentModel.getEnrollmentById(pool, id);
-
-    if (!enrollment) return res.status(404).json({ error: "User not found" });
-
-    if (enrollment.enrollment.CompanyID !== companyID)
-      return res.status(403).json({ error: "Forbidden" });
-
-    if (req.body.beneficiaries.length !== enrollment.beneficiaries.length)
-      return res.status(400).json({ error: "Beneficiary count mismatch" });
-
-    transaction = new sql.Transaction(pool);
-    await transaction.begin();
-
-    const updatedEnrollment = await EnrollmentModel.updateEnrollment(
-      transaction,
-      id,
-      req.body,
+    const enrollmentData = await EnrollmentService.getFullEnrollmentDetails(
+      pool,
+      client_id,
     );
 
-    for (let beneficiary of req.body.beneficiaries) {
-      await EnrollmentModel.updateBeneficiary(
-        transaction,
-        beneficiary.beneficiaryId,
-        beneficiary,
-      );
-    }
-
-    await transaction.commit();
-
     return res.status(200).json({
       success: true,
-      message: `Enrollment form: ${enrollment.enrollment?.ReferenceNumber} updated succesfully`,
+      data: enrollmentData,
     });
   } catch (error) {
-    console.error(error);
-    if (transaction) await transaction.rollback();
-    return res.status(500).json({ error: error.message });
+    next(error);
   }
+};
+
+export const editEnrollment = async (req, res, next) => {
+    try {
+        const { client_id } = req.params;
+        const { user_id } = req.user;
+
+        const {
+            first_name, middle_name, last_name, suffix,
+            birthdate, birthplace, nationality, tin_id,
+            civil_status, gender, height, weight,
+            sss_gsis_no, contact_no, email_address,
+            occupation, source_of_income, signature_path,
+            client_address_id, barangay_id, address_line, zip_code,
+            beneficiaries
+        } = req.body;
+
+        await EnrollmentService.updateEnrollment(user_id, {
+            client_id,
+            first_name, middle_name, last_name, suffix,
+            birthdate, birthplace, nationality, tin_id,
+            civil_status, gender, height, weight,
+            sss_gsis_no, contact_no, email_address,
+            occupation, source_of_income, signature_path,
+            client_address_id, barangay_id, address_line, zip_code,
+            beneficiaries
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: 'Enrollment updated successfully'
+        });
+    } catch (error) {
+        next(error);
+    }
 };
 
 export const exportEnrollments = async (req, res) => {
-  try {
-    const { companyID, role } = req.user;
 
-    const pool = await poolPromise;
+  // try {
+  //   const { companyID, role } = req.user;
 
-    const getExcelReport = await EnrollmentModel.getEnrollmentsForExport(
-      pool,
-      companyID,
-      role,
-    );
+  //   const pool = await poolPromise;
 
-    const enrollmentReport = generateExcelReport(getExcelReport);
+  //   const getExcelReport = await EnrollmentModel.getEnrollmentsForExport(
+  //     pool,
+  //     companyID,
+  //     role,
+  //   );
 
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    );
+  //   const enrollmentReport = generateExcelReport(getExcelReport);
 
-    res.setHeader(
-      "Content-Disposition",
-      "attachment; filename=enrollments.xlsx",
-    );
+  //   res.setHeader(
+  //     "Content-Type",
+  //     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  //   );
 
-    await enrollmentReport.xlsx.write(res);
+  //   res.setHeader(
+  //     "Content-Disposition",
+  //     "attachment; filename=enrollments.xlsx",
+  //   );
 
-    res.end();
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: error.message });
-  }
+  //   await enrollmentReport.xlsx.write(res);
+
+  //   res.end();
+  // } catch (error) {
+  //   console.error(error);
+  //   return res.status(500).json({ error: error.message });
+  // }
+
+  return res.status(501).json({ message: 'Not implemented yet' });
 };
 
 export const getDashboardStats = async (req, res) => {
-  try {
-    const { companyID, role } = req.user;
+  // try {
+  //   const { companyID, role } = req.user;
 
-    const pool = await poolPromise;
+  //   const pool = await poolPromise;
 
-    const dashBoardStats = await EnrollmentModel.getEnrollmentStats(pool, companyID, role);
+  //   const dashBoardStats = await EnrollmentModel.getEnrollmentStats(
+  //     pool,
+  //     companyID,
+  //     role,
+  //   );
 
-    return res.status(200).json({
-      success: true,
-      data: dashBoardStats
-    })
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: error.message });
-  }
+  //   return res.status(200).json({
+  //     success: true,
+  //     data: dashBoardStats,
+  //   });
+  // } catch (error) {
+  //   console.error(error);
+  //   return res.status(500).json({ error: error.message });
+  // }
+
+  return res.status(501).json({ message: 'Not implemented yet' });
 };

@@ -54,22 +54,50 @@ const updateClient = async (pool, clientData) => {
     .execute("usp_upd_client");
 };
 
-const listClients = async (pool, filters) => {
-  const result = await pool
-    .request()
-    .input("name", sql.VarChar, filters.name)
-    .input("tin", sql.VarChar, filters.tin)
-    .input("sss_gsis_no", sql.VarChar, filters.sss_gsis_no)
-    .input("status", sql.Char, filters.status)
-    .execute("usp_lst_client");
+const getHrEmployees = async (pool, userId) => {
+  const result = await pool.request()
+  .input('us01_user_id', sql.BigInt, userId)
+  .execute('usp_sel_hr_employees');
 
   return result.recordset;
 };
 
+const getEnrollmentByClientId = async (pool, clientId) => {
+  const result = await pool.request()
+  .input('client_id', sql.BigInt, clientId)
+  .execute('usp_get_insurance_enrollment_by_id');
+
+  return result.recordset;
+};
+
+const getEnrollmentBenefitsByClientId = async (pool, clientId) => {
+  const result = await pool.request()
+  .input('client_id', sql.BigInt, clientId)
+  .execute('usp_get_enrollment_benefits_by_id');
+
+  return result.recordset;
+};
+
+
+
+// const listClients = async (pool, filters) => {
+//   const result = await pool
+//     .request()
+//     .input("name", sql.VarChar, filters.name)
+//     .input("tin", sql.VarChar, filters.tin)
+//     .input("sss_gsis_no", sql.VarChar, filters.sss_gsis_no)
+//     .input("status", sql.Char, filters.status)
+//     .execute("usp_lst_client");
+
+//   return result.recordset;
+// };
+
 export default {
   insertClient,
   updateClient,
-  listClients,
+  getHrEmployees,
+  getEnrollmentByClientId,
+  getEnrollmentBenefitsByClientId
 };
 
 
