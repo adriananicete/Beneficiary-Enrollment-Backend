@@ -14,6 +14,18 @@ const insertBeneficiary = async (pool, beneficiaryData) => {
     return result.output.beneficiary_id;
 }
 
+const updateBeneficiary = async (pool, beneficiaryData) => {
+    const result = await pool.request()
+    .input('beneficiary_id', sql.BigInt, beneficiaryData.beneficiary_id)
+    .input('full_name', sql.VarChar, beneficiaryData.full_name)
+    .input('relationship', sql.VarChar, beneficiaryData.relationship)
+    .input('age', sql.Int, beneficiaryData.age)
+    .input('coverage_percent', sql.Decimal, beneficiaryData.coverage_percent)
+    .input('modified_by', sql.VarChar, beneficiaryData.modified_by)
+    .execute('usp_upd_beneficiary');
+}
+
 export default {
-    insertBeneficiary
+    insertBeneficiary,
+    updateBeneficiary
 }

@@ -39,6 +39,10 @@ const findUserById = async (pool, userId) => {
     return result.recordset[0];
 };
 
+const updateUser = async (pool, userData) => {
+    
+};
+
 export default {
     createUser,
     assignRole,

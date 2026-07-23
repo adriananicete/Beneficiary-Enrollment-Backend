@@ -1,3 +1,5 @@
+import { poolPromise } from "../config/db.js";
+import ReferenceModel from "../models/referenceModel.js";
 import EnrollmentService from "../services/enrollmentService.js";
 
 export const submitEnrollment = async (req, res, next) => {
@@ -16,13 +18,19 @@ export const submitEnrollment = async (req, res, next) => {
       message: "Enrollment submitted successfully",
     });
   } catch (error) {
-    const originalMessage = error.originalError?.message || error.message;
-    if (
-      originalMessage.includes("already exists") ||
-      originalMessage.includes("duplicate")
-    ) {
-      return res.status(409).json({ error: originalMessage });
-    }
+    next(error);
+  }
+};
+
+export const getBarangays = async (req, res, next) => {
+  try {
+    const pool = await poolPromise;
+    const barangays = await ReferenceModel.getBarangays(pool);
+    return res.status(200).json({
+      success: true,
+      data: barangays
+    })
+  } catch (error) {
     next(error);
   }
 };

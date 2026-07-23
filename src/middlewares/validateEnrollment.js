@@ -6,6 +6,7 @@ export const validateEnrollment = (req, res, next) => {
   const requiredFields = [
     "employer_id",
     "employee_id_number",
+    "classification_id" ,
     "first_name",
     "last_name",
     "address_line",
@@ -36,15 +37,6 @@ export const validateEnrollment = (req, res, next) => {
       return res.status(400).json({ error: `${i} is required` });
   }
 
-  // const emailDomain = email.split("@")[1];
-  // const validDomains = {
-  //   1: "hcl.com",
-  //   2: "coforge.com",
-  // };
-
-  // if (emailDomain !== validDomains[companyId])
-  //   return res.status(400).json({ error: "Invalid Email" });
-
   if (
     !beneficiaries ||
     !Array.isArray(beneficiaries) ||
@@ -58,7 +50,7 @@ export const validateEnrollment = (req, res, next) => {
     if (!i.full_name)
       return res
         .status(400)
-        .json({ error: "Beneficiary fullName is required" });
+        .json({ error: "Beneficiary name is required" });
     if (!i.age)
       return res.status(400).json({ error: "Beneficiary age is required" });
     if (!i.relationship)

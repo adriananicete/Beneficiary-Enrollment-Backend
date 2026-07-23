@@ -1,4 +1,3 @@
-import AdminModel from "../models/adminModel.js";
 import UserModel from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -15,6 +14,7 @@ export const login = async (req, res, next) => {
       return res.status(400).json({ error: "All fields required" });
 
     const user = await UserModel.findUserByUsername(pool, username);
+
     if (!user) return res.status(401).json({ error: "Invalid Credentials" });
 
     const isPasswordMatched = await bcrypt.compare(
@@ -32,7 +32,7 @@ export const login = async (req, res, next) => {
         role_name: user.us02_role_name,
       },
       config.jwtSecret,
-      { expiresIn: rememberMe ? '30d' : '8h' },
+      { expiresIn: rememberMe ? "30d" : "8h" },
     );
 
     res.cookie("token", token, {
@@ -47,6 +47,8 @@ export const login = async (req, res, next) => {
       message: "Login successfully",
     });
   } catch (error) {
+    if (error.originalError?.number === 50001)
+      return res.status(401).json({ error: "Invalid credentials" });
     next(error);
   }
 };
@@ -61,7 +63,7 @@ export const logout = (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: "Admin Logged out",
+      message: "Logout successful",
     });
   } catch (error) {
     next(error);
