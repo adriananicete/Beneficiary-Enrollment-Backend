@@ -1,17 +1,4 @@
-import config from "../config/env.js";
-
-export const emailTemplate = ({
-  referenceNumber,
-  username,
-  firstName,
-  lastName,
-  password,
-  loginUrl,
-}) => {
-  return {
-    contentType: "HTML",
-    content: `
-    <!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -85,7 +72,7 @@ export const emailTemplate = ({
             This is your temporary account:
           </p>
 
-          <p style="text-align: center; border-radius: 5px; border: 1px solid #4caf50; padding: 20px 0; font-size: 16px">
+          <p style="text-align: center; border-radius: 5px; border: 1px solid #4caf50; padding: 20px 0;; background-color: #f9f9f9; font-size: 16px">
             Username: ${username} <br/> Password: ${password}
           </p>
 
@@ -143,6 +130,3 @@ export const emailTemplate = ({
     </table>
   </body>
 </html>
-    `,
-  };
-};

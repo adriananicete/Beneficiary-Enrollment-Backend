@@ -14,7 +14,6 @@ export const login = async (req, res, next) => {
       return res.status(400).json({ error: "All fields required" });
 
     const user = await UserModel.findUserByUsername(pool, username);
-
     if (!user) return res.status(401).json({ error: "Invalid Credentials" });
 
     const isPasswordMatched = await bcrypt.compare(
@@ -41,6 +40,8 @@ export const login = async (req, res, next) => {
       sameSite: "Strict",
       maxAge: rememberMe ? REMEMBER_ME_EXPIRY : SESSION_EXPIRY,
     });
+
+    await UserModel.updateLastLogin(pool, username);
 
     return res.status(200).json({
       success: true,
