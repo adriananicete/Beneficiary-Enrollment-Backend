@@ -63,11 +63,20 @@ const updateLastLogin = async (pool, username) => {
         `)
 };
 
+const checkUsernameExists = async (pool, username) => {
+    const result = await pool.request()
+    .input('username', sql.NVarChar, username)
+    .query(`SELECT 1 FROM sec.us01_users WHERE us01_username = @username`);
+
+    return result.recordset.length > 0
+}
+
 export default {
     createUser,
     assignRole,
     findUserByUsername,
     findUserById,
     changePassword,
-    updateLastLogin
+    updateLastLogin,
+    checkUsernameExists
 }

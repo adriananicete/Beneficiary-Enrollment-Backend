@@ -13,6 +13,10 @@ import { AppError } from "../utils/AppError.js";
 
 const createEnrollment = async (enrollmentData) => {
   const pool = await poolPromise;
+
+  const userNameExists = await UserModel.checkUsernameExists(pool, enrollmentData.employee_id_number);
+  if(userNameExists) throw new AppError('Employee ID number already exists', 409);
+  
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
 
