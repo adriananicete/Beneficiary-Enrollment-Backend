@@ -26,7 +26,7 @@ const createEnrollment = async (enrollmentData) => {
     const clientAddressId = await AddressModel.insertClientAddress(
       transaction,
       clientId,
-      enrollmentData,
+      {...enrollmentData, created_by: 'system'},
     );
 
     const clientEmployerId = await EmployerModel.insertClientEmployer(
@@ -82,6 +82,7 @@ const createEnrollment = async (enrollmentData) => {
       us01_middle_name: enrollmentData.middle_name,
       us01_last_name: enrollmentData.last_name,
       us01_email_address: enrollmentData.email_address,
+      client_id: clientId,
       us01_created_by: 'system',
     });
 
@@ -93,7 +94,7 @@ const createEnrollment = async (enrollmentData) => {
     await transaction.commit();
 
     try {
-      await sendConfirmationEmail({to: enrollmentData.email_address, referenceNumber: enrollmentId, username: enrollmentData.employee_id_number, password: tempPassword, loginUrl: '/api/employee/login'});
+      await sendConfirmationEmail({to: enrollmentData.email_address, referenceNumber: enrollmentId, firstName: enrollmentData.first_name, lastName: enrollmentData.last_name, username: enrollmentData.employee_id_number, password: tempPassword, loginUrl: '/api/employee/login'});
     } catch (error) {
       console.log(error)
     }

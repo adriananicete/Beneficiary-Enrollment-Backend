@@ -78,6 +78,14 @@ const getEnrollmentBenefitsByClientId = async (pool, clientId) => {
   return result.recordset;
 };
 
+const getMyEnrollment = async (pool, userId) => {
+  const result = await pool.request()
+  .input('us01_user_id', sql.BigInt, userId)
+  .execute('usp_sel_insurance_enrollment');
+
+  return result.recordset;
+}; 
+
 
 
 // const listClients = async (pool, filters) => {
@@ -93,6 +101,7 @@ const getEnrollmentBenefitsByClientId = async (pool, clientId) => {
 // };
 
 export default {
+  getMyEnrollment,
   insertClient,
   updateClient,
   getHrEmployees,

@@ -9,6 +9,7 @@ const createUser = async (pool, userData) => {
     .input('us01_last_name', sql.VarChar, userData.us01_last_name)
     .input('us01_email_address', sql.VarChar, userData.us01_email_address)
     .input('us01_created_by', sql.VarChar, userData.us01_created_by)
+    .input('client_id', sql.BigInt, userData.client_id)
     .output('us01_user_id', sql.BigInt)
     .execute('sec.us01_usp_ins_users')
 
@@ -26,7 +27,7 @@ const assignRole = async (pool, userId, assignRoleData) => {
 const findUserByUsername = async (pool, username) => {
     const result = await pool.request()
     .input('us01_username', sql.VarChar, username)
-    .execute('sec.us01_usp_sel_user_by_username');
+    .execute('sec.us01_usp_login');
 
     return result.recordset[0];
 };
@@ -43,9 +44,30 @@ const updateUser = async (pool, userData) => {
     
 };
 
+const changePassword = async (pool, userData) => {
+    const result = await pool.request()
+    .input('us01_username', sql.VarChar, userData.us01_username)
+    .input('oldpass', sql.VarChar, userData.oldpass)
+    .input('newpass', sql.VarChar, userData.newpass)
+    .output('us01_user_id', sql.BigInt)
+    .execute('sec.us01_usp_first_login')
+
+    return result.output.us01_user_id;
+};
+
+const updateLastLogin = async (pool, username) => {
+    const result = await pool.request()
+    .input('us01_username', sql.VarChar, username)
+    .query(`
+        UPDATE sec.us01_users SET us01_last_login = GETDATE() WHERE us01_username = @us01_username
+        `)
+};
+
 export default {
     createUser,
     assignRole,
     findUserByUsername,
-    findUserById
+    findUserById,
+    changePassword,
+    updateLastLogin
 }

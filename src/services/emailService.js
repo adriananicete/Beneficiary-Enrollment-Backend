@@ -34,6 +34,8 @@ export const sendConfirmationEmail = async ({
   to,
   referenceNumber,
   username,
+  firstName,
+  lastName,
   password,
   loginUrl,
 }) => {
@@ -43,7 +45,7 @@ export const sendConfirmationEmail = async ({
   const mailPayload = {
     message: {
       subject: "This is your account credentials",
-      body: emailTemplate({referenceNumber, username, password, loginUrl}),
+      body: emailTemplate({referenceNumber, username, firstName, lastName, password, loginUrl}),
       toRecipients: [
         {
           emailAddress: {

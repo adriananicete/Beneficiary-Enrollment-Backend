@@ -25,7 +25,16 @@ const updateBeneficiary = async (pool, beneficiaryData) => {
     .execute('usp_upd_beneficiary');
 }
 
+const getBeneficiariesByEnrollmentId = async (pool, enrollment_id) => {
+    const result = await pool.request()
+    .input('enrollment_id', sql.BigInt, enrollment_id)
+    .execute('usp_sel_beneficiaries');
+
+    return result.recordset;
+}
+
 export default {
     insertBeneficiary,
-    updateBeneficiary
+    updateBeneficiary,
+    getBeneficiariesByEnrollmentId
 }
