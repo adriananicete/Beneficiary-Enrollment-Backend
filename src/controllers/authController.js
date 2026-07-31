@@ -2,7 +2,7 @@ import UserModel from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import config from "../config/env.js";
-import { REMEMBER_ME_EXPIRY, SESSION_EXPIRY } from "../utils/constants.js";
+import { EMPLOYEE, REMEMBER_ME_EXPIRY, SESSION_EXPIRY } from "../utils/constants.js";
 import { poolPromise } from "../config/db.js";
 
 export const login = async (req, res, next) => {
@@ -22,6 +22,12 @@ export const login = async (req, res, next) => {
     );
     if (!isPasswordMatched)
       return res.status(401).json({ error: "Invalid Credentials" });
+
+    if(user.us02_role_name === EMPLOYEE) return res.status(403).json({
+      error: 'Employees must use the employee login'
+    });
+
+    if(user.us01_must_change_password) return res.status(200).json({mustChangePassword: true});
 
     const token = jwt.sign(
       {

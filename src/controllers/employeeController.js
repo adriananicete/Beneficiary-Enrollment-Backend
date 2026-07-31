@@ -24,7 +24,7 @@ export const login = async (req, res, next) => {
     if (!isPasswordMatch)
       return res.status(401).json({ error: "Invalid credentials" });
 
-    if (!user.us01_last_login)
+    if (user.us01_must_change_password)
       return res.status(200).json({ mustChangePassword: true });
 
     const token = jwt.sign(
@@ -119,8 +119,8 @@ export const editMyEnrollment = async (req, res, next) => {
     const { client_id } = enrollment[0];
 
     await EnrollmentService.updateEnrollment(user_id, {
-      client_id,
       ...req.body,
+      client_id
     });
 
     return res.status(200).json({
