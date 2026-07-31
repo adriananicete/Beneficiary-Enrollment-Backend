@@ -67,7 +67,7 @@ export const login = async (req, res, next) => {
       message: "Login successfully",
     });
   } catch (error) {
-    if (error.originalError?.number === 50001)
+    if (error.number === 50001 || error.originalError?.number === 50001)
       return res.status(401).json({ error: "Invalid credentials" });
     next(error);
   }
@@ -174,6 +174,14 @@ export const changePassword = async (req, res, next) => {
       });
     }
 
+    const passwordPolicy = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
+    if (!passwordPolicy.test(newPassword)) {
+      return res.status(400).json({
+        message:
+          "Password must be at least 8 characters and include a letter and a number",
+      });
+    }
+
     const newHashPassword = await bcrypt.hash(newPassword, 10);
 
     await UserModel.changePassword(pool, {
@@ -184,7 +192,7 @@ export const changePassword = async (req, res, next) => {
 
     await UserModel.updateLastLogin(pool, username);
 
-    res.clearCookie('reset_token', cookieOptions);
+    res.clearCookie("reset_token", cookieOptions);
 
     return res.status(200).json({
       success: true,

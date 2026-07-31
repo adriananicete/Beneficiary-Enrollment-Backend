@@ -10,7 +10,8 @@ const envVar = [
   "AZURE_TENANT_ID",
   "AZURE_CLIENT_SECRET",
   "SMTP_HOST",
-  "SMTP_PORT"
+  "SMTP_PORT",
+  "CORS_ORIGIN"
 ];
 
 for (let i of envVar) {
@@ -28,6 +29,7 @@ const config = {
     password: process.env.DB_PASSWORD,
   },
   jwtSecret: process.env.JWT_SECRET,
+  corsOrigin: process.env.CORS_ORIGIN,
   smtp: {
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT),

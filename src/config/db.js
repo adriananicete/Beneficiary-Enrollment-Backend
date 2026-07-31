@@ -16,6 +16,9 @@ const dbConfig = {
 const poolPromise = new sql.ConnectionPool(dbConfig).connect().then(pool => {
     console.log('Database connected!');
     return pool;
-}).catch(err => console.error(err));
+}).catch(err => {
+  console.error('Database connection failed:', err);
+  process.exit(1);
+});
 
 export { sql, poolPromise };

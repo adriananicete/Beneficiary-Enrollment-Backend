@@ -10,28 +10,31 @@ import bcrypt from "bcrypt";
 import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
 import { AppError } from "../utils/AppError.js";
-import crypto from 'crypto';
+import crypto from "crypto";
 
 const createEnrollment = async (enrollmentData) => {
   const pool = await poolPromise;
 
-  const userNameExists = await UserModel.checkUsernameExists(pool, enrollmentData.employee_id_number);
-  if(userNameExists) throw new AppError('Employee ID number already exists', 409);
-  
+  const userNameExists = await UserModel.checkUsernameExists(
+    pool,
+    enrollmentData.employee_id_number,
+  );
+  if (userNameExists)
+    throw new AppError("Employee ID number already exists", 409);
+
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
 
   try {
-    
-    const clientId = await ClientModel.insertClient(
-      transaction,
-      {...enrollmentData, created_by: 'system'},
-    );
+    const clientId = await ClientModel.insertClient(transaction, {
+      ...enrollmentData,
+      created_by: "system",
+    });
 
     const clientAddressId = await AddressModel.insertClientAddress(
       transaction,
       clientId,
-      {...enrollmentData, created_by: 'system'},
+      { ...enrollmentData, created_by: "system" },
     );
 
     const clientEmployerId = await EmployerModel.insertClientEmployer(
@@ -39,21 +42,18 @@ const createEnrollment = async (enrollmentData) => {
       { ...enrollmentData, client_id: clientId, is_current: true },
     );
 
-    const enrollmentId = await ApplicationModel.insertApplication(
-      transaction,
-      {
-        ...enrollmentData,
-        client_id: clientId,
-        client_employer_id: clientEmployerId,
-        created_by: 'system',
-      },
-    );
+    const enrollmentId = await ApplicationModel.insertApplication(transaction, {
+      ...enrollmentData,
+      client_id: clientId,
+      client_employer_id: clientEmployerId,
+      created_by: "system",
+    });
 
     for (let beneficiary of enrollmentData.beneficiaries) {
       await BeneficiaryModel.insertBeneficiary(transaction, {
         ...beneficiary,
         enrollment_id: enrollmentId,
-        created_by: 'system',
+        created_by: "system",
       });
     }
 
@@ -62,7 +62,7 @@ const createEnrollment = async (enrollmentData) => {
       agreement_type: "privacy",
       agreement_version: 1.0,
       accepted: enrollmentData.consent_privacy,
-      created_by: 'system',
+      created_by: "system",
     });
 
     await AgreementModel.insertAgreements(transaction, clientId, {
@@ -70,10 +70,10 @@ const createEnrollment = async (enrollmentData) => {
       agreement_type: "term",
       agreement_version: 1.0,
       accepted: enrollmentData.consent_terms,
-      created_by: 'system',
+      created_by: "system",
     });
 
-    const tempPassword = crypto.randomBytes(9).toString('base64').slice(0, 12);
+    const tempPassword = crypto.randomBytes(9).toString("base64").slice(0, 12);
     const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
     const userId = await UserModel.createUser(transaction, {
@@ -84,80 +84,130 @@ const createEnrollment = async (enrollmentData) => {
       us01_last_name: enrollmentData.last_name,
       us01_email_address: enrollmentData.email_address,
       client_id: clientId,
-      us01_created_by: 'system',
+      us01_created_by: "system",
     });
 
     await UserModel.assignRole(transaction, userId, {
       us02_role_id: EMPLOYEE_ROLE_ID,
-      us04_assigned_by: 'system'
+      us04_assigned_by: "system",
     });
 
     await transaction.commit();
 
     try {
-      await sendConfirmationEmail({to: enrollmentData.email_address, referenceNumber: enrollmentId, firstName: enrollmentData.first_name, lastName: enrollmentData.last_name, username: enrollmentData.employee_id_number, password: tempPassword, loginUrl: '/api/employee/login'});
+      await sendConfirmationEmail({
+        to: enrollmentData.email_address,
+        referenceNumber: enrollmentId,
+        firstName: enrollmentData.first_name,
+        lastName: enrollmentData.last_name,
+        username: enrollmentData.employee_id_number,
+        password: tempPassword,
+        loginUrl: "/api/employee/login",
+      });
     } catch (error) {
-      console.log(error)
+      console.log(error);
     }
 
     return { clientId, enrollmentId };
   } catch (error) {
     await transaction.rollback();
-    console.error('Service Error:', error)
+    console.error("Service Error:", error);
     throw error;
   }
 };
 
-const updateEnrollment = async (userId ,enrollmentData) => {
-
+const updateEnrollment = async (userId, enrollmentData) => {
   const pool = await poolPromise;
 
-  const ownershipRows  = await ClientModel.getOwnershipIds(pool, enrollmentData.client_id);
-  if(ownershipRows.length === 0) throw new AppError('No enrollment found for this client', 404);
+  const ownershipRows = await ClientModel.getOwnershipIds(
+    pool,
+    enrollmentData.client_id,
+  );
+  if (ownershipRows.length === 0)
+    throw new AppError("No enrollment found for this client", 404);
 
-  const validAddressIds = new Set(ownershipRows.map(r => String(r.client_address_id)));
+  const validAddressIds = new Set(
+    ownershipRows.map((r) => String(r.client_address_id)),
+  );
 
-  if(!validAddressIds.has(String(enrollmentData.client_address_id))) throw new AppError('Address does not belong to this enrollment', 403);
+  if (enrollmentData.client_address_id) {
+    if (!validAddressIds.has(String(enrollmentData.client_address_id)))
+      throw new AppError("Address does not belong to this enrollment", 403);
+  }
 
-  const validBeneficiariesIds = new Set(ownershipRows.map(r => String(r.beneficiary_id)));
+  if (
+    Array.isArray(enrollmentData.beneficiaries) &&
+    enrollmentData.beneficiaries.length > 0
+  ) {
+    const totalCoverage = enrollmentData.beneficiaries.reduce(
+      (sum, b) => sum + b.coverage_percent,
+      0,
+    );
+    
+    if (totalCoverage !== 100) {
+      throw new AppError("Total beneficiary coverage must equal 100%", 400);
+    }
+    
+    const validBeneficiariesIds = new Set(
+      ownershipRows.map((r) => String(r.beneficiary_id)),
+    );
 
-  for(let beneficiary of enrollmentData.beneficiaries) {
-    if(!validBeneficiariesIds.has(String(beneficiary.beneficiary_id))) throw new AppError('Beneficiary does not belong to this enrollment', 403)
+    for (let beneficiary of enrollmentData.beneficiaries) {
+      if (!validBeneficiariesIds.has(String(beneficiary.beneficiary_id)))
+        throw new AppError(
+          "Beneficiary does not belong to this enrollment",
+          403,
+        );
+    }
   }
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
 
   try {
-    await ClientModel.updateClient(transaction, {...enrollmentData, modified_by: userId});
+    await ClientModel.updateClient(transaction, {
+      ...enrollmentData,
+      modified_by: userId,
+    });
 
-    await AddressModel.updateClientAddress(transaction, {...enrollmentData, modified_by: userId});
+    if (enrollmentData.client_address_id) {
+      await AddressModel.updateClientAddress(transaction, {
+        ...enrollmentData,
+        modified_by: userId,
+      });
+    }
 
-    for (let beneficiary of enrollmentData.beneficiaries) {
-      await BeneficiaryModel.updateBeneficiary(transaction,{...beneficiary, modified_by: userId })
+    if (
+      Array.isArray(enrollmentData.beneficiaries) &&
+      enrollmentData.beneficiaries.length > 0
+    ) {
+      for (let beneficiary of enrollmentData.beneficiaries) {
+        await BeneficiaryModel.updateBeneficiary(transaction, {
+          ...beneficiary,
+          modified_by: userId,
+        });
+      }
     }
 
     await transaction.commit();
   } catch (error) {
     await transaction.rollback();
-    console.error('Service Error:', error)
+    console.error("Service Error:", error);
     throw error;
   }
 };
 
 const getFullEnrollmentDetails = async (pool, clientId) => {
-
   const enrollmentDetails = await ClientModel.getEnrollmentByClientId(
     pool,
     clientId,
   );
 
   if (!enrollmentDetails || enrollmentDetails.length === 0)
-    throw new AppError('Enrollment not found', 404);
+    throw new AppError("Enrollment not found", 404);
 
   const enrollmentBenefitsById =
     await ClientModel.getEnrollmentBenefitsByClientId(pool, clientId);
-
 
   return {
     enrollment: enrollmentDetails,
@@ -168,5 +218,5 @@ const getFullEnrollmentDetails = async (pool, clientId) => {
 export default {
   createEnrollment,
   getFullEnrollmentDetails,
-  updateEnrollment
+  updateEnrollment,
 };
