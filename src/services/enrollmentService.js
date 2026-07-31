@@ -10,6 +10,7 @@ import bcrypt from "bcrypt";
 import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
 import { AppError } from "../utils/AppError.js";
+import crypto from 'crypto';
 
 const createEnrollment = async (enrollmentData) => {
   const pool = await poolPromise;
@@ -72,11 +73,7 @@ const createEnrollment = async (enrollmentData) => {
       created_by: 'system',
     });
 
-    const birthdate = new Date(enrollmentData.birthdate);
-    const mm = String(birthdate.getMonth() + 1).padStart(2, "0");
-    const dd = String(birthdate.getDate()).padStart(2, "0");
-    const yyyy = birthdate.getFullYear();
-    const tempPassword = `${mm}${dd}${yyyy}`;
+    const tempPassword = crypto.randomBytes(9).toString('base64').slice(0, 12);
     const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
     const userId = await UserModel.createUser(transaction, {
