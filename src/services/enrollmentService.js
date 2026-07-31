@@ -114,6 +114,20 @@ const createEnrollment = async (enrollmentData) => {
 const updateEnrollment = async (userId ,enrollmentData) => {
 
   const pool = await poolPromise;
+
+  const ownershipRows  = await ClientModel.getOwnershipIds(pool, enrollmentData.client_id);
+  if(ownershipRows.length === 0) throw new AppError('No enrollment found for this client', 404);
+
+  const validAddressIds = new Set(ownershipRows.map(r => String(r.client_address_id)));
+
+  if(!validAddressIds.has(String(enrollmentData.client_address_id))) throw new AppError('Address does not belong to this enrollment', 403);
+
+  const validBeneficiariesIds = new Set(ownershipRows.map(r => String(r.beneficiary_id)));
+
+  for(let beneficiary of enrollmentData.beneficiaries) {
+    if(!validBeneficiariesIds.has(String(beneficiary.beneficiary_id))) throw new AppError('Beneficiary does not belong to this enrollment', 403)
+  }
+
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
 
