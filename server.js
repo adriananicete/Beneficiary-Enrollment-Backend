@@ -8,12 +8,14 @@ import enrollmentRoutes from './src/routes/enrollmentRoutes.js';
 import adminRoutes from './src/routes/adminRoutes.js';
 import employeeRoutes from './src/routes/employeeRoutes.js';
 import {errorHandler} from './src/middlewares/errorHandler.js';
+import helmet from 'helmet';
 
 const app = express();
 
+app.use(helmet());
 app.use(express.json());
 app.use(cors({
-    origin: 'http://localhost:5173',
+    origin: config.corsOrigin,
     credentials: true
 }));
 app.use(cookieParser());
