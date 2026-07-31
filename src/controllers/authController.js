@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import config from "../config/env.js";
 import { EMPLOYEE, REMEMBER_ME_EXPIRY, SESSION_EXPIRY } from "../utils/constants.js";
 import { poolPromise } from "../config/db.js";
+import { cookieOptions } from "../utils/cookieConfig.js";
 
 export const login = async (req, res, next) => {
   try {
@@ -40,10 +41,7 @@ export const login = async (req, res, next) => {
       { expiresIn: rememberMe ? "30d" : "8h" },
     );
 
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: "Strict",
+    res.cookie("token", token, { ...cookieOptions,
       maxAge: rememberMe ? REMEMBER_ME_EXPIRY : SESSION_EXPIRY,
     });
 
@@ -62,11 +60,7 @@ export const login = async (req, res, next) => {
 
 export const logout = (req, res, next) => {
   try {
-    res.clearCookie("token", {
-      httpOnly: true,
-      secure: false,
-      sameSite: "Strict",
-    });
+    res.clearCookie("token", cookieOptions);
 
     return res.status(200).json({
       success: true,

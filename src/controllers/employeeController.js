@@ -9,6 +9,7 @@ import jwt from "jsonwebtoken";
 import config from "../config/env.js";
 import { SESSION_EXPIRY } from "../utils/constants.js";
 import { errorHandler } from "../middlewares/errorHandler.js";
+import { cookieOptions } from "../utils/cookieConfig.js";
 
 export const login = async (req, res, next) => {
   try {
@@ -36,9 +37,7 @@ export const login = async (req, res, next) => {
       );
 
       res.cookie("reset_token", changePasswordToken, {
-        httpOnly: true,
-        secure: false,
-        sameSite: "Strict",
+        ...cookieOptions,
         maxAge: 15 * 60 * 1000,
       });
 
@@ -57,9 +56,7 @@ export const login = async (req, res, next) => {
     );
 
     res.cookie("token", token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: "Strict",
+      ...cookieOptions,
       maxAge: SESSION_EXPIRY,
     });
 
@@ -78,11 +75,7 @@ export const login = async (req, res, next) => {
 
 export const logout = async (req, res, next) => {
   try {
-    res.clearCookie("token", {
-      httpOnly: true,
-      secure: false,
-      sameSite: "Strict",
-    });
+    res.clearCookie("token", cookieOptions);
 
     return res.status(200).json({
       success: true,
@@ -191,11 +184,7 @@ export const changePassword = async (req, res, next) => {
 
     await UserModel.updateLastLogin(pool, username);
 
-    res.clearCookie('reset_token', {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'Strict'
-    });
+    res.clearCookie('reset_token', cookieOptions);
 
     return res.status(200).json({
       success: true,
