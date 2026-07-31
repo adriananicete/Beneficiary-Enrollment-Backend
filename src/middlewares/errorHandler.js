@@ -1,10 +1,18 @@
 export const errorHandler = (err, req, res, next) => {
-    console.error('ErrorHandler:', err);
-    const message = err.originalError?.message || err.message;
-    const statusCode = err.statusCode || 500;
+  let message;
+  let statusCode;
 
-    res.status(statusCode).json({
-        success: false,
-        message: message
-    });
-}
+  console.error("ErrorHandler:", err);
+  if (err.statusCode) {
+    statusCode = err.statusCode;
+    message = err.message;
+  } else {
+    statusCode = 500;
+    message = "Server Error";
+  }
+
+  res.status(statusCode).json({
+    success: false,
+    message: message,
+  });
+};
