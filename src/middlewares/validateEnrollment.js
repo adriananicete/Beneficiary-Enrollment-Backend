@@ -29,7 +29,6 @@ export const validateEnrollment = (req, res, next) => {
     "email_address",
     "occupation",
     "source_of_income",
-    "coverage_amount",
     "consent_privacy",
     "consent_terms",
   ];
