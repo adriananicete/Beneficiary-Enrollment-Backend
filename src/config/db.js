@@ -8,8 +8,8 @@ const dbConfig = {
   database: config.db.name,
   port: config.db.port,
   options: {
-    encrypt: false,
-    trustServerCertificate: true,
+    encrypt: config.db.encrypt,
+    trustServerCertificate: config.db.trustServerCertificate,
   },
 };
 
