@@ -11,9 +11,15 @@ import {errorHandler} from './src/middlewares/errorHandler.js';
 import helmet from 'helmet';
 
 const app = express();
+app.set('trust proxy', false); // no reverse proxy in dev
 
 app.use(helmet());
 app.use(express.json());
+app.use((req, res, next) => {
+    if (req.body === undefined) req.body = {};
+
+    next();
+});
 app.use(cors({
     origin: config.corsOrigin,
     credentials: true

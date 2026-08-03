@@ -45,8 +45,6 @@ export const editEnrollment = async (req, res, next) => {
         const { client_id } = req.params;
         const { user_id } = req.user;
 
-        console.log('1 CONTROLLER barangay_id:', req.body.barangay_id);
-
         const {
             first_name, middle_name, last_name, suffix,
             birthdate, birthplace, nationality, tin_id,

@@ -4,14 +4,14 @@ import { verifyToken } from '../middlewares/verifyToken.js';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { EMPLOYEE } from '../utils/constants.js';
 import { verifyResetToken } from '../middlewares/verifyResetToken.js';
-import { strictLimiter } from '../middlewares/rateLimiter.js';
+import { authIpLimiter, strictLimiter } from '../middlewares/rateLimiter.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
 
 const router = express.Router();
 
-router.post('/login', strictLimiter, login);
+router.post('/login', authIpLimiter, strictLimiter, login);
 router.post('/logout', logout);
-router.post('/change-password', strictLimiter, verifyResetToken, changePassword);
+router.post('/change-password', authIpLimiter, strictLimiter, verifyResetToken, changePassword);
 router.get('/enrollment', verifyToken, allowedRoles(EMPLOYEE), getMyEnrollment);
 router.put('/enrollment', verifyToken, allowedRoles(EMPLOYEE), validateEnrollmentUpdate, editMyEnrollment);
 
