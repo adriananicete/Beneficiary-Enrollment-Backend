@@ -6,6 +6,7 @@ import ApplicationModel from "../models/applicationModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AgreementModel from "../models/agreementModel.js";
 import UserModel from "../models/userModel.js";
+import ReferenceModel from "../models/referenceModel.js"
 import bcrypt from "bcrypt";
 import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
@@ -15,6 +16,16 @@ import { validateCoverage } from "../utils/validateCoverage.js";
 
 const createEnrollment = async (enrollmentData) => {
   const pool = await poolPromise;
+
+  const employers = await ReferenceModel.getEmployers(pool);
+
+  const employerSet = new Set(employers.map(r => String(r.employer_id)));
+  if(!employerSet.has(String(enrollmentData.employer_id))) throw new AppError('Invalid or inactive employer', 400);
+
+  const classification = await ReferenceModel.getEmployeeClassifications(pool);
+  
+  const classificationSet = new Set(classification.map(c => String(c.classification_id)));
+  if(!classificationSet.has(String(enrollmentData.classification_id))) throw new AppError('Invalid or inactive classification', 400);
 
   const userNameExists = await UserModel.checkUsernameExists(
     pool,
