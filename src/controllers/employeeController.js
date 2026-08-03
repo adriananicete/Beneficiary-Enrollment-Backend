@@ -7,7 +7,7 @@ import { poolPromise } from "../config/db.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import config from "../config/env.js";
-import { SESSION_EXPIRY } from "../utils/constants.js";
+import { EMPLOYEE, SESSION_EXPIRY } from "../utils/constants.js";
 import { errorHandler } from "../middlewares/errorHandler.js";
 import { cookieOptions } from "../utils/cookieConfig.js";
 
@@ -24,6 +24,8 @@ export const login = async (req, res, next) => {
     const isPasswordMatch = await bcrypt.compare(password, user.us01_password);
     if (!isPasswordMatch)
       return res.status(401).json({ error: "Invalid credentials" });
+
+    if(user.us02_role_name !== EMPLOYEE) return res.status(403).json({error: 'Admin and HR must use the admin login'})
 
     if (user.us01_must_change_password) {
       const changePasswordToken = jwt.sign(
