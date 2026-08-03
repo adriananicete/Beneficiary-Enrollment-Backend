@@ -9,6 +9,8 @@ export const validateEnrollmentUpdate = (req, res, next) => {
     "civil_status",
     "gender",
     "source_of_income",
+    "tin_id",
+    "sss_gsis_no"
   ];
 
   if (req.body.client_address_id) {
