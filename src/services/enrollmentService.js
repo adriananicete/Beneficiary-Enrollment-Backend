@@ -11,6 +11,7 @@ import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
 import { AppError } from "../utils/AppError.js";
 import crypto from "crypto";
+import { validateCoverage } from "../utils/validateCoverage.js";
 
 const createEnrollment = async (enrollmentData) => {
   const pool = await poolPromise;
@@ -135,21 +136,14 @@ const updateEnrollment = async (userId, enrollmentData) => {
       throw new AppError("Address does not belong to this enrollment", 403);
   }
 
-  if (
-    Array.isArray(enrollmentData.beneficiaries) &&
-    enrollmentData.beneficiaries.length > 0
-  ) {
-    const totalCoverage = enrollmentData.beneficiaries.reduce(
-      (sum, b) => sum + b.coverage_percent,
-      0,
-    );
-    
-    if (totalCoverage !== 100) {
-      throw new AppError("Total beneficiary coverage must equal 100%", 400);
-    }
-    
+  if (enrollmentData.beneficiaries !== undefined) {
+    const coverageError = validateCoverage(enrollmentData.beneficiaries);
+    if (coverageError) throw new AppError(coverageError, 400);
+
     const validBeneficiariesIds = new Set(
-      ownershipRows.map((r) => String(r.beneficiary_id)),
+      ownershipRows
+        .filter((r) => r.beneficiary_id !== null)
+        .map((r) => String(r.beneficiary_id)),
     );
 
     for (let beneficiary of enrollmentData.beneficiaries) {
@@ -159,6 +153,14 @@ const updateEnrollment = async (userId, enrollmentData) => {
           403,
         );
     }
+
+    const submittedIds = new Set(
+        enrollmentData.beneficiaries.map((b) => String(b.beneficiary_id)),
+      );
+
+      if(submittedIds.size !== enrollmentData.beneficiaries.length) throw new AppError('Duplicate beneficiary is not allowed in the same update.', 400);
+
+      if(submittedIds.size !== validBeneficiariesIds.size) throw new AppError('The update must include all existing beneficiaries.', 400)
   }
 
   const transaction = new sql.Transaction(pool);

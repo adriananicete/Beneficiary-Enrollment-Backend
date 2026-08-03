@@ -1,3 +1,5 @@
+import { validateCoverage } from "../utils/validateCoverage.js";
+
 export const validateEnrollmentUpdate = (req, res, next) => {
   const requiredFields = [
     "first_name",
@@ -13,10 +15,9 @@ export const validateEnrollmentUpdate = (req, res, next) => {
     requiredFields.push("barangay_id", "address_line", "zip_code");
   }
 
-  if (
-    Array.isArray(req.body.beneficiaries) &&
-    req.body.beneficiaries.length > 0
-  ) {
+  if (req.body.beneficiaries !== undefined) {
+    const coverageError = validateCoverage(req.body.beneficiaries);
+    if(coverageError) return res.status(400).json({error : coverageError})
     for (let beneficiary of req.body.beneficiaries) {
       if (!beneficiary.beneficiary_id)
         return res.status(400).json({ error: "beneficiary_id is required" });
@@ -30,10 +31,6 @@ export const validateEnrollmentUpdate = (req, res, next) => {
         return res
           .status(400)
           .json({ error: "Beneficiary relationship is required" });
-      if (beneficiary.coverage_percent === undefined)
-        return res
-          .status(400)
-          .json({ error: "Beneficiary coverage_percent is required" });
     }
   }
 
