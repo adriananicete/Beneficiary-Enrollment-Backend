@@ -34,3 +34,31 @@ export const getBarangays = async (req, res, next) => {
     next(error);
   }
 };
+
+export const getEmployeeClassifications = async (req, res, next) => {
+  try {
+    const pool = await poolPromise;
+    const employeeClassifications = await ReferenceModel.getEmployeeClassifications(pool);
+
+    return res.status(200).json({
+      success: true,
+      data: employeeClassifications,
+    })
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getEmployers = async (req, res, next) => {
+  try {
+    const pool = await poolPromise;
+    const employers = await ReferenceModel.getEmployers(pool);
+
+    return res.status(200).json({
+      success: true,
+      data: employers
+    })
+  } catch (error) {
+    next(error);
+  }
+};
