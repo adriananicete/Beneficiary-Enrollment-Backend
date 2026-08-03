@@ -40,10 +40,6 @@ const findUserById = async (pool, userId) => {
     return result.recordset[0];
 };
 
-const updateUser = async (pool, userData) => {
-    
-};
-
 const changePassword = async (pool, userData) => {
     const result = await pool.request()
     .input('us01_username', sql.VarChar, userData.us01_username)

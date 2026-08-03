@@ -8,7 +8,6 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import config from "../config/env.js";
 import { EMPLOYEE, SESSION_EXPIRY } from "../utils/constants.js";
-import { errorHandler } from "../middlewares/errorHandler.js";
 import { cookieOptions } from "../utils/cookieConfig.js";
 
 export const login = async (req, res, next) => {

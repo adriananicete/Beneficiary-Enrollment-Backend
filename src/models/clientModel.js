@@ -99,20 +99,6 @@ WHERE ie.client_id = @client_id AND ie.status = 'A';`)
   return result.recordset
 }
 
-
-
-// const listClients = async (pool, filters) => {
-//   const result = await pool
-//     .request()
-//     .input("name", sql.VarChar, filters.name)
-//     .input("tin", sql.VarChar, filters.tin)
-//     .input("sss_gsis_no", sql.VarChar, filters.sss_gsis_no)
-//     .input("status", sql.Char, filters.status)
-//     .execute("usp_lst_client");
-
-//   return result.recordset;
-// };
-
 export default {
   getMyEnrollment,
   insertClient,

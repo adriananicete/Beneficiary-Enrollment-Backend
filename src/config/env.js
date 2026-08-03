@@ -11,7 +11,10 @@ const envVar = [
   "AZURE_CLIENT_SECRET",
   "SMTP_HOST",
   "SMTP_PORT",
-  "CORS_ORIGIN"
+  "CORS_ORIGIN",
+  "NODE_ENV",
+  "DB_TRUST_SERVER_CERTIFICATE",
+  "DB_ENCRYPT"
 ];
 
 for (let i of envVar) {
@@ -27,9 +30,12 @@ const config = {
     name: process.env.DB_NAME,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
+    encrypt: process.env.DB_ENCRYPT === 'true',
+    trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true'
   },
   jwtSecret: process.env.JWT_SECRET,
   corsOrigin: process.env.CORS_ORIGIN,
+  nodeEnv: process.env.NODE_ENV,
   smtp: {
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT),

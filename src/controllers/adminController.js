@@ -1,6 +1,5 @@
 import EnrollmentService from "../services/enrollmentService.js";
 import ClientModel from "../models/clientModel.js";
-import { generateExcelReport } from "../services/exportService.js";
 import { poolPromise } from "../config/db.js";
 
 export const getEnrollment = async (req, res, next) => {
