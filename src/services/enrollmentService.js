@@ -13,6 +13,7 @@ import { sendConfirmationEmail } from "./emailService.js";
 import { AppError } from "../utils/AppError.js";
 import crypto from "crypto";
 import { validateCoverage } from "../utils/validateCoverage.js";
+import config from "../config/env.js"
 
 const createEnrollment = async (enrollmentData) => {
   const pool = await poolPromise;
@@ -114,7 +115,7 @@ const createEnrollment = async (enrollmentData) => {
         lastName: enrollmentData.last_name,
         username: enrollmentData.employee_id_number,
         password: tempPassword,
-        loginUrl: "/api/employee/login",
+        loginUrl: `${config.appUrl}/employee/login`,
       });
     } catch (error) {
       console.log(error);

@@ -14,7 +14,8 @@ const envVar = [
   "CORS_ORIGIN",
   "NODE_ENV",
   "DB_TRUST_SERVER_CERTIFICATE",
-  "DB_ENCRYPT"
+  "DB_ENCRYPT",
+  "APP_URL"
 ];
 
 for (let i of envVar) {
@@ -35,6 +36,7 @@ const config = {
   },
   jwtSecret: process.env.JWT_SECRET,
   corsOrigin: process.env.CORS_ORIGIN,
+  appUrl: process.env.APP_URL,
   nodeEnv: process.env.NODE_ENV,
   smtp: {
     host: process.env.SMTP_HOST,
