@@ -1,4 +1,5 @@
 import EnrollmentService from "../services/enrollmentService.js";
+import AgreementModel from "../models/agreementModel.js";
 import ClientModel from "../models/clientModel.js";
 import { poolPromise } from "../config/db.js";
 
@@ -40,42 +41,73 @@ export const getEnrollmentDetails = async (req, res, next) => {
 };
 
 export const editEnrollment = async (req, res, next) => {
-    try {
-        const { client_id } = req.params;
-        const { user_id } = req.user;
+  try {
+    const { client_id } = req.params;
+    const { user_id } = req.user;
 
-        const {
-            first_name, middle_name, last_name, suffix,
-            birthdate, birthplace, nationality, tin_id,
-            civil_status, gender, height, weight,
-            sss_gsis_no, contact_no, email_address,
-            occupation, source_of_income, signature_path,
-            client_address_id, barangay_id, address_line, zip_code,
-            beneficiaries
-        } = req.body;
+    const {
+      first_name,
+      middle_name,
+      last_name,
+      suffix,
+      birthdate,
+      birthplace,
+      nationality,
+      tin_id,
+      civil_status,
+      gender,
+      height,
+      weight,
+      sss_gsis_no,
+      contact_no,
+      email_address,
+      occupation,
+      source_of_income,
+      signature_path,
+      client_address_id,
+      barangay_id,
+      address_line,
+      zip_code,
+      beneficiaries,
+    } = req.body;
 
-        await EnrollmentService.updateEnrollment(user_id, {
-            client_id,
-            first_name, middle_name, last_name, suffix,
-            birthdate, birthplace, nationality, tin_id,
-            civil_status, gender, height, weight,
-            sss_gsis_no, contact_no, email_address,
-            occupation, source_of_income, signature_path,
-            client_address_id, barangay_id, address_line, zip_code,
-            beneficiaries
-        });
+    await EnrollmentService.updateEnrollment(user_id, {
+      client_id,
+      first_name,
+      middle_name,
+      last_name,
+      suffix,
+      birthdate,
+      birthplace,
+      nationality,
+      tin_id,
+      civil_status,
+      gender,
+      height,
+      weight,
+      sss_gsis_no,
+      contact_no,
+      email_address,
+      occupation,
+      source_of_income,
+      signature_path,
+      client_address_id,
+      barangay_id,
+      address_line,
+      zip_code,
+      beneficiaries,
+    });
 
-        return res.status(200).json({
-            success: true,
-            message: 'Enrollment updated successfully'
-        });
-    } catch (error) {
-        next(error);
-    }
+    return res.status(200).json({
+      success: true,
+      message: "Enrollment updated successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const exportEnrollments = async (req, res) => {
-
   // try {
   //   const { companyID, role } = req.user;
 
@@ -107,7 +139,7 @@ export const exportEnrollments = async (req, res) => {
   //   return res.status(500).json({ error: error.message });
   // }
 
-  return res.status(501).json({ message: 'Not implemented yet' });
+  return res.status(501).json({ message: "Not implemented yet" });
 };
 
 export const getDashboardStats = async (req, res) => {
@@ -131,5 +163,23 @@ export const getDashboardStats = async (req, res) => {
   //   return res.status(500).json({ error: error.message });
   // }
 
-  return res.status(501).json({ message: 'Not implemented yet' });
+  return res.status(501).json({ message: "Not implemented yet" });
+};
+
+export const getEnrollmentAgreements = async (req, res, next) => {
+  try {
+    const { client_id } = req.params;
+    const pool = await poolPromise;
+    const agreements = await AgreementModel.getClientAgreements(
+      pool,
+      client_id,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: agreements,
+    });
+  } catch (error) {
+    next(error);
+  }
 };
