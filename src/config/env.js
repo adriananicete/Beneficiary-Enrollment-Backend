@@ -23,6 +23,9 @@ for (let i of envVar) {
     throw new Error(`Missing required environment variable: ${i}`);
 }
 
+ if(process.env.NODE_ENV === 'production' && process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0')
+    throw new Error('NODE_TLS_REJECT_UNAUTHORIZED must not be 0 in production. It disables TLS certificate verification for the entire process, including the database connection and the credential email.')
+
 const config = {
   PORT: process.env.PORT || 7000,
   db: {
