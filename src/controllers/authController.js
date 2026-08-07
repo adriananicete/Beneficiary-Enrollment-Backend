@@ -59,8 +59,6 @@ export const login = async (req, res, next) => {
       message: "Login successfully",
     });
   } catch (error) {
-    if (error.number === 50037 || error.originalError?.number === 50037)
-      return res.status(401).json({ error: "Invalid credentials" });
     next(error);
   }
 };
