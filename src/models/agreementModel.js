@@ -10,8 +10,17 @@ const insertAgreements = async (pool, clientId, agreementData) => {
     .input('user_agent', sql.NVarChar, agreementData.user_agent)
     .input('created_by', sql.VarChar, agreementData.created_by)
     .execute('usp_ins_agreements')
+};
+
+const getClientAgreements = async (pool, clientId) => {
+    const result = await pool.request()
+    .input('client_id', sql.BigInt, clientId)
+    .execute('usp_sel_client_agreement');
+
+    return result.recordset
 }
 
 export default {
-    insertAgreements
+    insertAgreements,
+    getClientAgreements
 }
