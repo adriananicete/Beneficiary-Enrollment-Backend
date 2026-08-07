@@ -4,11 +4,11 @@ import EnrollmentService from "../services/enrollmentService.js";
 
 export const submitEnrollment = async (req, res, next) => {
   try {
-    const { clientId, enrollmentId } = await EnrollmentService.createEnrollment(
+    const { enrollmentId } = await EnrollmentService.createEnrollment(
       {
         ...req.body,
         ip_address: req.ip,
-        user_agent: req.headers["user-agent"],
+        user_agent: req.headers["user-agent"]?.slice(0,500),
       },
     );
 
