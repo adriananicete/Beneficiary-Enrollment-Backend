@@ -1,4 +1,4 @@
-import config from "../config/env.js";
+
 
 export const emailTemplate = ({
   referenceNumber,
@@ -92,7 +92,7 @@ export const emailTemplate = ({
           <p style="margin: 20px 0; font-size: 16px">
             Please
             <a
-              href="https://localhost:${config.PORT}${loginUrl}"
+              href="${loginUrl}"
               target="_blank"
               style="color: #3498db; text-decoration: none; font-style: oblique;"
               >login</a
