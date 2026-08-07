@@ -43,7 +43,7 @@ const updateClient = async (pool, clientData) => {
     .input("civil_status", sql.VarChar, clientData.civil_status)
     .input("gender", sql.Char, clientData.gender)
     .input("height", sql.Decimal, clientData.height)
-    .input("weight", sql.Decimal, clientData.weight)
+    .input("weight", sql.Decimal(5,2), clientData.weight)
     .input("sss_gsis_no", sql.VarChar, clientData.sss_gsis_no)
     .input("contact_no", sql.VarChar, clientData.contact_no)
     .input("email_address", sql.VarChar, clientData.email_address)
