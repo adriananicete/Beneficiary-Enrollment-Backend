@@ -1,5 +1,7 @@
+import config from "../config/env.js";
+
 export const cookieOptions = {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: config.nodeEnv === 'production',
     sameSite: 'Strict'
 }

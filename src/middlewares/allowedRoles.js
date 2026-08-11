@@ -1,6 +1,6 @@
 export const allowedRoles = (...roles) => {
   return (req, res, next) => {
-    const { role_name } = req.user;
+    const role_name = req.user?.name;
 
     if(!role_name) return res.status(401).json({error: 'Unauthorized'})
 
