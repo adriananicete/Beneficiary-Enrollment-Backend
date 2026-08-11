@@ -17,25 +17,23 @@ const bindClientFields = (request, clientData) => {
     .input("sss_gsis_no", sql.VarChar(30), clientData.sss_gsis_no)
     .input("contact_no", sql.VarChar(30), clientData.contact_no)
     .input("email_address", sql.VarChar(150), clientData.email_address)
+    .input("occupation", sql.VarChar(150), clientData.occupation)
     .input("source_of_income", sql.VarChar(150), clientData.source_of_income)
-    .input("signature_path", sql.NVarChar(500), clientData.signature_path ?? "") // pansamantala hangga't hindi ibinabalik ng GET SPs ang signature_path
+    .input("signature_path", sql.NVarChar(500), clientData.signature_path ?? "")
 };
 
 const insertClient = async (pool, clientData) => {
   const request = pool.request();
   const result = await bindClientFields(request, clientData)
-    .input("classification", sql.VarChar(150), clientData.occupation)
     .input("created_by", sql.VarChar(50), clientData.created_by)
     .output("client_id", sql.BigInt)
     .execute("usp_ins_client");
-
   return result.output.client_id;
 };
 
 const updateClient = async (pool, clientData) => {
   const request = pool.request();
   await bindClientFields(request, clientData)
-    .input("occupation", sql.VarChar(150), clientData.occupation)
     .input("client_id", sql.BigInt, clientData.client_id)
     .input("modified_by", sql.VarChar(50), clientData.modified_by)
     .execute("usp_upd_client");
