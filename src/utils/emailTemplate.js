@@ -92,7 +92,7 @@ export const emailTemplate = ({
           <p style="margin: 20px 0; font-size: 16px">
             Please
             <a
-              href="${loginUrl}"
+              href="${loginUrl}/login"
               target="_blank"
               style="color: #3498db; text-decoration: none; font-style: oblique;"
               >login</a
