@@ -6,27 +6,31 @@ import ApplicationModel from "../models/applicationModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AgreementModel from "../models/agreementModel.js";
 import UserModel from "../models/userModel.js";
-import ReferenceModel from "../models/referenceModel.js"
+import ReferenceModel from "../models/referenceModel.js";
 import bcrypt from "bcrypt";
 import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
 import { AppError } from "../utils/AppError.js";
 import crypto from "crypto";
 import { validateCoverage } from "../utils/validateCoverage.js";
-import config from "../config/env.js"
+import config from "../config/env.js";
 
 const createEnrollment = async (enrollmentData) => {
   const pool = await poolPromise;
 
   const employers = await ReferenceModel.getEmployers(pool);
 
-  const employerSet = new Set(employers.map(r => String(r.employer_id)));
-  if(!employerSet.has(String(enrollmentData.employer_id))) throw new AppError('Invalid or inactive employer', 400);
+  const employerSet = new Set(employers.map((r) => String(r.employer_id)));
+  if (!employerSet.has(String(enrollmentData.employer_id)))
+    throw new AppError("Invalid or inactive employer", 400);
 
   const classification = await ReferenceModel.getEmployeeClassifications(pool);
-  
-  const classificationSet = new Set(classification.map(c => String(c.classification_id)));
-  if(!classificationSet.has(String(enrollmentData.classification_id))) throw new AppError('Invalid or inactive classification', 400);
+
+  const classificationSet = new Set(
+    classification.map((c) => String(c.classification_id)),
+  );
+  if (!classificationSet.has(String(enrollmentData.classification_id)))
+    throw new AppError("Invalid or inactive classification", 400);
 
   const userNameExists = await UserModel.checkUsernameExists(
     pool,
@@ -118,7 +122,11 @@ const createEnrollment = async (enrollmentData) => {
         loginUrl: `${config.appUrl}/employee/login`,
       });
     } catch (error) {
-      console.log(error);
+      console.error("Confirmation email failed:", {
+        client_id: clientId,
+        email: enrollmentData.email_address,
+        error,
+      });
     }
 
     return { clientId, enrollmentId };
@@ -167,12 +175,20 @@ const updateEnrollment = async (userId, enrollmentData) => {
     }
 
     const submittedIds = new Set(
-        enrollmentData.beneficiaries.map((b) => String(b.beneficiary_id)),
+      enrollmentData.beneficiaries.map((b) => String(b.beneficiary_id)),
+    );
+
+    if (submittedIds.size !== enrollmentData.beneficiaries.length)
+      throw new AppError(
+        "Duplicate beneficiary is not allowed in the same update.",
+        400,
       );
 
-      if(submittedIds.size !== enrollmentData.beneficiaries.length) throw new AppError('Duplicate beneficiary is not allowed in the same update.', 400);
-
-      if(submittedIds.size !== validBeneficiariesIds.size) throw new AppError('The update must include all existing beneficiaries.', 400)
+    if (submittedIds.size !== validBeneficiariesIds.size)
+      throw new AppError(
+        "The update must include all existing beneficiaries.",
+        400,
+      );
   }
 
   const transaction = new sql.Transaction(pool);
