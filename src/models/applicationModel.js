@@ -9,7 +9,10 @@ const insertApplication = async (pool, applicationData) => {
     .output('enrollment_id', sql.BigInt)
     .execute('usp_ins_insurance_enrollment');
 
-    return result.output.enrollment_id
+    return {
+        enrollmentId: result.output.enrollment_id,
+        policyNo: result.recordset[0].policyNo
+    }
 }
 
 export default {
