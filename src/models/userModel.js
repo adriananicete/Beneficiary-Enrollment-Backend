@@ -9,6 +9,7 @@ const createUser = async (pool, userData) => {
     .input('us01_last_name', sql.VarChar, userData.us01_last_name)
     .input('us01_email_address', sql.VarChar, userData.us01_email_address)
     .input('us01_created_by', sql.VarChar, userData.us01_created_by)
+    .input("us01_must_change_password", sql.Bit, userData.us01_must_change_password)
     .input('client_id', sql.BigInt, userData.client_id)
     .output('us01_user_id', sql.BigInt)
     .execute('sec.us01_usp_ins_users')

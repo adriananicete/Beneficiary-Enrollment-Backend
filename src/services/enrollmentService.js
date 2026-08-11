@@ -99,6 +99,7 @@ const createEnrollment = async (enrollmentData) => {
       us01_first_name: enrollmentData.first_name,
       us01_middle_name: enrollmentData.middle_name,
       us01_last_name: enrollmentData.last_name,
+      us01_must_change_password: 1,
       us01_email_address: enrollmentData.email_address,
       client_id: clientId,
       us01_created_by: "system",
