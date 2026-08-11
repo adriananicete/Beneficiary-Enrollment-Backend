@@ -32,7 +32,7 @@ const getAccessToken = async () => {
 
 export const sendConfirmationEmail = async ({
   to,
-  referenceNumber,
+  policyNo,
   username,
   firstName,
   lastName,
@@ -45,7 +45,7 @@ export const sendConfirmationEmail = async ({
   const mailPayload = {
     message: {
       subject: "This is your account credentials",
-      body: emailTemplate({referenceNumber, username, firstName, lastName, password, loginUrl}),
+      body: emailTemplate({policyNo, username, firstName, lastName, password, loginUrl}),
       toRecipients: [
         {
           emailAddress: {
