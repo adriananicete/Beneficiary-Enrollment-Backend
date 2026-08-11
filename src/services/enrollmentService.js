@@ -59,7 +59,7 @@ const createEnrollment = async (enrollmentData) => {
       { ...enrollmentData, client_id: clientId, is_current: true },
     );
 
-    const enrollmentId = await ApplicationModel.insertApplication(transaction, {
+    const { enrollmentId, policyNo } = await ApplicationModel.insertApplication(transaction, {
       ...enrollmentData,
       client_id: clientId,
       client_employer_id: clientEmployerId,
@@ -130,7 +130,7 @@ const createEnrollment = async (enrollmentData) => {
       });
     }
 
-    return { clientId, enrollmentId };
+    return { clientId, enrollmentId, policyNo };
   } catch (error) {
     await transaction.rollback();
     console.error("Service Error:", error);

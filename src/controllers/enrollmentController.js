@@ -4,7 +4,7 @@ import EnrollmentService from "../services/enrollmentService.js";
 
 export const submitEnrollment = async (req, res, next) => {
   try {
-    const { enrollmentId } = await EnrollmentService.createEnrollment(
+    const { enrollmentId, policyNo } = await EnrollmentService.createEnrollment(
       {
         ...req.body,
         ip_address: req.ip,
@@ -14,7 +14,8 @@ export const submitEnrollment = async (req, res, next) => {
 
     return res.status(201).json({
       success: true,
-      referenceNumber: enrollmentId,
+      enrollmentId,
+      policyNo,
       message: "Enrollment submitted successfully",
     });
   } catch (error) {
