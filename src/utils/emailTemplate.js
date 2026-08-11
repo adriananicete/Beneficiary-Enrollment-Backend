@@ -1,7 +1,7 @@
 
 
 export const emailTemplate = ({
-  referenceNumber,
+  policyNo,
   username,
   firstName,
   lastName,
@@ -11,7 +11,7 @@ export const emailTemplate = ({
   return {
     contentType: "HTML",
     content: `
-    <!doctype html>
+   <!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -24,7 +24,6 @@ export const emailTemplate = ({
       padding: 0;
       box-sizing: border-box;
       font-family: &quot;Segoe UI&quot;, Tahoma, Geneva, Verdana, sans-serif;
-      background: #f8f9fa;
       color: #333;
     "
   >
@@ -68,21 +67,23 @@ export const emailTemplate = ({
             style="
               text-align: left;
               border-radius: 10px;
+              background-color: #daf2e6;
+              padding: 10px;
             "
           >
             <h2
               style="
                 margin: 0;
-                font-size: 18px;
+                font-size: 16px;
                 font-weight: bold;
               "
             >
-              Welcome ${firstName} ${lastName}
+              Policy Number: ${policyNo}
             </h2>
           </div>
-
+          
           <p style="font-size: 16px;">
-            This is your temporary account:
+            Hi ${firstName} this is your temporary account:
           </p>
 
           <p style="text-align: center; border-radius: 5px; border: 1px solid #4caf50; padding: 20px 0; font-size: 16px">
@@ -92,7 +93,7 @@ export const emailTemplate = ({
           <p style="margin: 20px 0; font-size: 16px">
             Please
             <a
-              href="${loginUrl}/login"
+              href="${loginUrl}"
               target="_blank"
               style="color: #3498db; text-decoration: none; font-style: oblique;"
               >login</a
@@ -118,7 +119,6 @@ export const emailTemplate = ({
       <tr>
         <td
           style="
-            background: #f8f9fa;
             text-align: center;
             padding: 20px;
             border-top: 1px solid #e9ecef;
