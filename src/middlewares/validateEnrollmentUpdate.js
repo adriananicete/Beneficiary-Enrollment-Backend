@@ -19,7 +19,7 @@ export const validateEnrollmentUpdate = (req, res, next) => {
     "weight",
   ];
 
-  const presentFields = ["middle_name", "suffix"];
+  const presentFields = ["middle_name", "suffix", "signature_path"];
   for(let field of presentFields) {
     if(req.body[field] === undefined) {
       return res.status(400).json({ error: `${field} must be included in the update, even if empty`})
