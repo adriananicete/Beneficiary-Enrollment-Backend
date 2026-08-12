@@ -1,6 +1,7 @@
 import { poolPromise } from "../config/db.js";
 import ReferenceModel from "../models/referenceModel.js";
 import EnrollmentService from "../services/enrollmentService.js";
+import InvitationModel from '../models/invitationModel.js';
 
 export const submitEnrollment = async (req, res, next) => {
   try {
@@ -127,3 +128,23 @@ export const getBarangaysByCity = async (req, res, next) => {
     next(error);
   }
 };
+
+export const getInvitationByToken = async (req, res, next) => {
+  try {
+    const { token } = req.query;
+    if(!token) return res.status(400).json({error: 'Token is required'})
+    const pool = await poolPromise;
+
+    const invitation = await InvitationModel.getInvitationByToken(pool, token)
+    if(!invitation) return res.status(404).json({error: 'Invitation not found'});
+    if(invitation.is_valid === 0) return res.status(410).json({error: 'This invitation has expired. Please ask your HR to resend it.'});
+    if(invitation.is_enrolled === 1) return res.status(409).json({error: 'You have already submitted an enrollment'});
+
+    return res.status(200).json({
+      success: true,
+      data: invitation
+    })
+  } catch (error) {
+    next(error);
+  }
+}
