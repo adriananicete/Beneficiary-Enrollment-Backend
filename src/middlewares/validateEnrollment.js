@@ -1,14 +1,18 @@
 import { validateCoverage } from "../utils/validateCoverage.js";
+import {
+  ADDRESS_FIELD_LENGTHS,
+  BENEFICIARY_FIELD_LENGTHS,
+  CLIENT_FIELD_LENGTHS,
+  validateFieldLengths,
+} from "../utils/validateFieldLengths.js";
 
 export const validateEnrollment = (req, res, next) => {
-  const {
-    beneficiaries
-  } = req.body;
+  const { beneficiaries } = req.body;
 
   const requiredFields = [
     "employer_id",
     "employee_id_number",
-    "classification_id" ,
+    "classification_id",
     "first_name",
     "last_name",
     "address_line",
@@ -38,24 +42,41 @@ export const validateEnrollment = (req, res, next) => {
       return res.status(400).json({ error: `${i} is required` });
   }
 
-  const coverageError = validateCoverage(beneficiaries);
-  if(coverageError) return res.status(400).json({error: coverageError});
+  const clientLengthError = validateFieldLengths(
+    req.body,
+    CLIENT_FIELD_LENGTHS,
+  );
+  if (clientLengthError)
+    return res.status(400).json({ error: clientLengthError });
 
-  for (let i of beneficiaries) {
+  const addressLengthError = validateFieldLengths(
+    req.body,
+    ADDRESS_FIELD_LENGTHS,
+  );
+  if (addressLengthError)
+    return res.status(400).json({ error: addressLengthError });
+
+  const coverageError = validateCoverage(beneficiaries);
+  if (coverageError) return res.status(400).json({ error: coverageError });
+
+  for (let i = 0; i < beneficiaries.length; i++) {
     if (!i.full_name)
-      return res
-        .status(400)
-        .json({ error: "Beneficiary name is required" });
+      return res.status(400).json({ error: "Beneficiary name is required" });
     if (!i.age)
       return res.status(400).json({ error: "Beneficiary age is required" });
     if (!i.relationship)
       return res
         .status(400)
         .json({ error: "Beneficiary relationship is required" });
+    const lengthError = validateFieldLengths(
+      beneficiaries[i],
+      BENEFICIARY_FIELD_LENGTHS,
+    );
+    if (lengthError)
+      return res
+        .status(400)
+        .json({ error: `Beneficiary ${i + 1}: ${lengthError}` });
   }
 
-  
-
-  
   next();
 };
