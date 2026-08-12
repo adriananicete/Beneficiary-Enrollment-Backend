@@ -1,6 +1,7 @@
 export const validateCoverage = (beneficiaries) => {
     let total = 0;
-    if(!Array.isArray(beneficiaries) || beneficiaries.length === 0) return 'At least one beneficiary is required';
+    if(!Array.isArray(beneficiaries)) return 'Beneficiaries must be an array';
+    if(beneficiaries.length === 0) return null;
     if(beneficiaries.length > 10) return 'A maximum of 10 beneficiaries is allowed'
 
     for(let i = 0; i < beneficiaries.length; i++) {

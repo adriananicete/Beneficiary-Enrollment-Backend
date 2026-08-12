@@ -33,8 +33,16 @@ const getBeneficiariesByEnrollmentId = async (pool, enrollment_id) => {
     return result.recordset;
 }
 
+const deleteBeneficiary = async (pool, beneficiaryId, modifiedBy) => {
+    await pool.request()
+    .input('beneficiary_id', sql.BigInt, beneficiaryId)
+    .input('modified_by', sql.VarChar(50), modifiedBy)
+    .execute('usp_del_beneficiary');
+}
+
 export default {
     insertBeneficiary,
     updateBeneficiary,
+    deleteBeneficiary,
     getBeneficiariesByEnrollmentId
 }

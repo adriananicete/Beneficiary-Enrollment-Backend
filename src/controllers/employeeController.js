@@ -101,19 +101,15 @@ export const getMyEnrollment = async (req, res, next) => {
       pool,
       enrollment[0].enrollment_id,
     );
-    if (beneficiaries.length === 0)
-      return res.status(200).json({ message: "No beneficiary found" });
 
     const clientAddress = await AddressModel.getClientAddressId(
       pool,
       enrollment[0].client_id,
     );
-    if (!clientAddress)
-      return res.status(200).json({ message: "Client address not found" });
 
     return res.status(200).json({
       success: true,
-      data: { enrollment, clientAddress, beneficiaries },
+      data: { enrollment, clientAddress: clientAddress ?? null, beneficiaries },
     });
   } catch (error) {
     next(error);

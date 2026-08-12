@@ -34,8 +34,6 @@ export const validateEnrollmentUpdate = (req, res, next) => {
     const coverageError = validateCoverage(req.body.beneficiaries);
     if (coverageError) return res.status(400).json({ error: coverageError });
     for (let beneficiary of req.body.beneficiaries) {
-      if (!beneficiary.beneficiary_id)
-        return res.status(400).json({ error: "beneficiary_id is required" });
       if (!beneficiary.full_name)
         return res
           .status(400)
