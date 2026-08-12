@@ -7,5 +7,6 @@ export const sqlErrorMap = {
     50035: {statusCode: 409, message: 'Employee ID number already registered'},
     50036: {statusCode: 409, message: 'Email address already registered'},
     50037: { statusCode: 401, message: 'Invalid credentials' },
+    50073: { statusCode: 403, message: 'Only HR users can manage enrollment invitations' },
     2627: {statusCode: 409, message: 'Duplicate record'},
 }
