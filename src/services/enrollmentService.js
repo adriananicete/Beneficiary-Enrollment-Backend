@@ -59,12 +59,15 @@ const createEnrollment = async (enrollmentData) => {
       { ...enrollmentData, client_id: clientId, is_current: true },
     );
 
-    const { enrollmentId, policyNo } = await ApplicationModel.insertApplication(transaction, {
-      ...enrollmentData,
-      client_id: clientId,
-      client_employer_id: clientEmployerId,
-      created_by: "system",
-    });
+    const { enrollmentId, policyNo } = await ApplicationModel.insertApplication(
+      transaction,
+      {
+        ...enrollmentData,
+        client_id: clientId,
+        client_employer_id: clientEmployerId,
+        created_by: "system",
+      },
+    );
 
     for (let beneficiary of enrollmentData.beneficiaries) {
       await BeneficiaryModel.insertBeneficiary(transaction, {
@@ -151,12 +154,15 @@ const updateEnrollment = async (userId, enrollmentData) => {
   const validAddressIds = new Set(
     ownershipRows.map((r) => String(r.client_address_id)),
   );
+  const enrollmentId = ownershipRows[0].enrollment_id;
 
   if (enrollmentData.client_address_id) {
     if (!validAddressIds.has(String(enrollmentData.client_address_id)))
       throw new AppError("Address does not belong to this enrollment", 403);
   }
-
+  let toInsert = [];
+  let toUpdate = [];
+  let toDelete = [];
   if (enrollmentData.beneficiaries !== undefined) {
     const coverageError = validateCoverage(enrollmentData.beneficiaries);
     if (coverageError) throw new AppError(coverageError, 400);
@@ -167,7 +173,10 @@ const updateEnrollment = async (userId, enrollmentData) => {
         .map((r) => String(r.beneficiary_id)),
     );
 
-    for (let beneficiary of enrollmentData.beneficiaries) {
+    toInsert = enrollmentData.beneficiaries.filter((b) => !b.beneficiary_id);
+    toUpdate = enrollmentData.beneficiaries.filter((b) => b.beneficiary_id);
+
+    for (let beneficiary of toUpdate) {
       if (!validBeneficiariesIds.has(String(beneficiary.beneficiary_id)))
         throw new AppError(
           "Beneficiary does not belong to this enrollment",
@@ -175,21 +184,15 @@ const updateEnrollment = async (userId, enrollmentData) => {
         );
     }
 
-    const submittedIds = new Set(
-      enrollmentData.beneficiaries.map((b) => String(b.beneficiary_id)),
-    );
+    const submittedIds = new Set(toUpdate.map((b) => String(b.beneficiary_id)));
 
-    if (submittedIds.size !== enrollmentData.beneficiaries.length)
+    if (submittedIds.size !== toUpdate.length)
       throw new AppError(
         "Duplicate beneficiary is not allowed in the same update.",
         400,
       );
 
-    if (submittedIds.size !== validBeneficiariesIds.size)
-      throw new AppError(
-        "The update must include all existing beneficiaries.",
-        400,
-      );
+    toDelete = [...validBeneficiariesIds].filter((id) => !submittedIds.has(id));
   }
 
   const transaction = new sql.Transaction(pool);
@@ -208,14 +211,23 @@ const updateEnrollment = async (userId, enrollmentData) => {
       });
     }
 
-    if (
-      Array.isArray(enrollmentData.beneficiaries) &&
-      enrollmentData.beneficiaries.length > 0
-    ) {
-      for (let beneficiary of enrollmentData.beneficiaries) {
+    if (enrollmentData.beneficiaries !== undefined) {
+      for (let id of toDelete) {
+        await BeneficiaryModel.deleteBeneficiary(transaction, id, userId);
+      }
+
+      for (let beneficiary of toUpdate) {
         await BeneficiaryModel.updateBeneficiary(transaction, {
           ...beneficiary,
           modified_by: userId,
+        });
+      }
+
+      for (let beneficiary of toInsert) {
+        await BeneficiaryModel.insertBeneficiary(transaction, {
+          ...beneficiary,
+          enrollment_id: enrollmentId,
+          created_by: userId,
         });
       }
     }

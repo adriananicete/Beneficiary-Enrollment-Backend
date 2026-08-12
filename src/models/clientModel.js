@@ -79,10 +79,11 @@ const getOwnershipIds = async (pool, clientId) => {
   const result = await pool.request().input("client_id", sql.BigInt, clientId)
     .query(`SELECT 
     ca.client_address_id,
-    b.beneficiary_id
+    b.beneficiary_id,
+    ie.enrollment_id
 FROM dbo.insurance_enrollment ie
-LEFT JOIN dbo.client_address ca ON ie.client_id = ca.client_id
-LEFT JOIN dbo.beneficiaries b ON ie.enrollment_id = b.enrollment_id
+LEFT JOIN dbo.client_address ca ON ie.client_id = ca.client_id AND ca.status = 'A'
+LEFT JOIN dbo.beneficiaries b ON ie.enrollment_id = b.enrollment_id AND b.status = 'A'
 WHERE ie.client_id = @client_id AND ie.status = 'A';`);
   return result.recordset;
 };
