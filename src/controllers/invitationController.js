@@ -1,5 +1,6 @@
 import { poolPromise } from '../config/db.js';
 import InvitationModel from '../models/invitationModel.js';
+import InvitationService from '../services/invitationService.js';
 
 export const getInvitations = async (req, res, next) => {
     try {
@@ -11,6 +12,22 @@ export const getInvitations = async (req, res, next) => {
         return res.status(200).json({
             success: true,
             data: userInvitation
+        })
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const sendInvitations = async (req, res, next) => {
+    try {
+        const { user_id } = req.user;
+        const { emails } = req.body;
+
+        const results = await InvitationService.sendInvitations(user_id, emails);
+
+        return res.status(200).json({
+            success: true,
+            data: results
         })
     } catch (error) {
         next(error);

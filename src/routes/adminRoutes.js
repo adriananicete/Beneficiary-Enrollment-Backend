@@ -5,10 +5,12 @@ import { editEnrollment, exportEnrollments, getDashboardStats, getEnrollment, ge
 import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
-import { getInvitations } from '../controllers/invitationController.js';
+import { getInvitations, sendInvitations } from '../controllers/invitationController.js';
+import { validateInvitations } from '../middlewares/validateInvitations.js';
 
 const router = express.Router();
 
+router.post('/invitations', verifyToken, allowedRoles(ADMIN), validateInvitations, sendInvitations)
 router.get('/invitations', verifyToken, allowedRoles(ADMIN), getInvitations);
 router.get('/enrollments', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getEnrollment);
 router.get('/enrollments/export', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), exportEnrollments);
