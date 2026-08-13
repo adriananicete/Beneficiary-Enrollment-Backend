@@ -34,11 +34,19 @@ const createInvitation = async (pool, invitationData) => {
     .execute('usp_ins_enrollment_invitation')
 
     return result.output.invitation_id
+};
+
+const revokeInvitation = async (pool, invitationId, modifiedBy) => {
+    const result = await pool.request()
+    .input('invitation_id', sql.BigInt, invitationId)
+    .input('modified_by', sql.VarChar(50), modifiedBy)
+    .execute('usp_del_enrollment_invitation')
 }
 
 export default {
     getInvitationByToken,
     getInvitationsByUser,
     getEmployersByUser,
-    createInvitation
+    createInvitation,
+    revokeInvitation
 }

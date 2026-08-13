@@ -59,7 +59,19 @@ const sendInvitations = async (userId, emails) => {
   return results;
 };
 
+const revokeInvitation = async (userId, invitationId) => {
+  const pool = await poolPromise;
+
+  const invitations = await InvitationModel.getInvitationsByUser(pool, userId);
+  const ownedIds = new Set(invitations.map(i => String(i.invitation_id)))
+  if(!ownedIds.has(String(invitationId)))
+    throw new AppError("Invitation does not belong to your company", 403);
+
+  await InvitationModel.revokeInvitation(pool, invitationId, userId)
+}
+
 
 export default {
     sendInvitations,
+    revokeInvitation
 }
