@@ -31,7 +31,7 @@ const sendInvitations = async (userId, emails) => {
         await sendInvitationEmail({
           to: email,
           companyName: employer.company_name,
-          enrollmentUrl: `${config.appUrl}/enrollment?token=${token}`,
+          enrollmentUrl: `${config.appUrl}?token=${token}`,
         });
 
         results.push({ email, status: "sent", invitationId });

@@ -123,7 +123,7 @@ const createEnrollment = async (enrollmentData) => {
         lastName: enrollmentData.last_name,
         username: enrollmentData.employee_id_number,
         password: tempPassword,
-        loginUrl: `${config.appUrl}/login`,
+        loginUrl: `${config.appUrl}/employee-login`,
       });
     } catch (error) {
       console.error("Confirmation email failed:", {
