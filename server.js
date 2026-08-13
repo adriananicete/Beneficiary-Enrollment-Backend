@@ -38,4 +38,4 @@ app.use('/api/employee', employeeRoutes);
 
 app.use(errorHandler);
 
-app.listen(config.PORT, () => console.log(`Server is running on port ${config.PORT}`));
+app.listen(config.PORT, "0.0.0.0", () => console.log(`Server is running on port ${config.PORT}`));

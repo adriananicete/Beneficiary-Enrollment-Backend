@@ -93,7 +93,6 @@ export const invitationEmailTemplate = ({ companyName, enrollmentUrl }) => {
                   width: 100%;
                   padding: 12px 0;
                   border-radius: 5px;
-                  background: #2c3b7d;
                   background: linear-gradient(90deg, #2c3b7d 0%, #409965 100%);
                 "
               >
