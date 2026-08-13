@@ -1,5 +1,6 @@
 import config from "../config/env.js";
 import { emailTemplate } from "../utils/emailTemplate.js";
+import { invitationEmailTemplate } from "../utils/invitationEmailTemplate.js";
 
 // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
@@ -73,3 +74,39 @@ export const sendConfirmationEmail = async ({
     );
   }
 };
+
+export const sendInvitationEmail = async ({ to, companyName, enrollmentUrl }) => {
+  const accessToken = await getAccessToken();
+  const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${config.smtp.user}/sendMail`;
+
+  const mailPayload = {
+    message: {
+      subject: `You're invited to enroll — ${companyName}`,
+      body: invitationEmailTemplate({companyName, enrollmentUrl}),
+      toRecipients: [
+        {
+          emailAddress: {
+            address: to,
+          },
+        },
+      ],
+    },
+    saveToSentItems: "false",
+  };
+
+  const response = await fetch(sendMailUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(mailPayload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `MS Graph sendMail failed: ${response.status} ${errorText}`,
+    );
+  }
+}

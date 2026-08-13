@@ -60,11 +60,11 @@ export const validateEnrollment = (req, res, next) => {
   if (coverageError) return res.status(400).json({ error: coverageError });
 
   for (let i = 0; i < beneficiaries.length; i++) {
-    if (!i.full_name)
+    if (!beneficiaries[i].full_name)
       return res.status(400).json({ error: "Beneficiary name is required" });
-    if (!i.age)
+    if (!beneficiaries[i].age)
       return res.status(400).json({ error: "Beneficiary age is required" });
-    if (!i.relationship)
+    if (!beneficiaries[i].relationship)
       return res
         .status(400)
         .json({ error: "Beneficiary relationship is required" });
