@@ -48,4 +48,22 @@ export const revokeInvitation = async (req, res, next) => {
     } catch (error) {
         next(error)
     }
+};
+
+export const resendInvitation = async (req, res, next) => {
+    try {
+        const { user_id } = req.user;
+        const { invitation_id } = req.params;
+
+        const resend = await InvitationService.resendInvitation(user_id, invitation_id);
+
+        const { status } = resend;
+
+        return res.status(200).json({
+            success: true,
+            status: status
+        })
+    } catch (error) {
+        next(error);
+    }
 }

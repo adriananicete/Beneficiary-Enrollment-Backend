@@ -68,10 +68,35 @@ const revokeInvitation = async (userId, invitationId) => {
     throw new AppError("Invitation does not belong to your company", 403);
 
   await InvitationModel.revokeInvitation(pool, invitationId, userId)
-}
+};
+
+const resendInvitation = async (userId, invitationId) => {
+  const pool = await poolPromise;
+  const invitations = await InvitationModel.getInvitationsByUser(pool, userId);
+  const invitation = invitations.find(i => String(i.invitation_id) === String(invitationId));
+  if(!invitation) throw new AppError('Invitation does not belong to your company', 403);
+
+  if(invitation.is_enrolled === 1) throw new AppError('This employee has already submitted an enrollment', 409);
+
+  await InvitationModel.resendInvitation(pool, invitationId, userId);
+
+  try {
+        await sendInvitationEmail({
+          to: invitation.email_address,
+          companyName: invitation.company_name,
+          enrollmentUrl: `${config.appUrl}?token=${invitation.token}`,
+        });
+
+        return { status: "sent"}
+      } catch (error) {
+        console.error("Invitation resend failed:", { email: invitation.email_address, invitationId });
+        return { status: "email_failed"}
+      }
+};
 
 
 export default {
     sendInvitations,
-    revokeInvitation
+    revokeInvitation,
+    resendInvitation
 }
