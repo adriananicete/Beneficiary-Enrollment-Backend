@@ -32,4 +32,20 @@ export const sendInvitations = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
+};
+
+export const revokeInvitation = async (req, res, next) => {
+    try {
+        const { user_id } = req.user;
+        const { invitation_id } = req.params;
+
+        await InvitationService.revokeInvitation(user_id, invitation_id);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Invitation revoked successfully'
+        })
+    } catch (error) {
+        next(error)
+    }
 }
