@@ -1,5 +1,5 @@
 import express from 'express';
-import { getBarangays, getBarangaysByCity, getCitiesByProvince, getEmployeeClassifications, getEmployers, getInvitationByToken, getProvincesByRegion, getRegions, submitEnrollment } from '../controllers/enrollmentController.js';
+import { getBarangaysByCity, getCitiesByProvince, getEmployeeClassifications, getEmployers, getInvitationByToken, getProvincesByRegion, getRegions, submitEnrollment } from '../controllers/enrollmentController.js';
 import { validateEnrollment } from '../middlewares/validateEnrollment.js';
 import { mediumLimiter } from '../middlewares/rateLimiter.js';
 
@@ -8,7 +8,6 @@ const router = express.Router();
 router.get('/invitation', mediumLimiter, getInvitationByToken);
 router.get('/classifications', getEmployeeClassifications);
 router.get('/employers', getEmployers);
-router.get('/barangays', getBarangays);
 router.get('/regions', getRegions);
 router.get('/regions/:region_code/provinces', getProvincesByRegion);
 router.get('/provinces/:province_code/cities', getCitiesByProvince);

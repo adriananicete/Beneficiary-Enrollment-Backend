@@ -1,12 +1,5 @@
 import { sql } from "../config/db.js";
 
-export const getBarangays = async (pool) => {
-    const result = await pool.request()
-    .execute('usp_sel_barangays');
-
-    return result.recordset;
-};
-
 export const getEmployeeClassifications = async (pool) => {
     const result = await pool.request()
     .execute('usp_sel_employee_classifications');
@@ -53,7 +46,6 @@ export const getBarangaysByCity = async (pool, cityCode) => {
 };
 
 export default {
-    getBarangays,
     getEmployeeClassifications,
     getEmployers,
     getRegions,

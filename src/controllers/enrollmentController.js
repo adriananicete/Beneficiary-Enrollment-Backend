@@ -2,6 +2,9 @@ import { poolPromise } from "../config/db.js";
 import ReferenceModel from "../models/referenceModel.js";
 import EnrollmentService from "../services/enrollmentService.js";
 import InvitationModel from '../models/invitationModel.js';
+import UserModel from "../models/userModel.js";
+import { AppError } from "../utils/AppError.js";
+import AgreementModel from "../models/agreementModel.js"
 
 export const submitEnrollment = async (req, res, next) => {
   try {
@@ -19,19 +22,6 @@ export const submitEnrollment = async (req, res, next) => {
       policyNo,
       message: "Enrollment submitted successfully",
     });
-  } catch (error) {
-    next(error);
-  }
-};
-
-export const getBarangays = async (req, res, next) => {
-  try {
-    const pool = await poolPromise;
-    const barangays = await ReferenceModel.getBarangays(pool);
-    return res.status(200).json({
-      success: true,
-      data: barangays
-    })
   } catch (error) {
     next(error);
   }
@@ -144,6 +134,25 @@ export const getInvitationByToken = async (req, res, next) => {
       success: true,
       data: invitation
     })
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getMyAgreements = async (req, res, next) => {
+  try {
+    const { user_id } = req.user;
+    const pool = await poolPromise;
+
+    const user = await UserModel.findUserById(pool, user_id);
+    if(!user?.client_id) throw new AppError('No enrollment found for this account', 404);
+
+    const agreements = await AgreementModel.getClientAgreements(pool, user.client_id);
+
+    return res.status(200).json({
+      success: true,
+      data: agreements
+    });
   } catch (error) {
     next(error);
   }
