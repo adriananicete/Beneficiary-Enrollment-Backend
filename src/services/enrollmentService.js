@@ -7,6 +7,7 @@ import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AgreementModel from "../models/agreementModel.js";
 import UserModel from "../models/userModel.js";
 import ReferenceModel from "../models/referenceModel.js";
+import InvitationModel from "../models/invitationModel.js";
 import bcrypt from "bcrypt";
 import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
@@ -17,6 +18,14 @@ import config from "../config/env.js";
 
 const createEnrollment = async (enrollmentData) => {
   const pool = await poolPromise;
+
+  const invitation = await InvitationModel.getInvitationByToken(pool, enrollmentData.token)
+  if(!invitation) throw new AppError("Invitation not found", 404);
+  if(invitation.is_valid === 0) throw new AppError("This invitation has expired. Please ask your HR to resend it.", 410);
+  if(invitation.is_enrolled === 1) throw new AppError("You have already submitted an enrollment", 409);
+
+  enrollmentData.employer_id = invitation.employer_id;
+  enrollmentData.email_address = invitation.email_address;
 
   const employers = await ReferenceModel.getEmployers(pool);
 

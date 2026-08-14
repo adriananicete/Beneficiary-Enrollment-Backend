@@ -10,7 +10,6 @@ export const validateEnrollment = (req, res, next) => {
   const { beneficiaries } = req.body;
 
   const requiredFields = [
-    "employer_id",
     "employee_id_number",
     "classification_id",
     "first_name",
@@ -30,11 +29,11 @@ export const validateEnrollment = (req, res, next) => {
     "sss_gsis_no",
     "contact_no",
     "office_no",
-    "email_address",
     "occupation",
     "source_of_income",
     "consent_privacy",
     "consent_terms",
+    "token"
   ];
 
   for (let i of requiredFields) {
