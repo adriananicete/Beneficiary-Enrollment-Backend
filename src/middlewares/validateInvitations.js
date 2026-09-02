@@ -1,3 +1,4 @@
+import { AppError } from "../utils/AppError.js";
 import { MAX_INVITATION_EMAILS } from "../utils/partitionEmails.js";
 
 // Only the failures that make the request itself unusable belong here. Bad rows
@@ -7,17 +8,18 @@ export const validateInvitations = (req, res, next) => {
   const { emails } = req.body;
 
   if (!Array.isArray(emails))
-    return res.status(400).json({ error: "emails must be an array" });
+    return next(new AppError("emails must be an array", 400));
 
   if (emails.length === 0)
-    return res
-      .status(400)
-      .json({ error: "At least one email address is required" });
+    return next(new AppError("At least one email address is required", 400));
 
   if (emails.length > MAX_INVITATION_EMAILS)
-    return res.status(400).json({
-      error: `A maximum of ${MAX_INVITATION_EMAILS} email addresses is allowed`,
-    });
+    return next(
+      new AppError(
+        `A maximum of ${MAX_INVITATION_EMAILS} email addresses is allowed`,
+        400,
+      ),
+    );
 
   next();
 };

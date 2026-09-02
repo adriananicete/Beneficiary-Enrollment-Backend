@@ -139,7 +139,7 @@ export const exportEnrollments = async (req, res) => {
   //   return res.status(500).json({ error: error.message });
   // }
 
-  return res.status(501).json({ message: "Not implemented yet" });
+  return res.status(501).json({ success: false, message: "Not implemented yet" });
 };
 
 export const getDashboardStats = async (req, res) => {
@@ -163,7 +163,7 @@ export const getDashboardStats = async (req, res) => {
   //   return res.status(500).json({ error: error.message });
   // }
 
-  return res.status(501).json({ message: "Not implemented yet" });
+  return res.status(501).json({ success: false, message: "Not implemented yet" });
 };
 
 export const getEnrollmentAgreements = async (req, res, next) => {

@@ -9,6 +9,7 @@ import {
 } from "../utils/constants.js";
 import { poolPromise } from "../config/db.js";
 import { cookieOptions } from "../utils/cookieConfig.js";
+import { AppError } from "../utils/AppError.js";
 
 export const login = async (req, res, next) => {
   try {
@@ -16,25 +17,25 @@ export const login = async (req, res, next) => {
 
     const { username, password, rememberMe } = req.body;
     if (!username || !password)
-      return res.status(400).json({ error: "All fields required" });
+      throw new AppError("All fields required", 400);
 
     const user = await UserModel.findUserByUsername(pool, username);
-    if (!user) return res.status(401).json({ error: "Invalid Credentials" });
+    if (!user) throw new AppError("Invalid Credentials", 401);
 
     const isPasswordMatched = await bcrypt.compare(
       password,
       user.us01_password,
     );
-    if (!isPasswordMatched)
-      return res.status(401).json({ error: "Invalid Credentials" });
+    if (!isPasswordMatched) throw new AppError("Invalid Credentials", 401);
 
     if (user.us02_role_name === EMPLOYEE)
-      return res.status(403).json({
-        error: "Employees must use the employee login",
-      });
+      throw new AppError("Employees must use the employee login", 403);
 
     if (user.us01_must_change_password)
-      return res.status(200).json({ mustChangePassword: true });
+      return res.status(200).json({
+        success: true,
+        data: { mustChangePassword: true },
+      });
 
     const token = jwt.sign(
       {

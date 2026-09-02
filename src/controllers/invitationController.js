@@ -91,11 +91,9 @@ export const resendInvitation = async (req, res, next) => {
 
         const resend = await InvitationService.resendInvitation(user_id, invitation_id);
 
-        const { status } = resend;
-
         return res.status(200).json({
             success: true,
-            status: status
+            data: { status: resend.status }
         })
     } catch (error) {
         next(error);

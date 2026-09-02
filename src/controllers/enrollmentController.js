@@ -18,8 +18,7 @@ export const submitEnrollment = async (req, res, next) => {
 
     return res.status(201).json({
       success: true,
-      enrollmentId,
-      policyNo,
+      data: { enrollmentId, policyNo },
       message: "Enrollment submitted successfully",
     });
   } catch (error) {
@@ -122,13 +121,13 @@ export const getBarangaysByCity = async (req, res, next) => {
 export const getInvitationByToken = async (req, res, next) => {
   try {
     const { token } = req.query;
-    if(!token) return res.status(400).json({error: 'Token is required'})
+    if(!token) throw new AppError('Token is required', 400);
     const pool = await poolPromise;
 
     const invitation = await InvitationModel.getInvitationByToken(pool, token)
-    if(!invitation) return res.status(404).json({error: 'Invitation not found'});
-    if(invitation.is_valid === 0) return res.status(410).json({error: 'This invitation has expired. Please ask your HR to resend it.'});
-    if(invitation.is_enrolled === 1) return res.status(409).json({error: 'You have already submitted an enrollment'});
+    if(!invitation) throw new AppError('Invitation not found', 404);
+    if(invitation.is_valid === 0) throw new AppError('This invitation has expired. Please ask your HR to resend it.', 410);
+    if(invitation.is_enrolled === 1) throw new AppError('You have already submitted an enrollment', 409);
 
     return res.status(200).json({
       success: true,
