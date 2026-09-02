@@ -42,6 +42,22 @@ export const bulkInvitationLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Polling runs every ~2s while a job is in flight, so a 15-minute window can
+// legitimately hold around 450 requests. The ceiling sits above that rather
+// than throttling a client that is behaving correctly.
+export const jobStatusLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 2000 : 600,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many status requests, please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export const authIpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: isDev ? 300 : 30,  // 300 sa dev, 30 sa prod
