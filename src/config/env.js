@@ -28,6 +28,10 @@ for (let i of envVar) {
 
 const config = {
   PORT: process.env.PORT || 7000,
+  // How many invitation emails are in flight at once. Microsoft Graph limits
+  // concurrent sends per mailbox, so this is deliberately small. Optional, and
+  // kept out of the required list above so existing .env files keep working.
+  invitationConcurrency: Number(process.env.INVITATION_CONCURRENCY) || 4,
   db: {
     server: process.env.DB_SERVER,
     port: Number(process.env.DB_PORT),

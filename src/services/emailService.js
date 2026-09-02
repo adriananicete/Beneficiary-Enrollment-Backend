@@ -64,6 +64,23 @@ const getAccessToken = () => {
   return tokenRequest;
 };
 
+// Carries the HTTP status and any Retry-After on the error itself. Without it a
+// caller can only read the status out of the message string, which is no basis
+// for deciding whether a failure is worth retrying.
+const graphSendError = (response, errorText) => {
+  const error = new Error(
+    `MS Graph sendMail failed: ${response.status} ${errorText}`,
+  );
+
+  error.status = response.status;
+
+  const retryAfter = Number(response.headers.get("retry-after"));
+  error.retryAfterSeconds =
+    Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null;
+
+  return error;
+};
+
 export const sendConfirmationEmail = async ({
   to,
   policyNo,
@@ -102,9 +119,7 @@ export const sendConfirmationEmail = async ({
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(
-      `MS Graph sendMail failed: ${response.status} ${errorText}`,
-    );
+    throw graphSendError(response, errorText);
   }
 };
 
@@ -138,8 +153,6 @@ export const sendInvitationEmail = async ({ to, companyName, enrollmentUrl }) =>
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(
-      `MS Graph sendMail failed: ${response.status} ${errorText}`,
-    );
+    throw graphSendError(response, errorText);
   }
 }
