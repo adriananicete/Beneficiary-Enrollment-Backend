@@ -50,11 +50,21 @@ const resendInvitation = async (pool, invitationId, modifiedBy) => {
     .execute('usp_upd_enrollment_invitation_resend')
 };
 
+const updateSendStatus = async (pool, invitationId, sendStatus, lastSendError, modifiedBy) => {
+    const result = await pool.request()
+    .input('invitation_id', sql.BigInt, invitationId)
+    .input('send_status', sql.VarChar(20), sendStatus)
+    .input('last_send_error', sql.VarChar(500), lastSendError)
+    .input('modified_by', sql.VarChar(50), modifiedBy)
+    .execute('usp_upd_enrollment_invitation_send_status')
+};
+
 export default {
     getInvitationByToken,
     getInvitationsByUser,
     getEmployersByUser,
     createInvitation,
     revokeInvitation,
-    resendInvitation
+    resendInvitation,
+    updateSendStatus
 }
