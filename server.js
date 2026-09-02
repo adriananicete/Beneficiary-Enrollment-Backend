@@ -18,7 +18,9 @@ app.use(cors({
     origin: config.corsOrigin,
     credentials: true
 }));
-app.use(express.json());
+// A 1,000-address invitation upload is roughly 33KB. The default is 100kb, which
+// would hold, but the limit should be deliberate rather than inherited.
+app.use(express.json({ limit: '256kb' }));
 app.use((req, res, next) => {
     if (req.body === undefined) req.body = {};
 

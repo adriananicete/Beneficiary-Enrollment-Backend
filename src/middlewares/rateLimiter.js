@@ -26,6 +26,22 @@ export const mediumLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Keyed on the HR user rather than the IP. A 1,000-address upload is a rare,
+// deliberate act, and keying on the user survives a reverse proxy collapsing
+// every caller into one address.
+export const bulkInvitationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? 100 : 10, // 100 sa dev, 10 sa prod
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many invitation uploads, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 export const authIpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: isDev ? 300 : 30,  // 300 sa dev, 30 sa prod

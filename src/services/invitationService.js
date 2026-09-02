@@ -3,6 +3,7 @@ import { poolPromise } from "../config/db.js";
 import InvitationModel from "../models/invitationModel.js";
 import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
+import { partitionEmails } from "../utils/partitionEmails.js";
 import config from "../config/env.js";
 
 const sendInvitations = async (userId, emails) => {
@@ -14,9 +15,14 @@ const sendInvitations = async (userId, emails) => {
 
   const employer = employers[0];
 
-  const results = [];
+  const { valid, rejected } = partitionEmails(emails);
 
-  for (let email of emails) {
+  // Rejected rows are known without any I/O, so they lead the results. This is
+  // also the order the async version will produce them in: pre-flight rejects
+  // returned immediately, sends reported as they complete.
+  const results = [...rejected];
+
+  for (let email of valid) {
     const token = crypto.randomBytes(32).toString("hex");
 
     try {
