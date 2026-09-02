@@ -4,7 +4,17 @@ import { invitationEmailTemplate } from "../utils/invitationEmailTemplate.js";
 
 // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
-const getAccessToken = async () => {
+// Refresh once fewer than this many ms remain on the token.
+const TOKEN_REFRESH_MARGIN_MS = 60 * 1000;
+// While a token request is in flight, hold other callers on the same promise
+// for this long instead of firing their own request.
+const TOKEN_INFLIGHT_HOLD_MS = 60 * 1000;
+
+// Promise resolving to the current access token, shared by every sender.
+let tokenRequest = null;
+let tokenExpiresAt = 0;
+
+const fetchAccessToken = async () => {
   const url = `https://login.microsoftonline.com/${config.smtp.tenantId}/oauth2/v2.0/token`;
   const params = new URLSearchParams();
   params.append("client_id", config.smtp.clientId);
@@ -28,7 +38,30 @@ const getAccessToken = async () => {
   }
 
   const data = await response.json();
-  return data.access_token;
+  return { token: data.access_token, expiresIn: Number(data.expires_in) };
+};
+
+const getAccessToken = () => {
+  // The check and both assignments run synchronously, so callers arriving
+  // together share one request instead of each starting their own.
+  if (!tokenRequest || Date.now() >= tokenExpiresAt) {
+    tokenExpiresAt = Date.now() + TOKEN_INFLIGHT_HOLD_MS;
+
+    tokenRequest = fetchAccessToken()
+      .then(({ token, expiresIn }) => {
+        tokenExpiresAt = Date.now() + expiresIn * 1000 - TOKEN_REFRESH_MARGIN_MS;
+        console.log("MS Graph token refreshed");
+        return token;
+      })
+      .catch((error) => {
+        // Never leave a rejected promise cached, or every later call replays it.
+        tokenRequest = null;
+        tokenExpiresAt = 0;
+        throw error;
+      });
+  }
+
+  return tokenRequest;
 };
 
 export const sendConfirmationEmail = async ({
