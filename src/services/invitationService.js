@@ -59,6 +59,34 @@ const sendInvitations = async (userId, emails) => {
   return results;
 };
 
+// The SP caps last_send_error at 500 characters; Graph errors carry the whole
+// response body and can run longer than that.
+const MAX_SEND_ERROR_LENGTH = 500;
+
+// Recording the outcome must never turn a delivered email into a failed
+// request, so this swallows its own errors and only logs them.
+const recordSendStatus = async (pool, invitationId, sendStatus, errorMessage, userId) => {
+  const lastSendError = errorMessage
+    ? String(errorMessage).slice(0, MAX_SEND_ERROR_LENGTH)
+    : null;
+
+  try {
+    await InvitationModel.updateSendStatus(
+      pool,
+      invitationId,
+      sendStatus,
+      lastSendError,
+      userId,
+    );
+  } catch (error) {
+    console.error("Failed to record invitation send status:", {
+      invitationId,
+      sendStatus,
+      error,
+    });
+  }
+};
+
 const revokeInvitation = async (userId, invitationId) => {
   const pool = await poolPromise;
 
@@ -87,9 +115,14 @@ const resendInvitation = async (userId, invitationId) => {
           enrollmentUrl: `${config.appUrl}?token=${invitation.token}`,
         });
 
+        await recordSendStatus(pool, invitationId, "sent", null, userId);
+
         return { status: "sent"}
       } catch (error) {
-        console.error("Invitation resend failed:", { email: invitation.email_address, invitationId });
+        console.error("Invitation resend failed:", { email: invitation.email_address, invitationId, error });
+
+        await recordSendStatus(pool, invitationId, "failed", error?.message, userId);
+
         return { status: "email_failed"}
       }
 };
