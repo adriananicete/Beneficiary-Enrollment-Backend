@@ -7,10 +7,14 @@ const JOB_TTL_MS = 15 * 60 * 1000;
 
 const jobs = new Map();
 
+// Every status the loop can produce needs a key here. appendResult only counts
+// what it finds, so a status missing from this list would still raise processed
+// while its count silently stayed at zero.
 const emptyCounts = () => ({
   sent: 0,
   email_failed: 0,
   already_invited: 0,
+  already_enrolled: 0,
   failed: 0,
 });
 
