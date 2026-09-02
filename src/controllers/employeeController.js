@@ -9,6 +9,7 @@ import jwt from "jsonwebtoken";
 import config from "../config/env.js";
 import { EMPLOYEE, SESSION_EXPIRY } from "../utils/constants.js";
 import { cookieOptions } from "../utils/cookieConfig.js";
+import { AppError } from "../utils/AppError.js";
 
 export const login = async (req, res, next) => {
   try {
@@ -18,13 +19,13 @@ export const login = async (req, res, next) => {
 
     const user = await UserModel.findUserByUsername(pool, username);
 
-    if (!user) return res.status(401).json({ error: "Invalid credentials" });
+    if (!user) throw new AppError("Invalid credentials", 401);
 
     const isPasswordMatch = await bcrypt.compare(password, user.us01_password);
-    if (!isPasswordMatch)
-      return res.status(401).json({ error: "Invalid credentials" });
+    if (!isPasswordMatch) throw new AppError("Invalid credentials", 401);
 
-    if(user.us02_role_name !== EMPLOYEE) return res.status(403).json({error: 'Admin and HR must use the admin login'})
+    if (user.us02_role_name !== EMPLOYEE)
+      throw new AppError("Admin and HR must use the admin login", 403);
 
     if (user.us01_must_change_password) {
       const changePasswordToken = jwt.sign(
@@ -42,7 +43,10 @@ export const login = async (req, res, next) => {
         maxAge: 15 * 60 * 1000,
       });
 
-      return res.status(200).json({ mustChangePassword: true });
+      return res.status(200).json({
+        success: true,
+        data: { mustChangePassword: true },
+      });
     }
 
     const token = jwt.sign(
@@ -94,7 +98,9 @@ export const getMyEnrollment = async (req, res, next) => {
     const enrollment = await ClientModel.getMyEnrollment(pool, user_id);
     if (enrollment.length === 0)
       return res.status(200).json({
-        message: "No Enrollment as of the moment",
+        success: true,
+        data: null,
+        message: "No enrollment as of the moment",
       });
 
     const beneficiaries = await BeneficiaryModel.getBeneficiariesByEnrollmentId(
@@ -124,7 +130,7 @@ export const editMyEnrollment = async (req, res, next) => {
 
     const enrollment = await ClientModel.getMyEnrollment(pool, user_id);
     if (!enrollment || enrollment.length === 0)
-      return res.status(404).json({ message: "Enrollment not found" });
+      throw new AppError("Enrollment not found", 404);
 
     const { client_id } = enrollment[0];
 
@@ -148,34 +154,33 @@ export const changePassword = async (req, res, next) => {
     const { username } = req.resetUser;
 
     if (!oldPassword || !newPassword)
-      return res.status(400).json({ message: "All fields required" });
+      throw new AppError("All fields required", 400);
 
     const pool = await poolPromise;
 
     const user = await UserModel.findUserByUsername(pool, username);
-    if (!user) return res.status(400).json({ error: "Invalid Credentials" });
+    // Uniform message for both a missing user and a wrong password, so this
+    // cannot be used to work out which usernames exist.
+    if (!user) throw new AppError("Invalid Credentials", 400);
 
     const isPasswordMatch = await bcrypt.compare(
       oldPassword,
       user.us01_password,
     );
-    if (!isPasswordMatch) {
-      return res.status(400).json({ message: "Invalid Credentials" });
-    }
+    if (!isPasswordMatch) throw new AppError("Invalid Credentials", 400);
 
-    if (oldPassword === newPassword) {
-      return res.status(400).json({
-        message: "New password cannot be the same as the old password",
-      });
-    }
+    if (oldPassword === newPassword)
+      throw new AppError(
+        "New password cannot be the same as the old password",
+        400,
+      );
 
     const passwordPolicy = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
-    if (!passwordPolicy.test(newPassword)) {
-      return res.status(400).json({
-        message:
-          "Password must be at least 8 characters and include a letter and a number",
-      });
-    }
+    if (!passwordPolicy.test(newPassword))
+      throw new AppError(
+        "Password must be at least 8 characters and include a letter and a number",
+        400,
+      );
 
     const newHashPassword = await bcrypt.hash(newPassword, 10);
 
