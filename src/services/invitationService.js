@@ -4,80 +4,177 @@ import InvitationModel from "../models/invitationModel.js";
 import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
 import { partitionEmails } from "../utils/partitionEmails.js";
+import { chunk, delay, runWithConcurrency } from "../utils/concurrency.js";
 import InvitationJobStore from "./invitationJobStore.js";
 import config from "../config/env.js";
 
+// A batch is the checkpoint unit: the point where the circuit breaker is
+// consulted. Speed comes from the concurrency inside it, not from the boundary.
+const BATCH_SIZE = 20;
+
+// One full batch of consecutive failures means the problem is not the
+// addresses. Stopping there beats grinding through the rest.
+const CIRCUIT_BREAK_AFTER = 20;
+
+const MAX_SEND_ATTEMPTS = 3;
+
+// Retry-After can legitimately be minutes; waiting that long inside a job that
+// HR is watching is worse than failing the address and letting them resend.
+const MAX_RETRY_WAIT_MS = 30 * 1000;
+
+// 429 means slow down, 5xx means Graph is unwell — both are worth another go.
+// A 4xx about the address itself will fail again no matter how often we ask.
+const isRetryable = (error) =>
+  error?.status === 429 || (error?.status >= 500 && error?.status < 600);
+
+const sendWithRetry = async (payload) => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await sendInvitationEmail(payload);
+      return;
+    } catch (error) {
+      if (!isRetryable(error) || attempt >= MAX_SEND_ATTEMPTS) throw error;
+
+      const backoffMs = 2 ** (attempt - 1) * 500;
+      const waitMs = error.retryAfterSeconds
+        ? Math.min(error.retryAfterSeconds * 1000, MAX_RETRY_WAIT_MS)
+        : backoffMs;
+
+      console.warn("Retrying invitation email:", {
+        to: payload.to,
+        attempt,
+        status: error.status,
+        waitMs,
+      });
+
+      await delay(waitMs);
+    }
+  }
+};
+
+// Returns the status it recorded so the caller can judge the run as a whole.
+// Never throws — a failure here is one address, not the job.
+const processAddress = async (pool, jobId, userId, employer, email) => {
+  const token = crypto.randomBytes(32).toString("hex");
+
+  try {
+    const invitationId = await InvitationModel.createInvitation(pool, {
+      employer_id: employer.employer_id,
+      email_address: email,
+      token,
+      created_by: userId,
+    });
+
+    try {
+      await sendWithRetry({
+        to: email,
+        companyName: employer.company_name,
+        enrollmentUrl: `${config.appUrl}?token=${token}`,
+      });
+
+      await recordSendStatus(pool, invitationId, "sent", null, userId);
+      InvitationJobStore.appendResult(jobId, {
+        email,
+        status: "sent",
+        invitationId,
+      });
+
+      return "sent";
+    } catch (error) {
+      console.error("Invitation email failed:", { email, invitationId, error });
+
+      await recordSendStatus(pool, invitationId, "failed", error?.message, userId);
+      InvitationJobStore.appendResult(jobId, {
+        email,
+        status: "email_failed",
+        invitationId,
+      });
+
+      return "email_failed";
+    }
+  } catch (error) {
+    const number = error.number ?? error.originalError?.number;
+
+    if (number === 50064) {
+      InvitationJobStore.appendResult(jobId, {
+        email,
+        status: "already_invited",
+      });
+
+      return "already_invited";
+    }
+
+    if (number === 50078) {
+      // Kept separate from already_invited on purpose: one tells HR to
+      // resend, the other tells them there is nothing left to do.
+      InvitationJobStore.appendResult(jobId, {
+        email,
+        status: "already_enrolled",
+      });
+
+      return "already_enrolled";
+    }
+
+    console.error("Invitation creation failed:", { email, error });
+    InvitationJobStore.appendResult(jobId, { email, status: "failed" });
+
+    return "failed";
+  }
+};
+
 // Runs after the response has already gone out, so nothing here may throw: an
 // unhandled rejection would take the process down with it. Every failure is
-// caught, recorded against the job, and the loop continues to the next address.
+// caught, recorded against the job, and the run continues to the next address.
 const runInvitationJob = async (jobId, userId, employer, emails) => {
   try {
     const pool = await poolPromise;
 
-    for (const email of emails) {
-      const token = crypto.randomBytes(32).toString("hex");
+    // An address failure is skipped; a systemic failure stops the run. Without
+    // this, a Graph outage would burn through every address, mark them all
+    // failed, and leave that many live invitations that were never delivered
+    // and cannot be recovered by re-uploading — the already_invited guard
+    // means a second upload skips them.
+    let consecutiveFailures = 0;
 
-      try {
-        const invitationId = await InvitationModel.createInvitation(pool, {
-          employer_id: employer.employer_id,
-          email_address: email,
-          token,
-          created_by: userId,
-        });
+    for (const batch of chunk(emails, BATCH_SIZE)) {
+      const statuses = new Array(batch.length);
 
-        try {
-          await sendInvitationEmail({
-            to: email,
-            companyName: employer.company_name,
-            enrollmentUrl: `${config.appUrl}?token=${token}`,
-          });
+      await runWithConcurrency(
+        batch,
+        config.invitationConcurrency,
+        async (email, index) => {
+          statuses[index] = await processAddress(
+            pool,
+            jobId,
+            userId,
+            employer,
+            email,
+          );
+        },
+      );
 
-          await recordSendStatus(pool, invitationId, "sent", null, userId);
-          InvitationJobStore.appendResult(jobId, {
-            email,
-            status: "sent",
-            invitationId,
-          });
-        } catch (error) {
-          console.error("Invitation email failed:", {
-            email,
-            invitationId,
-            error,
-          });
-
-          await recordSendStatus(pool, invitationId, "failed", error?.message, userId);
-          InvitationJobStore.appendResult(jobId, {
-            email,
-            status: "email_failed",
-            invitationId,
-          });
-        }
-      } catch (error) {
-        const number = error.number ?? error.originalError?.number;
-        if (number === 50064) {
-          InvitationJobStore.appendResult(jobId, {
-            email,
-            status: "already_invited",
-          });
-        } else if (number === 50078) {
-          // Kept separate from already_invited on purpose: one tells HR to
-          // resend, the other tells them there is nothing left to do.
-          InvitationJobStore.appendResult(jobId, {
-            email,
-            status: "already_enrolled",
-          });
+      // Counted in submitted order rather than completion order, so the tally
+      // does not shift with whichever concurrent send happens to finish first.
+      for (const status of statuses) {
+        if (status === "email_failed" || status === "failed") {
+          consecutiveFailures += 1;
         } else {
-          console.error("Invitation creation failed:", { email, error });
-          InvitationJobStore.appendResult(jobId, { email, status: "failed" });
+          consecutiveFailures = 0;
         }
+      }
+
+      if (consecutiveFailures >= CIRCUIT_BREAK_AFTER) {
+        throw new Error(
+          `Stopped after ${consecutiveFailures} consecutive failures. The remaining addresses were not attempted.`,
+        );
       }
     }
 
     InvitationJobStore.completeJob(jobId);
   } catch (error) {
-    // Reaching here means something outside the per-address handling broke —
-    // the pool, most likely. The job is failed as a whole rather than left
-    // sitting at "processing" forever.
+    // Either the circuit breaker tripped, or something outside the per-address
+    // handling broke — the pool, most likely. Either way the job is failed as a
+    // whole rather than left sitting at "processing" forever.
     console.error("Invitation job failed:", { jobId, error });
     InvitationJobStore.completeJob(jobId, { error });
   }
