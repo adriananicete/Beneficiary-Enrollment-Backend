@@ -59,6 +59,13 @@ const runInvitationJob = async (jobId, userId, employer, emails) => {
             email,
             status: "already_invited",
           });
+        } else if (number === 50078) {
+          // Kept separate from already_invited on purpose: one tells HR to
+          // resend, the other tells them there is nothing left to do.
+          InvitationJobStore.appendResult(jobId, {
+            email,
+            status: "already_enrolled",
+          });
         } else {
           console.error("Invitation creation failed:", { email, error });
           InvitationJobStore.appendResult(jobId, { email, status: "failed" });

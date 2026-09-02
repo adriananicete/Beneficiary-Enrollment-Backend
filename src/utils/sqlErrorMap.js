@@ -16,5 +16,6 @@ export const sqlErrorMap = {
     50074: { statusCode: 404, message: 'Active enrollment invitation does not exist' },
     50075: { statusCode: 404, message: 'Active enrollment invitation does not exist' },
     50077: { statusCode: 404, message: 'Enrollment invitation does not exist' },
+    50078: { statusCode: 409, message: 'This person has already completed an enrollment' },
     2627: {statusCode: 409, message: 'Duplicate record'},
 }
