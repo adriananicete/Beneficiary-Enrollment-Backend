@@ -59,6 +59,17 @@ const sendInvitations = async (userId, emails) => {
   return results;
 };
 
+// The token is the credential that opens the enrollment form as the invited
+// person. The backend needs it to rebuild the link on resend; a browser never
+// does, so it is stripped before the list leaves the server.
+const getInvitations = async (userId) => {
+  const pool = await poolPromise;
+
+  const invitations = await InvitationModel.getInvitationsByUser(pool, userId);
+
+  return invitations.map(({ token, ...invitation }) => invitation);
+};
+
 // The SP caps last_send_error at 500 characters; Graph errors carry the whole
 // response body and can run longer than that.
 const MAX_SEND_ERROR_LENGTH = 500;
@@ -130,6 +141,7 @@ const resendInvitation = async (userId, invitationId) => {
 
 export default {
     sendInvitations,
+    getInvitations,
     revokeInvitation,
     resendInvitation
 }
