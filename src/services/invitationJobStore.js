@@ -32,14 +32,9 @@ const createJob = (userId, total) => {
   return job;
 };
 
-// Returns null rather than throwing when the job belongs to someone else, so
-// the caller answers 404 and never confirms that another company's job exists.
-const getJob = (jobId, userId) => {
-  const job = jobs.get(jobId);
-  if (!job || job.userId !== String(userId)) return null;
-
-  return job;
-};
+// Ownership is checked by the caller, matching how revoke and resend do it, so
+// "no such job" and "not yours" stay distinguishable.
+const getJob = (jobId) => jobs.get(jobId) ?? null;
 
 const hasRunningJob = (userId) => {
   for (const job of jobs.values()) {

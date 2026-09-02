@@ -113,8 +113,11 @@ const sendInvitations = async (userId, emails) => {
 };
 
 const getInvitationJobStatus = (userId, jobId, since = 0) => {
-  const job = InvitationJobStore.getJob(jobId, userId);
+  const job = InvitationJobStore.getJob(jobId);
   if (!job) throw new AppError("Invitation job not found", 404);
+
+  if (job.userId !== String(userId))
+    throw new AppError("Invitation job does not belong to your company", 403);
 
   return {
     jobId: job.id,
