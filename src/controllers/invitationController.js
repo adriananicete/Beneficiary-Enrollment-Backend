@@ -20,11 +20,32 @@ export const sendInvitations = async (req, res, next) => {
         const { user_id } = req.user;
         const { emails } = req.body;
 
-        const results = await InvitationService.sendInvitations(user_id, emails);
+        const job = await InvitationService.sendInvitations(user_id, emails);
+
+        // 202: the addresses have been accepted, the sending happens behind this.
+        return res.status(202).json({
+            success: true,
+            data: job
+        })
+    } catch (error) {
+        next(error);
+    }
+};
+
+export const getInvitationJobStatus = async (req, res, next) => {
+    try {
+        const { user_id } = req.user;
+        const { job_id } = req.params;
+
+        // Anything that is not a positive whole number means "from the start".
+        const requested = Number(req.query.since);
+        const since = Number.isFinite(requested) && requested > 0 ? Math.floor(requested) : 0;
+
+        const job = InvitationService.getInvitationJobStatus(user_id, job_id, since);
 
         return res.status(200).json({
             success: true,
-            data: results
+            data: job
         })
     } catch (error) {
         next(error);

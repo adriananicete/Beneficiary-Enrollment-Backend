@@ -4,7 +4,77 @@ import InvitationModel from "../models/invitationModel.js";
 import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
 import { partitionEmails } from "../utils/partitionEmails.js";
+import InvitationJobStore from "./invitationJobStore.js";
 import config from "../config/env.js";
+
+// Runs after the response has already gone out, so nothing here may throw: an
+// unhandled rejection would take the process down with it. Every failure is
+// caught, recorded against the job, and the loop continues to the next address.
+const runInvitationJob = async (jobId, userId, employer, emails) => {
+  try {
+    const pool = await poolPromise;
+
+    for (const email of emails) {
+      const token = crypto.randomBytes(32).toString("hex");
+
+      try {
+        const invitationId = await InvitationModel.createInvitation(pool, {
+          employer_id: employer.employer_id,
+          email_address: email,
+          token,
+          created_by: userId,
+        });
+
+        try {
+          await sendInvitationEmail({
+            to: email,
+            companyName: employer.company_name,
+            enrollmentUrl: `${config.appUrl}?token=${token}`,
+          });
+
+          await recordSendStatus(pool, invitationId, "sent", null, userId);
+          InvitationJobStore.appendResult(jobId, {
+            email,
+            status: "sent",
+            invitationId,
+          });
+        } catch (error) {
+          console.error("Invitation email failed:", {
+            email,
+            invitationId,
+            error,
+          });
+
+          await recordSendStatus(pool, invitationId, "failed", error?.message, userId);
+          InvitationJobStore.appendResult(jobId, {
+            email,
+            status: "email_failed",
+            invitationId,
+          });
+        }
+      } catch (error) {
+        const number = error.number ?? error.originalError?.number;
+        if (number === 50064) {
+          InvitationJobStore.appendResult(jobId, {
+            email,
+            status: "already_invited",
+          });
+        } else {
+          console.error("Invitation creation failed:", { email, error });
+          InvitationJobStore.appendResult(jobId, { email, status: "failed" });
+        }
+      }
+    }
+
+    InvitationJobStore.completeJob(jobId);
+  } catch (error) {
+    // Reaching here means something outside the per-address handling broke —
+    // the pool, most likely. The job is failed as a whole rather than left
+    // sitting at "processing" forever.
+    console.error("Invitation job failed:", { jobId, error });
+    InvitationJobStore.completeJob(jobId, { error });
+  }
+};
 
 const sendInvitations = async (userId, emails) => {
   const pool = await poolPromise;
@@ -15,54 +85,52 @@ const sendInvitations = async (userId, emails) => {
 
   const employer = employers[0];
 
+  if (InvitationJobStore.hasRunningJob(userId))
+    throw new AppError(
+      "An invitation upload is already running. Wait for it to finish before starting another.",
+      409,
+    );
+
+  // Rejected rows need no I/O, so they are known now and returned with the
+  // acknowledgement — HR sees the bad rows while still looking at the upload.
   const { valid, rejected } = partitionEmails(emails);
 
-  // Rejected rows are known without any I/O, so they lead the results. This is
-  // also the order the async version will produce them in: pre-flight rejects
-  // returned immediately, sends reported as they complete.
-  const results = [...rejected];
+  const job = InvitationJobStore.createJob(userId, valid.length);
 
-  for (let email of valid) {
-    const token = crypto.randomBytes(32).toString("hex");
+  // Intentionally not awaited: the response goes out now and the sending
+  // continues behind it. The catch is belt and braces; runInvitationJob
+  // already swallows everything.
+  runInvitationJob(job.id, userId, employer, valid).catch((error) =>
+    console.error("Invitation job crashed:", { jobId: job.id, error }),
+  );
 
-    try {
-      const invitationId = await InvitationModel.createInvitation(pool, {
-        employer_id: employer.employer_id,
-        email_address: email,
-        token,
-        created_by: userId,
-      });
+  return {
+    jobId: job.id,
+    submitted: emails.length,
+    total: valid.length,
+    rejected,
+  };
+};
 
-      try {
-        await sendInvitationEmail({
-          to: email,
-          companyName: employer.company_name,
-          enrollmentUrl: `${config.appUrl}?token=${token}`,
-        });
+const getInvitationJobStatus = (userId, jobId, since = 0) => {
+  const job = InvitationJobStore.getJob(jobId);
+  if (!job) throw new AppError("Invitation job not found", 404);
 
-        results.push({ email, status: "sent", invitationId });
-      } catch (error) {
-        console.error("Invitation email failed:", {
-          email,
-          invitationId,
-          error,
-        });
-        results.push({ email, status: "email_failed", invitationId });
-      }
+  if (job.userId !== String(userId))
+    throw new AppError("Invitation job does not belong to your company", 403);
 
-      
-    } catch(error) {
-      const number = error.number ?? error.originalError?.number;
-      if (number === 50064) {
-        results.push({ email, status: "already_invited" });
-      } else {
-        console.error("Invitation creation failed:", { email, error });
-        results.push({ email, status: "failed" });
-      }
-    }
-  }
-
-  return results;
+  return {
+    jobId: job.id,
+    total: job.total,
+    processed: job.processed,
+    status: job.status,
+    counts: { ...job.counts },
+    // Defaults to 0, which returns the whole list — a caller that ignores the
+    // cursor still gets correct results, just more of them each time.
+    results: job.results.slice(since),
+    nextCursor: job.results.length,
+    error: job.error,
+  };
 };
 
 // The token is the credential that opens the enrollment form as the invited
@@ -147,6 +215,7 @@ const resendInvitation = async (userId, invitationId) => {
 
 export default {
     sendInvitations,
+    getInvitationJobStatus,
     getInvitations,
     revokeInvitation,
     resendInvitation
