@@ -135,8 +135,16 @@ const runInvitationJob = async (jobId, userId, employer, emails) => {
     // and cannot be recovered by re-uploading — the already_invited guard
     // means a second upload skips them.
     let consecutiveFailures = 0;
+    let cancelled = false;
 
     for (const batch of chunk(emails, BATCH_SIZE)) {
+      // Checked at the boundary rather than per address, so a cancel never
+      // lands between creating an invitation and sending its email.
+      if (InvitationJobStore.isCancelRequested(jobId)) {
+        cancelled = true;
+        break;
+      }
+
       const statuses = new Array(batch.length);
 
       await runWithConcurrency(
@@ -170,7 +178,7 @@ const runInvitationJob = async (jobId, userId, employer, emails) => {
       }
     }
 
-    InvitationJobStore.completeJob(jobId);
+    InvitationJobStore.completeJob(jobId, { cancelled });
   } catch (error) {
     // Either the circuit breaker tripped, or something outside the per-address
     // handling broke — the pool, most likely. Either way the job is failed as a
@@ -228,6 +236,9 @@ const getInvitationJobStatus = (userId, jobId, since = 0) => {
     total: job.total,
     processed: job.processed,
     status: job.status,
+    // True between the cancel request and the next batch boundary, so the
+    // caller can show "cancelling" rather than an apparently ignored click.
+    cancelRequested: job.cancelRequested,
     counts: { ...job.counts },
     // Defaults to 0, which returns the whole list — a caller that ignores the
     // cursor still gets correct results, just more of them each time.
@@ -235,6 +246,23 @@ const getInvitationJobStatus = (userId, jobId, since = 0) => {
     nextCursor: job.results.length,
     error: job.error,
   };
+};
+
+const cancelInvitationJob = (userId, jobId) => {
+  const job = InvitationJobStore.getJob(jobId);
+  if (!job) throw new AppError("Invitation job not found", 404);
+
+  if (job.userId !== String(userId))
+    throw new AppError("Invitation job does not belong to your company", 403);
+
+  if (job.status !== "processing")
+    throw new AppError("That upload has already finished", 409);
+
+  InvitationJobStore.requestCancel(jobId);
+
+  // Still "processing" here on purpose — the run stops at the next batch
+  // boundary, and saying otherwise would be a lie the caller acts on.
+  return { jobId: job.id, status: job.status, cancelRequested: true };
 };
 
 // The token is the credential that opens the enrollment form as the invited
@@ -320,6 +348,7 @@ const resendInvitation = async (userId, invitationId) => {
 export default {
     sendInvitations,
     getInvitationJobStatus,
+    cancelInvitationJob,
     getInvitations,
     revokeInvitation,
     resendInvitation

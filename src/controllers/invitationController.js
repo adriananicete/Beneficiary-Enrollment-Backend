@@ -52,6 +52,22 @@ export const getInvitationJobStatus = async (req, res, next) => {
     }
 };
 
+export const cancelInvitationJob = async (req, res, next) => {
+    try {
+        const { user_id } = req.user;
+        const { job_id } = req.params;
+
+        const job = InvitationService.cancelInvitationJob(user_id, job_id);
+
+        return res.status(202).json({
+            success: true,
+            data: job
+        })
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const revokeInvitation = async (req, res, next) => {
     try {
         const { user_id } = req.user;

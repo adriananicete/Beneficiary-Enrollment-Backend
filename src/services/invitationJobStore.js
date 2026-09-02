@@ -27,6 +27,9 @@ const createJob = (userId, total) => {
     results: [],
     counts: emptyCounts(),
     status: "processing",
+    // Cancelling is a request, not an act. The run reads this at the next batch
+    // boundary, so a job stays "processing" for a short while after HR asks.
+    cancelRequested: false,
     error: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -60,11 +63,23 @@ const appendResult = (jobId, result) => {
   job.updatedAt = new Date();
 };
 
-const completeJob = (jobId, { error } = {}) => {
+const requestCancel = (jobId) => {
   const job = jobs.get(jobId);
   if (!job) return;
 
-  job.status = error ? "failed" : "completed";
+  job.cancelRequested = true;
+  job.updatedAt = new Date();
+};
+
+const isCancelRequested = (jobId) => jobs.get(jobId)?.cancelRequested === true;
+
+const completeJob = (jobId, { error, cancelled } = {}) => {
+  const job = jobs.get(jobId);
+  if (!job) return;
+
+  // Cancelled is its own outcome. Calling it "failed" would tell HR something
+  // went wrong when they are the ones who stopped it.
+  job.status = cancelled ? "cancelled" : error ? "failed" : "completed";
   job.error = error ? String(error.message || error) : null;
   job.updatedAt = new Date();
 
@@ -77,5 +92,7 @@ export default {
   getJob,
   hasRunningJob,
   appendResult,
+  requestCancel,
+  isCancelRequested,
   completeJob,
 };

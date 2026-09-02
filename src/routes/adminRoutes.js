@@ -5,7 +5,7 @@ import { editEnrollment, exportEnrollments, getDashboardStats, getEnrollment, ge
 import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
-import { getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
+import { cancelInvitationJob, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
 import { validateInvitations } from '../middlewares/validateInvitations.js';
 import { bulkInvitationLimiter, jobStatusLimiter } from '../middlewares/rateLimiter.js';
 
@@ -13,6 +13,7 @@ const router = express.Router();
 
 router.post('/invitations/:invitation_id/resend', verifyToken, allowedRoles(ADMIN), resendInvitation);
 router.post('/invitations', verifyToken, allowedRoles(ADMIN), bulkInvitationLimiter, validateInvitations, sendInvitations)
+router.post('/invitations/jobs/:job_id/cancel', verifyToken, allowedRoles(ADMIN), cancelInvitationJob);
 router.get('/invitations/jobs/:job_id', verifyToken, allowedRoles(ADMIN), jobStatusLimiter, getInvitationJobStatus);
 router.get('/invitations', verifyToken, allowedRoles(ADMIN), getInvitations);
 router.get('/enrollments', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getEnrollment);
