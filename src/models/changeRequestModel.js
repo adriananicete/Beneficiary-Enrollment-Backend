@@ -84,8 +84,94 @@ const cancelChangeRequest = async (pool, cancelData) => {
   return result.recordset[0];
 };
 
+const getChangeRequestsByUser = async (pool, userId, requestStatus) => {
+  const result = await pool
+    .request()
+    .input("us01_user_id", sql.BigInt, userId)
+    .input("request_status", sql.VarChar(10), requestStatus ?? null)
+    .execute("usp_sel_client_change_requests_by_user");
+
+  return result.recordset;
+};
+
+const getPendingCountByUser = async (pool, userId) => {
+  const result = await pool
+    .request()
+    .input("us01_user_id", sql.BigInt, userId)
+    .execute("usp_sel_client_change_request_pending_count");
+
+  return result.recordset[0]?.pendingCount ?? 0;
+};
+
+// The only procedure in this codebase that returns more than one result set, so
+// this is the only place `recordsets` appears. They are read by position:
+//
+//   [0] the request header joined to the full proposed profile — empty when the
+//       request belongs to another company, which is how scoping is expressed
+//   [1] the changed fields only, current beside proposed, computed in SQL
+//   [2] the proposed address actions
+//   [3] the proposed beneficiary actions
+//
+// Position is the contract. If the procedure ever reorders its SELECTs this
+// silently returns the wrong data rather than failing, so any change to it has
+// to be checked against this function.
+const getChangeRequestById = async (pool, requestId, userId) => {
+  const result = await pool
+    .request()
+    .input("client_change_request_id", sql.BigInt, requestId)
+    .input("us01_user_id", sql.BigInt, userId)
+    .execute("usp_sel_client_change_request_by_id");
+
+  const [header = [], changedFields = [], addresses = [], beneficiaries = []] =
+    result.recordsets;
+
+  return {
+    request: header[0] ?? null,
+    changedFields,
+    addresses,
+    beneficiaries,
+  };
+};
+
+// Applies the change and marks the request approved, in one transaction the
+// procedure owns. Nothing is applied on this side.
+const approveChangeRequest = async (pool, approvalData) => {
+  const result = await pool
+    .request()
+    .input(
+      "client_change_request_id",
+      sql.BigInt,
+      approvalData.client_change_request_id,
+    )
+    .input("reviewed_by", sql.VarChar(50), approvalData.reviewed_by)
+    .input("review_remarks", sql.VarChar(500), approvalData.review_remarks)
+    .execute("usp_upd_client_change_request_approve");
+
+  return result.recordset[0];
+};
+
+const rejectChangeRequest = async (pool, rejectionData) => {
+  const result = await pool
+    .request()
+    .input(
+      "client_change_request_id",
+      sql.BigInt,
+      rejectionData.client_change_request_id,
+    )
+    .input("reviewed_by", sql.VarChar(50), rejectionData.reviewed_by)
+    .input("review_remarks", sql.VarChar(500), rejectionData.review_remarks)
+    .execute("usp_upd_client_change_request_reject");
+
+  return result.recordset[0];
+};
+
 export default {
   insertChangeRequest,
   getChangeRequestsByClient,
   cancelChangeRequest,
+  getChangeRequestsByUser,
+  getPendingCountByUser,
+  getChangeRequestById,
+  approveChangeRequest,
+  rejectChangeRequest,
 };

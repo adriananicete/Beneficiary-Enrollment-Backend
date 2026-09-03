@@ -6,7 +6,8 @@ import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { cancelInvitationJob, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
 import { validateInvitations } from '../middlewares/validateInvitations.js';
-import { bulkInvitationLimiter, jobStatusLimiter } from '../middlewares/rateLimiter.js';
+import { bulkInvitationLimiter, jobStatusLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
+import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
 
 const router = express.Router();
 
@@ -20,6 +21,13 @@ router.get('/enrollments/export', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN),
 router.get('/dashboard/stats', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getDashboardStats);
 router.get('/enrollments/:client_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, getEnrollmentDetails);
 router.get('/enrollments/:client_id/agreements',verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, getEnrollmentAgreements);
+// /pending-count is declared before /:request_id on purpose. Express matches in
+// order, so the param route would otherwise swallow it and try to read
+// "pending-count" as an id.
+router.get('/change-requests', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getChangeRequests);
+router.get('/change-requests/pending-count', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), pendingCountLimiter, getPendingChangeRequestCount);
+router.get('/change-requests/:request_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getChangeRequestDetails);
+router.patch('/change-requests/:request_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), reviewChangeRequest);
 router.delete('/invitations/:invitation_id', verifyToken, allowedRoles(ADMIN), revokeInvitation)
 
 

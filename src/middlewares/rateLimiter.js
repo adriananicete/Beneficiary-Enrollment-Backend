@@ -42,6 +42,24 @@ export const bulkInvitationLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// The HR screen polls the pending count every ~30s to drive a badge, so a
+// 15-minute window holds about 30 requests from one correctly behaving client.
+// Several HR users on one shared account, and a tab left open in more than one
+// browser, are both normal — the ceiling allows for that rather than throttling
+// the ordinary case.
+export const pendingCountLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 1000 : 300,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many status requests, please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Polling runs every ~2s while a job is in flight, so a 15-minute window can
 // legitimately hold around 450 requests. The ceiling sits above that rather
 // than throttling a client that is behaving correctly.
