@@ -42,6 +42,26 @@ export const bulkInvitationLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Reissuing credentials sends mail and replaces a password, so it is throttled —
+// but it is a deliberate act HR performs a handful of times, not a loop.
+//
+// Keyed on the HR user rather than the IP, like the bulk upload above. Keying on
+// the IP would put every HR user in an office behind one bucket, and strictLimiter
+// cannot be reused here: it keys on req.body.username, which this endpoint does
+// not carry, so every caller would collapse into "unknown".
+export const credentialsResendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? 100 : 20,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many credential resets, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // The HR screen polls the pending count every ~30s to drive a badge, so a
 // 15-minute window holds about 30 requests from one correctly behaving client.
 // Several HR users on one shared account, and a tab left open in more than one

@@ -2,6 +2,7 @@ import config from "../config/env.js";
 import { emailTemplate } from "../utils/emailTemplate.js";
 import { invitationEmailTemplate } from "../utils/invitationEmailTemplate.js";
 import { changeRequestEmailTemplate } from "../utils/changeRequestEmailTemplate.js";
+import { credentialsEmailTemplate } from "../utils/credentialsEmailTemplate.js";
 
 // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
@@ -157,6 +158,57 @@ export const sendInvitationEmail = async ({ to, companyName, enrollmentUrl }) =>
     throw graphSendError(response, errorText);
   }
 }
+
+// Carries a new temporary password after HR reissues an employee's credentials.
+//
+// Unlike every other sender here, a failure on this one must NOT be swallowed.
+// The password has already been changed by the time this runs, and this message
+// is the only copy of it — reporting success on a send that did not happen
+// leaves the employee worse off than before, with a password nobody knows.
+export const sendCredentialsEmail = async ({
+  to,
+  firstName,
+  username,
+  password,
+}) => {
+  const accessToken = await getAccessToken();
+  const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${config.smtp.user}/sendMail`;
+  const loginUrl = `${config.appUrl}/employee-login`;
+
+  const mailPayload = {
+    message: {
+      subject: "Your new sign-in details",
+      body: credentialsEmailTemplate({
+        firstName,
+        username,
+        password,
+        loginUrl,
+      }),
+      toRecipients: [
+        {
+          emailAddress: {
+            address: to,
+          },
+        },
+      ],
+    },
+    saveToSentItems: "false",
+  };
+
+  const response = await fetch(sendMailUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(mailPayload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw graphSendError(response, errorText);
+  }
+};
 
 // Sent to the employee after HR approves or rejects their change request. Never
 // on a cancellation — that was the employee's own action.
