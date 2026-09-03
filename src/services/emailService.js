@@ -1,6 +1,7 @@
 import config from "../config/env.js";
 import { emailTemplate } from "../utils/emailTemplate.js";
 import { invitationEmailTemplate } from "../utils/invitationEmailTemplate.js";
+import { changeRequestEmailTemplate } from "../utils/changeRequestEmailTemplate.js";
 
 // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
@@ -156,3 +157,52 @@ export const sendInvitationEmail = async ({ to, companyName, enrollmentUrl }) =>
     throw graphSendError(response, errorText);
   }
 }
+
+// Sent to the employee after HR approves or rejects their change request. Never
+// on a cancellation — that was the employee's own action.
+export const sendChangeRequestDecisionEmail = async ({
+  to,
+  firstName,
+  approved,
+  reviewRemarks,
+}) => {
+  const accessToken = await getAccessToken();
+  const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${config.smtp.user}/sendMail`;
+  const loginUrl = config.appUrl;
+
+  const mailPayload = {
+    message: {
+      subject: approved
+        ? "Your enrollment details have been updated"
+        : "Your requested changes were not applied",
+      body: changeRequestEmailTemplate({
+        firstName,
+        approved,
+        reviewRemarks,
+        loginUrl,
+      }),
+      toRecipients: [
+        {
+          emailAddress: {
+            address: to,
+          },
+        },
+      ],
+    },
+    saveToSentItems: "false",
+  };
+
+  const response = await fetch(sendMailUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(mailPayload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw graphSendError(response, errorText);
+  }
+};
