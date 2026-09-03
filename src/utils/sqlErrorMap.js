@@ -38,6 +38,14 @@ export const sqlErrorMap = {
     // leave a total other than 100%, so the message has to say what to do.
     50115: { statusCode: 400, message: 'Approving this would leave beneficiary coverage at something other than 100%. Ask the employee to correct and resubmit.' },
     50116: { statusCode: 403, message: 'Beneficiary does not belong to this employee' },
+    // The duplicate name rule, which the enrollment path has enforced as 50007
+    // since the start. Approving is now the only way a beneficiary name can
+    // change, so this is where it has to hold.
+    //
+    // HR meets this one in ordinary use — two children sharing a name, or the
+    // same person added twice — so the message says what to do rather than only
+    // what is wrong.
+    50117: { statusCode: 409, message: 'This change would leave two beneficiaries with the same name on the enrollment. Ask the employee to correct one and resubmit.' },
 
     // usp_upd_client_change_request_reject
     50120: { statusCode: 404, message: 'No pending change request found' },
