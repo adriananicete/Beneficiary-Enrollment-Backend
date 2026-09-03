@@ -17,5 +17,23 @@ export const sqlErrorMap = {
     50075: { statusCode: 404, message: 'Active enrollment invitation does not exist' },
     50077: { statusCode: 404, message: 'Enrollment invitation does not exist' },
     50078: { statusCode: 409, message: 'This person has already completed an enrollment' },
+
+    // Profile change requests — usp_ins_client_change_request
+    50100: { statusCode: 404, message: 'Enrollment not found' },
+    50101: { statusCode: 409, message: 'You already have a pending change request' },
+    50102: { statusCode: 400, message: 'Invalid address change' },
+    50103: { statusCode: 400, message: 'Invalid beneficiary change' },
+    50104: { statusCode: 409, message: 'TIN number already registered' },
+    50105: { statusCode: 409, message: 'Email address already registered' },
+    50106: { statusCode: 403, message: 'Address does not belong to this enrollment' },
+    50107: { statusCode: 403, message: 'Beneficiary does not belong to this enrollment' },
+
+    // usp_upd_client_change_request_cancel
+    // One answer for both "no longer pending" and "not yours", matching the
+    // procedure. A distinct reply for each would confirm someone else's request
+    // exists, so 404 is the honest status for both.
+    50131: { statusCode: 404, message: 'No pending change request found' },
+    50132: { statusCode: 404, message: 'No pending change request found' },
+
     2627: {statusCode: 409, message: 'Duplicate record'},
 }
