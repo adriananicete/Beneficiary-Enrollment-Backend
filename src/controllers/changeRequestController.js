@@ -4,6 +4,7 @@ import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AddressModel from "../models/addressModel.js";
 import { poolPromise } from "../config/db.js";
 import { AppError } from "../utils/AppError.js";
+import { sendChangeRequestDecisionEmail } from "../services/emailService.js";
 
 // The employee submits the full intended state, exactly as the removed
 // PUT /api/employee/enrollment did: a beneficiary carrying an id is an edit, one
@@ -257,26 +258,82 @@ export const reviewChangeRequest = async (req, res, next) => {
 
     const pool = await poolPromise;
 
+    // Read the request before deciding on it. This settles company scoping
+    // before any procedure runs, and it is the only chance to capture the
+    // employee's current email address — an approved change can move it.
+    const details = await ChangeRequestModel.getChangeRequestById(
+      pool,
+      request_id,
+      req.user.user_id,
+    );
+
+    if (!details.request)
+      throw new AppError("Change request not found", 404);
+
+    const approved = status === "APPROVED";
+
     const reviewData = {
       client_change_request_id: request_id,
       reviewed_by: String(req.user.user_id),
       review_remarks: review_remarks?.trim() || null,
     };
 
-    if (status === "APPROVED")
+    if (approved)
       await ChangeRequestModel.approveChangeRequest(pool, reviewData);
     else await ChangeRequestModel.rejectChangeRequest(pool, reviewData);
 
+    await notifyDecision(details, approved, reviewData.review_remarks);
+
     return res.status(200).json({
       success: true,
-      message:
-        status === "APPROVED"
-          ? "Change request approved and applied"
-          : "Change request rejected",
+      message: approved
+        ? "Change request approved and applied"
+        : "Change request rejected",
     });
   } catch (error) {
     next(error);
   }
+};
+
+// Sent after the decision has committed, and it swallows its own failures. The
+// same rule as recordSendStatus in invitationService: HR decided, and the record
+// must reflect that whether or not Microsoft was reachable. A failed email is a
+// person not told; a failed decision is a record that disagrees with what HR did.
+const notifyDecision = async (details, approved, reviewRemarks) => {
+  try {
+    const to = currentEmailAddress(details);
+    if (!to) {
+      console.error("Change request decision email skipped: no address");
+      return;
+    }
+
+    await sendChangeRequestDecisionEmail({
+      to,
+      firstName: details.request.first_name,
+      approved,
+      reviewRemarks,
+    });
+  } catch (error) {
+    console.error("Change request decision email failed:", error);
+  }
+};
+
+// Deliberately the address the employee had BEFORE the decision, not after.
+//
+// A request can propose a new email address. If it is approved, that address
+// becomes their address of record — and their login. Sending the notice there
+// means a typo in the new address leaves them never learning that their own
+// email moved, on the one message that would have told them.
+//
+// The old address is the one that has demonstrably reached them before. The
+// comparison result set carries the current value whenever the field changed;
+// when it did not change, the proposed value is the current one.
+const currentEmailAddress = ({ request, changedFields }) => {
+  const emailChange = changedFields.find(
+    (field) => field.field_name === "Email Address",
+  );
+
+  return emailChange?.current_value || request.email_address;
 };
 
 export const getMyChangeRequests = async (req, res, next) => {
