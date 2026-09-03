@@ -3,6 +3,7 @@ import ClientModel from "../models/clientModel.js";
 import UserModel from "../models/userModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AddressModel from "../models/addressModel.js";
+import ReferenceModel from "../models/referenceModel.js";
 import { poolPromise } from "../config/db.js";
 import { AppError } from "../utils/AppError.js";
 import { sendChangeRequestDecisionEmail } from "../services/emailService.js";
@@ -104,6 +105,16 @@ export const submitChangeRequest = async (req, res, next) => {
           String(req.body.client_address_id)
       )
         throw new AppError("Address does not belong to this enrollment", 403);
+
+      // Checked here as well as at enrollment, because approving writes this
+      // straight to client_address and the reference joins then resolve to
+      // nothing — silently, since full_address and zip_code are stored
+      // separately and the address still displays. See PARK.md.
+      const barangayIsReal = await ReferenceModel.barangayExists(
+        pool,
+        req.body.barangay_id,
+      );
+      if (!barangayIsReal) throw new AppError("Invalid barangay", 400);
 
       // Same reasoning as the beneficiaries: only send a row if the address
       // actually changed, so the review screen does not show an address change

@@ -1,5 +1,6 @@
 import { AppError } from "../utils/AppError.js";
 import { validateCoverage } from "../utils/validateCoverage.js";
+import { validateHeight } from "../utils/validateHeight.js";
 import {
   ADDRESS_FIELD_LENGTHS,
   BENEFICIARY_FIELD_LENGTHS,
@@ -40,6 +41,9 @@ export const validateEnrollment = (req, res, next) => {
   for (let i of requiredFields) {
     if (!req.body[i]) return next(new AppError(`${i} is required`, 400));
   }
+
+  const heightError = validateHeight(req.body.height);
+  if (heightError) return next(new AppError(heightError, 400));
 
   // The token is 64 hex characters — crypto.randomBytes(32).toString("hex") —
   // and the column binding is NVarChar(64). Anything longer is rejected by the
