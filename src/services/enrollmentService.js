@@ -40,6 +40,21 @@ const createEnrollment = async (enrollmentData) => {
   if (!classificationSet.has(String(enrollmentData.classification_id)))
     throw new AppError("Invalid or inactive classification", 400);
 
+  // The third reference id, checked the same way as the two above. It was the
+  // only one going unvalidated, and six fabricated barangay codes reached the
+  // database through the gap — see PARK.md.
+  //
+  // It fails silently in both directions, which is what makes it worth a query:
+  // nothing errors on the way in, and the address still displays afterwards
+  // because full_address and zip_code are stored separately. Only brgy_name,
+  // city_municipality_name, province_name and region_name come back NULL.
+  const barangayIsReal = await ReferenceModel.barangayExists(
+    pool,
+    enrollmentData.barangay_id,
+  );
+  if (!barangayIsReal)
+    throw new AppError("Invalid barangay", 400);
+
   const userNameExists = await UserModel.checkUsernameExists(
     pool,
     enrollmentData.employee_id_number,
