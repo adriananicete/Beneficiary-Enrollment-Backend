@@ -1,5 +1,6 @@
 import ChangeRequestModel from "../models/changeRequestModel.js";
 import ClientModel from "../models/clientModel.js";
+import UserModel from "../models/userModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AddressModel from "../models/addressModel.js";
 import { poolPromise } from "../config/db.js";
@@ -282,6 +283,8 @@ export const reviewChangeRequest = async (req, res, next) => {
       await ChangeRequestModel.approveChangeRequest(pool, reviewData);
     else await ChangeRequestModel.rejectChangeRequest(pool, reviewData);
 
+    if (approved) await syncUserRecord(pool, details, reviewData.reviewed_by);
+
     await notifyDecision(details, approved, reviewData.review_remarks);
 
     return res.status(200).json({
@@ -292,6 +295,66 @@ export const reviewChangeRequest = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+// Fields that exist on both dbo.clients and sec.us01_users, by the display names
+// the comparison result set uses.
+const SYNCED_FIELDS = [
+  "First Name",
+  "Middle Name",
+  "Last Name",
+  "Email Address",
+];
+
+// dbo.clients and sec.us01_users hold the same name and email twice. The approve
+// procedure writes the first and does not touch the second, so without this they
+// drift apart on every approved name or email change.
+//
+// It matters most for the email. Nothing reads us01_email_address yet, but the
+// credentials resend will send a new password there — an employee could correct
+// their address, have it approved, and still have credentials go to the old
+// inbox, with no error anywhere.
+//
+// Runs after the approve procedure has committed, because that procedure owns
+// and closes its own transaction. A failure here therefore leaves exactly the
+// divergence this exists to prevent — so it is logged with everything needed to
+// repair it by hand, rather than swallowed quietly the way the email is. A
+// failed email is a person not told; this is data that disagrees with itself.
+const syncUserRecord = async (pool, { request, changedFields }, modifiedBy) => {
+  try {
+    const touchesUserRecord = changedFields.some((field) =>
+      SYNCED_FIELDS.includes(field.field_name),
+    );
+    if (!touchesUserRecord) return;
+
+    const userId = await UserModel.findUserIdByClientId(pool, request.client_id);
+    if (!userId) {
+      console.error(
+        `User record sync skipped: no active user for client ${request.client_id}`,
+      );
+      return;
+    }
+
+    // The proposed values, which are the client's values now that the change is
+    // applied. Note this is the NEW email, unlike the decision notice, which
+    // deliberately goes to the old one — the notice goes where we know they
+    // read, the record has to hold what is now true.
+    await UserModel.updateUserRecord(pool, {
+      us01_user_id: userId,
+      us01_first_name: request.first_name,
+      us01_middle_name: request.middle_name,
+      us01_last_name: request.last_name,
+      us01_email_address: request.email_address,
+      us01_modified_by: modifiedBy,
+    });
+  } catch (error) {
+    console.error(
+      `User record sync FAILED for client ${request.client_id}. ` +
+        `sec.us01_users still holds the old name or email and must be corrected by hand. ` +
+        `Intended: ${request.first_name} ${request.middle_name ?? ""} ${request.last_name} <${request.email_address}>`,
+      error,
+    );
   }
 };
 
