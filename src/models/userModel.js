@@ -61,16 +61,44 @@ const updateLastLogin = async (pool, username) => {
 };
 
 // Raw query, following updateLastLogin and checkUsernameExists below. There is
-// no procedure that reaches a user by client_id, and this is a single column
-// lookup on an indexed key.
-const findUserIdByClientId = async (pool, clientId) => {
+// no procedure that reaches a user by client_id.
+const findUserByClientId = async (pool, clientId) => {
   const result = await pool
     .request()
     .input("client_id", sql.BigInt, clientId)
-    .query(`SELECT us01_user_id FROM sec.us01_users
+    .query(`SELECT us01_user_id, us01_username, us01_email_address,
+                   us01_first_name, us01_last_name
+            FROM sec.us01_users
             WHERE client_id = @client_id AND us01_is_active = 1`);
 
-  return result.recordset[0]?.us01_user_id;
+  return result.recordset[0];
+};
+
+// Issues a new temporary password. There is no procedure for this:
+// us01_usp_first_login requires the old password, which is exactly what has been
+// lost, and us01_usp_upd_user does not touch credentials. Raw, like the two
+// queries below it.
+//
+// The lock and the failed-attempt counter are cleared alongside the password.
+// Since PR #58 those two block a login, so leaving them set would hand the
+// employee a working password and still refuse them at the door — with
+// everything appearing to have worked.
+const resetPassword = async (pool, resetData) => {
+  const result = await pool
+    .request()
+    .input("us01_user_id", sql.BigInt, resetData.us01_user_id)
+    .input("us01_password", sql.VarChar, resetData.us01_password)
+    .input("us01_modified_by", sql.VarChar(50), resetData.us01_modified_by)
+    .query(`UPDATE sec.us01_users
+            SET us01_password = @us01_password,
+                us01_must_change_password = 1,
+                us01_is_locked = 0,
+                us01_failed_login_attempts = 0,
+                us01_modified_by = @us01_modified_by,
+                us01_modified_date = GETDATE()
+            WHERE us01_user_id = @us01_user_id AND us01_is_active = 1`);
+
+  return result.rowsAffected[0];
 };
 
 // Keeps sec.us01_users in step with dbo.clients after an approved change.
@@ -108,6 +136,7 @@ export default {
     changePassword,
     updateLastLogin,
     checkUsernameExists,
-    findUserIdByClientId,
-    updateUserRecord
+    findUserByClientId,
+    updateUserRecord,
+    resetPassword
 }

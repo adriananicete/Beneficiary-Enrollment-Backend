@@ -328,7 +328,8 @@ const syncUserRecord = async (pool, { request, changedFields }, modifiedBy) => {
     );
     if (!touchesUserRecord) return;
 
-    const userId = await UserModel.findUserIdByClientId(pool, request.client_id);
+    const user = await UserModel.findUserByClientId(pool, request.client_id);
+    const userId = user?.us01_user_id;
     if (!userId) {
       console.error(
         `User record sync skipped: no active user for client ${request.client_id}`,

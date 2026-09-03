@@ -1,7 +1,12 @@
 import EnrollmentService from "../services/enrollmentService.js";
 import AgreementModel from "../models/agreementModel.js";
 import ClientModel from "../models/clientModel.js";
+import UserModel from "../models/userModel.js";
 import { poolPromise } from "../config/db.js";
+import { AppError } from "../utils/AppError.js";
+import { sendCredentialsEmail } from "../services/emailService.js";
+import bcrypt from "bcrypt";
+import crypto from "crypto";
 
 export const getEnrollment = async (req, res, next) => {
   try {
@@ -34,6 +39,79 @@ export const getEnrollmentDetails = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: enrollmentData,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// HR reissues an employee's credentials. The employee cannot start this
+// themselves on purpose: the failure that matters is a wrong or unreachable
+// email address, and a self-service page would send the message to the same
+// address that already failed. HR can confirm who they are speaking to first.
+//
+// This exists because the employee is now the only person who can propose a
+// change to their own record. An employee who cannot sign in has a record
+// nobody can correct — see PARK.md.
+export const resendCredentials = async (req, res, next) => {
+  try {
+    const { client_id } = req.params;
+    const { user_id } = req.user;
+
+    const pool = await poolPromise;
+
+    const user = await UserModel.findUserByClientId(pool, client_id);
+    if (!user)
+      throw new AppError("No active account found for this employee", 404);
+
+    if (!user.us01_email_address)
+      throw new AppError(
+        "This account has no email address on file. Correct it before resending.",
+        409,
+      );
+
+    const tempPassword = crypto.randomBytes(9).toString("base64").slice(0, 12);
+    const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+    // Send before writing. The order is the whole design of this endpoint.
+    //
+    // Every other sender in this codebase swallows its failures, because there
+    // the record is what matters and the email is a courtesy. Here the email IS
+    // the delivery — it carries the only copy of the password. Changing the
+    // password first and then failing to send would lock the employee out
+    // harder than before, with a credential nobody knows.
+    //
+    // So the send goes first and a failure means nothing was changed. The cost
+    // is the opposite risk: mail accepted, write fails, and the employee holds a
+    // password that was never stored. That case is logged loudly below, and it
+    // is recoverable by resending — the reverse is not.
+    await sendCredentialsEmail({
+      to: user.us01_email_address,
+      firstName: user.us01_first_name,
+      username: user.us01_username,
+      password: tempPassword,
+    });
+
+    const rowsUpdated = await UserModel.resetPassword(pool, {
+      us01_user_id: user.us01_user_id,
+      us01_password: hashedPassword,
+      us01_modified_by: String(user_id),
+    });
+
+    if (rowsUpdated === 0) {
+      console.error(
+        `Credentials email SENT but password NOT stored for user ${user.us01_user_id} ` +
+          `(client ${client_id}). The employee has a password that does not work. Resend.`,
+      );
+      throw new AppError(
+        "The email was sent but the password could not be saved. Please resend.",
+        500,
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `New sign-in details sent to ${user.us01_email_address}`,
     });
   } catch (error) {
     next(error);
