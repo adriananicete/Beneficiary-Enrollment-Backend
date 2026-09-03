@@ -28,6 +28,15 @@ export const login = async (req, res, next) => {
     );
     if (!isPasswordMatched) throw new AppError("Invalid Credentials", 401);
 
+    // Checked after the password on purpose. Only someone who already proved
+    // they know the password learns the account exists but is closed, so this
+    // tells an attacker nothing they did not already have.
+    if (!user.us01_is_active || user.us01_is_locked)
+      throw new AppError(
+        "This account is no longer active. Please contact your HR.",
+        403,
+      );
+
     if (user.us02_role_name === EMPLOYEE)
       throw new AppError("Employees must use the employee login", 403);
 
