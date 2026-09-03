@@ -13,7 +13,6 @@ import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
 import { AppError } from "../utils/AppError.js";
 import crypto from "crypto";
-import { validateCoverage } from "../utils/validateCoverage.js";
 import config from "../config/env.js";
 
 const createEnrollment = async (enrollmentData) => {
@@ -150,105 +149,6 @@ const createEnrollment = async (enrollmentData) => {
   }
 };
 
-const updateEnrollment = async (userId, enrollmentData) => {
-  const pool = await poolPromise;
-
-  const ownershipRows = await ClientModel.getOwnershipIds(
-    pool,
-    enrollmentData.client_id,
-  );
-  if (ownershipRows.length === 0)
-    throw new AppError("No enrollment found for this client", 404);
-
-  const validAddressIds = new Set(
-    ownershipRows.map((r) => String(r.client_address_id)),
-  );
-  const enrollmentId = ownershipRows[0].enrollment_id;
-
-  if (enrollmentData.client_address_id) {
-    if (!validAddressIds.has(String(enrollmentData.client_address_id)))
-      throw new AppError("Address does not belong to this enrollment", 403);
-  }
-  let toInsert = [];
-  let toUpdate = [];
-  let toDelete = [];
-  if (enrollmentData.beneficiaries !== undefined) {
-    const coverageError = validateCoverage(enrollmentData.beneficiaries);
-    if (coverageError) throw new AppError(coverageError, 400);
-
-    const validBeneficiariesIds = new Set(
-      ownershipRows
-        .filter((r) => r.beneficiary_id !== null)
-        .map((r) => String(r.beneficiary_id)),
-    );
-
-    toInsert = enrollmentData.beneficiaries.filter((b) => !b.beneficiary_id);
-    toUpdate = enrollmentData.beneficiaries.filter((b) => b.beneficiary_id);
-
-    for (let beneficiary of toUpdate) {
-      if (!validBeneficiariesIds.has(String(beneficiary.beneficiary_id)))
-        throw new AppError(
-          "Beneficiary does not belong to this enrollment",
-          403,
-        );
-    }
-
-    const submittedIds = new Set(toUpdate.map((b) => String(b.beneficiary_id)));
-
-    if (submittedIds.size !== toUpdate.length)
-      throw new AppError(
-        "Duplicate beneficiary is not allowed in the same update.",
-        400,
-      );
-
-    toDelete = [...validBeneficiariesIds].filter((id) => !submittedIds.has(id));
-  }
-
-  const transaction = new sql.Transaction(pool);
-  await transaction.begin();
-
-  try {
-    await ClientModel.updateClient(transaction, {
-      ...enrollmentData,
-      modified_by: userId,
-    });
-
-    if (enrollmentData.client_address_id) {
-      await AddressModel.updateClientAddress(transaction, {
-        ...enrollmentData,
-        modified_by: userId,
-      });
-    }
-
-    if (enrollmentData.beneficiaries !== undefined) {
-      for (let id of toDelete) {
-        await BeneficiaryModel.deleteBeneficiary(transaction, id, userId);
-      }
-
-      for (let beneficiary of toUpdate) {
-        await BeneficiaryModel.updateBeneficiary(transaction, {
-          ...beneficiary,
-          modified_by: userId,
-        });
-      }
-
-      for (let beneficiary of toInsert) {
-        await BeneficiaryModel.insertBeneficiary(transaction, {
-          ...beneficiary,
-          enrollment_id: enrollmentId,
-          created_by: userId,
-        });
-      }
-    }
-
-    await transaction.commit();
-  } catch (error) {
-    await transaction.rollback();
-    console.error("Service Error:", error);
-    throw error;
-  }
-};
-
 const getFullEnrollmentDetails = async (pool, clientId) => {
   const enrollmentDetails = await ClientModel.getEnrollmentByClientId(
     pool,
@@ -270,5 +170,4 @@ const getFullEnrollmentDetails = async (pool, clientId) => {
 export default {
   createEnrollment,
   getFullEnrollmentDetails,
-  updateEnrollment,
 };
