@@ -85,12 +85,28 @@ export const resendCredentials = async (req, res, next) => {
     // is the opposite risk: mail accepted, write fails, and the employee holds a
     // password that was never stored. That case is logged loudly below, and it
     // is recoverable by resending — the reverse is not.
-    await sendCredentialsEmail({
-      to: user.us01_email_address,
-      firstName: user.us01_first_name,
-      username: user.us01_username,
-      password: tempPassword,
-    });
+    try {
+      await sendCredentialsEmail({
+        to: user.us01_email_address,
+        firstName: user.us01_first_name,
+        username: user.us01_username,
+        password: tempPassword,
+      });
+    } catch (error) {
+      // Caught only to say what is true. graphSendError returns a plain Error,
+      // which errorHandler renders as "Server Error" — leaving HR unable to tell
+      // whether the password changed. They would either pass on a password that
+      // does not exist, or press resend until something gives.
+      console.error(
+        `Credentials email failed for user ${user.us01_user_id} (client ${client_id}). ` +
+          `Nothing was changed.`,
+        error,
+      );
+      throw new AppError(
+        "The email could not be sent, so nothing was changed. The employee's current password still works. Please try again.",
+        502,
+      );
+    }
 
     const rowsUpdated = await UserModel.resetPassword(pool, {
       us01_user_id: user.us01_user_id,
