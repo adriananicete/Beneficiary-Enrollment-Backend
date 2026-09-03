@@ -2,6 +2,7 @@ import EnrollmentService from "../services/enrollmentService.js";
 import AgreementModel from "../models/agreementModel.js";
 import ClientModel from "../models/clientModel.js";
 import UserModel from "../models/userModel.js";
+import ExportService from "../services/exportService.js";
 import { poolPromise } from "../config/db.js";
 import { AppError } from "../utils/AppError.js";
 import { sendCredentialsEmail } from "../services/emailService.js";
@@ -134,39 +135,47 @@ export const resendCredentials = async (req, res, next) => {
   }
 };
 
-export const exportEnrollments = async (req, res) => {
-  // try {
-  //   const { companyID, role } = req.user;
+export const exportEnrollments = async (req, res, next) => {
+  try {
+    const { user_id } = req.user;
+    const { from, to } = req.query;
 
-  //   const pool = await poolPromise;
+    const { workbook } = await ExportService.buildEnrollmentReport(user_id, {
+      from,
+      to,
+    });
 
-  //   const getExcelReport = await EnrollmentModel.getEnrollmentsForExport(
-  //     pool,
-  //     companyID,
-  //     role,
-  //   );
+    // The filename carries the period when there is one, so a folder of these
+    // can be told apart without opening them. Otherwise the date it was run,
+    // so two downloads in the same week do not silently overwrite each other.
+    const stamp =
+      from || to
+        ? `${from ?? "start"}-to-${to ?? "today"}`
+        : new Date().toISOString().slice(0, 10);
 
-  //   const enrollmentReport = generateExcelReport(getExcelReport);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="enrollments-${stamp}.xlsx"`,
+    );
 
-  //   res.setHeader(
-  //     "Content-Type",
-  //     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  //   );
+    await workbook.xlsx.write(res);
+    return res.end();
+  } catch (error) {
+    // Anything thrown before the first byte is written still reaches the error
+    // handler as JSON. Once writing has started the response is already a
+    // spreadsheet and cannot become an error object, so the only honest thing
+    // left is to stop.
+    if (res.headersSent) {
+      console.error("Enrollment export failed mid-stream:", error);
+      return res.end();
+    }
 
-  //   res.setHeader(
-  //     "Content-Disposition",
-  //     "attachment; filename=enrollments.xlsx",
-  //   );
-
-  //   await enrollmentReport.xlsx.write(res);
-
-  //   res.end();
-  // } catch (error) {
-  //   console.error(error);
-  //   return res.status(500).json({ error: error.message });
-  // }
-
-  return res.status(501).json({ success: false, message: "Not implemented yet" });
+    return next(error);
+  }
 };
 
 export const getDashboardStats = async (req, res) => {
