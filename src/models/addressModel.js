@@ -13,10 +13,19 @@ const insertClientAddress = async (pool, clientId, clientAddress) => {
   return result.output.client_address_id;
 };
 
+// Returns the whole active address row, not just the id. A change request has to
+// compare the proposed address against the current one to know whether it
+// actually changed, and barangay_id is not returned by usp_sel_insurance_enrollment
+// — that procedure resolves it to brgy_name for display.
+//
+// The status = 'A' filter is new. Without it a soft-deleted row could be returned
+// once address deletion exists; today nothing deletes one.
 const getClientAddressId = async (pool, clientId) => {
   const result = await pool.request()
   .input('client_id', sql.BigInt, clientId)
-  .query(`SELECT client_address_id FROM dbo.client_address WHERE client_id = @client_id`);
+  .query(`SELECT client_address_id, barangay_id, full_address, zip_code
+          FROM dbo.client_address
+          WHERE client_id = @client_id AND status = 'A'`);
 
   return result.recordset[0];
 }
