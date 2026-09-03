@@ -8,7 +8,7 @@ const insertBeneficiary = async (pool, beneficiaryData) => {
     .input('relationship', sql.VarChar, beneficiaryData.relationship)
     .input('age', sql.Int, beneficiaryData.age)
     .input('created_by', sql.VarChar, beneficiaryData.created_by)
-    .input('coverage_percent', sql.Decimal, beneficiaryData.coverage_percent)
+    .input('coverage_percent', sql.Decimal(5, 2), beneficiaryData.coverage_percent)
     .execute('usp_ins_beneficiary');
 
     return result.output.beneficiary_id;
