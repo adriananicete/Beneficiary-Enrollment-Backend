@@ -138,12 +138,20 @@ export const resendCredentials = async (req, res, next) => {
 export const exportEnrollments = async (req, res, next) => {
   try {
     const { user_id } = req.user;
+    const { from, to } = req.query;
 
-    const { workbook } = await ExportService.buildEnrollmentReport(user_id);
+    const { workbook } = await ExportService.buildEnrollmentReport(user_id, {
+      from,
+      to,
+    });
 
-    // Dated so two downloads in the same week do not silently overwrite each
-    // other in the browser's Downloads folder.
-    const stamp = new Date().toISOString().slice(0, 10);
+    // The filename carries the period when there is one, so a folder of these
+    // can be told apart without opening them. Otherwise the date it was run,
+    // so two downloads in the same week do not silently overwrite each other.
+    const stamp =
+      from || to
+        ? `${from ?? "start"}-to-${to ?? "today"}`
+        : new Date().toISOString().slice(0, 10);
 
     res.setHeader(
       "Content-Type",
