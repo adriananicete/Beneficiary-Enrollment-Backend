@@ -1,6 +1,5 @@
 import UserModel from "../models/userModel.js";
 import ClientModel from "../models/clientModel.js";
-import EnrollmentService from "../services/enrollmentService.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AddressModel from "../models/addressModel.js";
 import { poolPromise } from "../config/db.js";
@@ -122,31 +121,6 @@ export const getMyEnrollment = async (req, res, next) => {
   }
 };
 
-export const editMyEnrollment = async (req, res, next) => {
-  try {
-    const { user_id } = req.user;
-
-    const pool = await poolPromise;
-
-    const enrollment = await ClientModel.getMyEnrollment(pool, user_id);
-    if (!enrollment || enrollment.length === 0)
-      throw new AppError("Enrollment not found", 404);
-
-    const { client_id } = enrollment[0];
-
-    await EnrollmentService.updateEnrollment(user_id, {
-      ...req.body,
-      client_id,
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: "Enrollment updated successfully",
-    });
-  } catch (error) {
-    next(error);
-  }
-};
 
 export const changePassword = async (req, res, next) => {
   try {

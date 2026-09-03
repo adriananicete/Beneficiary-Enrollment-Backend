@@ -13,16 +13,6 @@ const insertClientAddress = async (pool, clientId, clientAddress) => {
   return result.output.client_address_id;
 };
 
-const updateClientAddress = async (pool, clientAddress) => {
-  const result = await pool.request()
-  .input('client_address_id', sql.BigInt, clientAddress.client_address_id)
-  .input('barangay_id', sql.VarChar, clientAddress.barangay_id)
-  .input('address_line', sql.NVarChar, clientAddress.address_line)
-  .input('zip_code', sql.VarChar, clientAddress.zip_code)
-  .input('modified_by', sql.VarChar, clientAddress.modified_by)
-  .execute('usp_upd_client_address');
-}
-
 const getClientAddressId = async (pool, clientId) => {
   const result = await pool.request()
   .input('client_id', sql.BigInt, clientId)
@@ -33,6 +23,5 @@ const getClientAddressId = async (pool, clientId) => {
 
 export default {
     insertClientAddress,
-    updateClientAddress,
     getClientAddressId
 }
