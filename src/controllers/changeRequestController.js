@@ -166,6 +166,119 @@ export const submitChangeRequest = async (req, res, next) => {
   }
 };
 
+const REVIEW_DECISIONS = ["APPROVED", "REJECTED"];
+
+// HR's list. The procedure handles company scoping and lets an Administrator
+// through unscoped, so nothing here filters.
+export const getChangeRequests = async (req, res, next) => {
+  try {
+    const { status } = req.query;
+
+    const pool = await poolPromise;
+
+    const requests = await ChangeRequestModel.getChangeRequestsByUser(
+      pool,
+      req.user.user_id,
+      status,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: requests,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Drives the badge on the HR screen, polled every thirty seconds. One number.
+export const getPendingChangeRequestCount = async (req, res, next) => {
+  try {
+    const pool = await poolPromise;
+
+    const pendingCount = await ChangeRequestModel.getPendingCountByUser(
+      pool,
+      req.user.user_id,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: { pendingCount },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getChangeRequestDetails = async (req, res, next) => {
+  try {
+    const { request_id } = req.params;
+
+    const pool = await poolPromise;
+
+    const details = await ChangeRequestModel.getChangeRequestById(
+      pool,
+      request_id,
+      req.user.user_id,
+    );
+
+    // The procedure returns nothing at all for another company's request rather
+    // than throwing, so an empty header is how "not yours" arrives. It is
+    // answered the same way as a request that does not exist — telling the two
+    // apart would confirm the other company's row is there.
+    if (!details.request)
+      throw new AppError("Change request not found", 404);
+
+    return res.status(200).json({
+      success: true,
+      data: details,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Approve or reject. The approve procedure applies the change and marks the
+// request in one transaction it owns, so nothing is applied here — a failure
+// part way through leaves the request PENDING and the record untouched.
+export const reviewChangeRequest = async (req, res, next) => {
+  try {
+    const { request_id } = req.params;
+    const { status, review_remarks } = req.body;
+
+    if (!REVIEW_DECISIONS.includes(status))
+      throw new AppError("Status must be APPROVED or REJECTED", 400);
+
+    // Required on a rejection because it is the only thing that tells the
+    // employee what to fix. A rejection with no reason produces a resubmission
+    // of the same thing.
+    if (status === "REJECTED" && !review_remarks?.trim())
+      throw new AppError("Review remarks are required when rejecting", 400);
+
+    const pool = await poolPromise;
+
+    const reviewData = {
+      client_change_request_id: request_id,
+      reviewed_by: String(req.user.user_id),
+      review_remarks: review_remarks?.trim() || null,
+    };
+
+    if (status === "APPROVED")
+      await ChangeRequestModel.approveChangeRequest(pool, reviewData);
+    else await ChangeRequestModel.rejectChangeRequest(pool, reviewData);
+
+    return res.status(200).json({
+      success: true,
+      message:
+        status === "APPROVED"
+          ? "Change request approved and applied"
+          : "Change request rejected",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getMyChangeRequests = async (req, res, next) => {
   try {
     const { user_id } = req.user;

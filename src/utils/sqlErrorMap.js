@@ -28,6 +28,23 @@ export const sqlErrorMap = {
     50106: { statusCode: 403, message: 'Address does not belong to this enrollment' },
     50107: { statusCode: 403, message: 'Beneficiary does not belong to this enrollment' },
 
+    // usp_upd_client_change_request_approve
+    50110: { statusCode: 404, message: 'No pending change request found' },
+    50111: { statusCode: 409, message: 'This employee record is no longer active' },
+    50112: { statusCode: 409, message: 'The proposed TIN number is already registered to someone else' },
+    50113: { statusCode: 409, message: 'The proposed email address is already registered to someone else' },
+    50114: { statusCode: 400, message: 'A beneficiary coverage percentage is invalid' },
+    // The one HR actually meets. It fires when the beneficiary changes would
+    // leave a total other than 100%, so the message has to say what to do.
+    50115: { statusCode: 400, message: 'Approving this would leave beneficiary coverage at something other than 100%. Ask the employee to correct and resubmit.' },
+    50116: { statusCode: 403, message: 'Beneficiary does not belong to this employee' },
+
+    // usp_upd_client_change_request_reject
+    50120: { statusCode: 404, message: 'No pending change request found' },
+
+    // The role guard shared by the three change request read procedures.
+    50130: { statusCode: 403, message: 'You are not authorized to view change requests' },
+
     // usp_upd_client_change_request_cancel
     // One answer for both "no longer pending" and "not yours", matching the
     // procedure. A distinct reply for each would confirm someone else's request
