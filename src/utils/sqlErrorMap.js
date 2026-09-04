@@ -33,6 +33,25 @@ export const sqlErrorMap = {
     // form rather than that the server broke.
     50008: { statusCode: 400, message: 'Total beneficiary coverage cannot exceed 100%' },
 
+    // sec.us01_usp_first_login, on the forced password change.
+    //
+    // In our flow this cannot mean what its text says. The controller has
+    // already verified the password with bcrypt and passes the stored hash as
+    // @oldpass, so the hash comparison inside the procedure matches by
+    // construction. The only way it fires is the username not being found —
+    // which happens when an employee id longer than the procedure's
+    // @us01_username varchar(20) is truncated on the way in.
+    //
+    // 400 and the same uniform wording the controller uses, so the caller
+    // cannot tell a missing user from a wrong password. Once the procedure's
+    // parameter is widened to match the column this should be unreachable.
+    50033: { statusCode: 400, message: 'Invalid Credentials' },
+
+    // 50034, same procedure, is deliberately left unmapped. It refuses a new
+    // password equal to the old one by comparing two bcrypt hashes — different
+    // salts, never equal — so it cannot fire. The plaintext comparison in the
+    // controller is what actually enforces that rule.
+
     50009: {statusCode: 409, message: 'TIN number already registered'},
     50010: {statusCode: 409, message: 'Email address already registered'},
     50019: {statusCode: 409, message: 'You have already submitted an enrollment'},
