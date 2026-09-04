@@ -1,6 +1,7 @@
 import { AppError } from "../utils/AppError.js";
 import { validateCoverage } from "../utils/validateCoverage.js";
 import { validateHeight } from "../utils/validateHeight.js";
+import { validateWeight } from "../utils/validateWeight.js";
 import {
   ADDRESS_FIELD_LENGTHS,
   BENEFICIARY_FIELD_LENGTHS,
@@ -82,10 +83,13 @@ export const validateEnrollmentUpdate = (req, res, next) => {
     if (!req.body[field]) return next(new AppError(`${field} is required`, 400));
   }
 
-  // After the required-field loop, so a missing height reports itself as
-  // missing rather than as out of range.
+  // After the required-field loop, so a missing height or weight reports itself
+  // as missing rather than as out of range.
   const heightError = validateHeight(req.body.height);
   if (heightError) return next(new AppError(heightError, 400));
+
+  const weightError = validateWeight(req.body.weight);
+  if (weightError) return next(new AppError(weightError, 400));
 
   next();
 };
