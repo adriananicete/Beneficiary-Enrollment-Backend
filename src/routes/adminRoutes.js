@@ -8,10 +8,20 @@ import { cancelInvitationJob, getInvitationJobStatus, getInvitations, resendInvi
 import { validateInvitations } from '../middlewares/validateInvitations.js';
 import { bulkInvitationLimiter, credentialsResendLimiter, jobStatusLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
 import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
+import { validateIdParam } from '../middlewares/validateIdParam.js';
 
 const router = express.Router();
 
-router.post('/invitations/:invitation_id/resend', verifyToken, allowedRoles(ADMIN), resendInvitation);
+// Shared by the three routes that take a change request id. Declared once so
+// the message cannot drift between them — it is the same 404 the controllers
+// answer for a request that exists but is not the caller's.
+const changeRequestId = validateIdParam('request_id', 'Change request not found');
+
+// Same for the two invitation routes that take an id. job_id is not covered:
+// it is a job identifier held in memory, never bound to the database.
+const invitationId = validateIdParam('invitation_id', 'Enrollment invitation does not exist');
+
+router.post('/invitations/:invitation_id/resend', verifyToken, allowedRoles(ADMIN), invitationId, resendInvitation);
 router.post('/invitations', verifyToken, allowedRoles(ADMIN), bulkInvitationLimiter, validateInvitations, sendInvitations)
 router.post('/invitations/jobs/:job_id/cancel', verifyToken, allowedRoles(ADMIN), cancelInvitationJob);
 router.get('/invitations/jobs/:job_id', verifyToken, allowedRoles(ADMIN), jobStatusLimiter, getInvitationJobStatus);
@@ -27,9 +37,9 @@ router.post('/enrollments/:client_id/resend-credentials', verifyToken, allowedRo
 // "pending-count" as an id.
 router.get('/change-requests', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getChangeRequests);
 router.get('/change-requests/pending-count', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), pendingCountLimiter, getPendingChangeRequestCount);
-router.get('/change-requests/:request_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getChangeRequestDetails);
-router.patch('/change-requests/:request_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), reviewChangeRequest);
-router.delete('/invitations/:invitation_id', verifyToken, allowedRoles(ADMIN), revokeInvitation)
+router.get('/change-requests/:request_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), changeRequestId, getChangeRequestDetails);
+router.patch('/change-requests/:request_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), changeRequestId, reviewChangeRequest);
+router.delete('/invitations/:invitation_id', verifyToken, allowedRoles(ADMIN), invitationId, revokeInvitation)
 
 
 export default router;

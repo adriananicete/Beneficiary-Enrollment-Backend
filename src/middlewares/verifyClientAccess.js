@@ -1,6 +1,7 @@
 import { AppError } from "../utils/AppError.js";
 import { ADMIN, SUPER_ADMIN } from "../utils/constants.js";
 import ClientModel from "../models/clientModel.js";
+import { isNumericId } from "./validateIdParam.js";
 import { poolPromise } from "../config/db.js";
 
 export const verifyClientAccess = async (req, res, next) => {
@@ -10,19 +11,12 @@ export const verifyClientAccess = async (req, res, next) => {
     const { client_id } = req.params;
 
     // Checked before the id goes anywhere near the driver, and before the role
-    // branches, so both roles get the same answer.
-    //
-    // GET /admin/enrollments/agreements has no route of its own, so Express
-    // matches it against /enrollments/:client_id with client_id = "agreements".
-    // Bound as sql.BigInt that fails inside the driver and surfaces as a
-    // generic 500 — a typo in a URL producing a server fault and a stack trace
-    // in the log.
-    //
-    // 404 rather than 400: an id that cannot exist is answered the same way as
-    // one that does not exist, which is the rule already applied to malformed
-    // invitation tokens. It tells a caller probing ids nothing, and it is what
-    // a mistyped URL deserves.
-    if(!/^\d+$/.test(String(client_id)))
+    // branches, so both roles get the same answer. The rule itself lives in
+    // validateIdParam.js, which is also the middleware the change request
+    // routes use — this one stays inline so that any future route added behind
+    // verifyClientAccess is covered without having to remember a second
+    // middleware.
+    if(!isNumericId(client_id))
       throw new AppError('Enrollment not found', 404);
 
     if(role_name === SUPER_ADMIN) return next();
