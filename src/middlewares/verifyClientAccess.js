@@ -11,11 +11,17 @@ export const verifyClientAccess = async (req, res, next) => {
 
     if(role_name === SUPER_ADMIN) return next();
     if(role_name === ADMIN) {
-        const hrEnrollmentData = await ClientModel.getHrEmployees(pool, user_id);
+        // One row, or none. This used to load every employee in the company to
+        // check a single id — on every request to every admin enrollment route.
+        //
+        // It was also a trap waiting for the enrollment list to be paged: the
+        // moment usp_sel_hr_employees returned a page rather than everything,
+        // this check would have stopped seeing employees that exist and refused
+        // legitimate HR with a 403. That is what happened to revoke and resend
+        // when the invitation list was paged, caught before it shipped.
+        const employee = await ClientModel.getHrEmployeeByClient(pool, user_id, client_id);
 
-        const isAuthorized = hrEnrollmentData.some(emp => Number(emp.client_id) === Number(client_id)); 
-
-        if(!isAuthorized) throw new AppError('Forbidden', 403);
+        if(!employee) throw new AppError('Forbidden', 403);
 
         return next()
     }

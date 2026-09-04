@@ -40,6 +40,23 @@ const getHrEmployees = async (pool, userId) => {
   return result.recordset;
 };
 
+// Answers one question — does this client belong to this caller's company —
+// rather than fetching the company to look the answer up in it. Applies the
+// same scoping as usp_sel_hr_employees, and lets an Administrator past the
+// same way.
+//
+// Returns the row or undefined. No rows is how "not yours" arrives: the
+// procedure does not throw for it, so the caller decides what to say.
+const getHrEmployeeByClient = async (pool, userId, clientId) => {
+  const result = await pool
+    .request()
+    .input("client_id", sql.BigInt, clientId)
+    .input("us01_user_id", sql.BigInt, userId)
+    .execute("usp_sel_hr_employee_by_client");
+
+  return result.recordset[0];
+};
+
 const getEnrollmentByClientId = async (pool, clientId) => {
   const result = await pool
     .request()
@@ -71,6 +88,7 @@ export default {
   getMyEnrollment,
   insertClient,
   getHrEmployees,
+  getHrEmployeeByClient,
   getEnrollmentByClientId,
   getEnrollmentBenefitsByClientId,
 };
