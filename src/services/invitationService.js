@@ -5,7 +5,7 @@ import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
 import { partitionEmails } from "../utils/partitionEmails.js";
 import { chunk, delay, runWithConcurrency } from "../utils/concurrency.js";
-import { MAX_PAGE_SIZE } from "../utils/parsePaging.js";
+import { buildPage, MAX_PAGE_SIZE } from "../utils/parsePaging.js";
 import InvitationJobStore from "./invitationJobStore.js";
 import config from "../config/env.js";
 
@@ -278,25 +278,12 @@ const getInvitations = async (userId, filters) => {
     filters,
   );
 
-  // The procedure carries the total on every row via COUNT(*) OVER(), so it
-  // comes back without a second query — but a filtered set with no matches
-  // returns no rows at all, and therefore no count either. Defaulting to 0 is
-  // what keeps an empty page from reporting `undefined` rows out of `NaN`.
-  const total = invitations.length > 0 ? invitations[0].total_count : 0;
-
-  // total_count is dropped from the rows because it is the same number repeated
-  // on each one, and it is already in the envelope.
-  const rows = invitations.map(
-    ({ token, total_count, ...invitation }) => invitation,
-  );
-
-  return {
-    rows,
-    page: filters.page,
-    pageSize: filters.pageSize,
-    total,
-    totalPages: Math.ceil(total / filters.pageSize),
-  };
+  // The envelope, including the empty-set guard on `total`, lives in
+  // parsePaging.js so the three HR lists cannot drift apart. The transform is
+  // what is specific here: `token` is the credential that opens the enrollment
+  // form as the invited person, so it never leaves the server. That is what
+  // PR #49 fixed and it has to survive every reshape of this response.
+  return buildPage(invitations, filters, ({ token, ...invitation }) => invitation);
 };
 
 // The SP caps last_send_error at 500 characters; Graph errors carry the whole

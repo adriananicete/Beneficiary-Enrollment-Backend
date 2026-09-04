@@ -84,11 +84,20 @@ const cancelChangeRequest = async (pool, cancelData) => {
   return result.recordset[0];
 };
 
-const getChangeRequestsByUser = async (pool, userId, requestStatus) => {
+// `page_size` undefined reaches the procedure as NULL, which means the whole
+// set — the same behaviour this had before paging existed. Nothing that calls
+// it without paging changes.
+//
+// VarChar(20) matches the procedure's own declaration. It was VarChar(10),
+// which held every status in use but would have truncated a longer one
+// silently, and this project has been bitten by silent truncation before.
+const getChangeRequestsByUser = async (pool, userId, requestStatus, paging = {}) => {
   const result = await pool
     .request()
     .input("us01_user_id", sql.BigInt, userId)
-    .input("request_status", sql.VarChar(10), requestStatus ?? null)
+    .input("request_status", sql.VarChar(20), requestStatus ?? null)
+    .input("page", sql.Int, paging.page)
+    .input("page_size", sql.Int, paging.pageSize)
     .execute("usp_sel_client_change_requests_by_user");
 
   return result.recordset;
