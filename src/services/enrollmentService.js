@@ -20,8 +20,19 @@ const createEnrollment = async (enrollmentData) => {
 
   const invitation = await InvitationModel.getInvitationByToken(pool, enrollmentData.token)
   if(!invitation) throw new AppError("Invitation not found", 404);
-  if(invitation.is_valid === 0) throw new AppError("This invitation has expired. Please ask your HR to resend it.", 410);
-  if(invitation.is_enrolled === 1) throw new AppError("You have already submitted an enrollment", 409);
+  // Truthiness rather than === 0 and === 1. Both columns are computed in the
+  // procedure, and the two procedures that compute them do not agree on the
+  // type: usp_sel_enrollment_invitation_by_token returns a bare 1, an INT,
+  // while usp_sel_enrollment_invitations_by_user CASTs to BIT, which mssql
+  // hands back as a boolean. A strict comparison is correct against one and
+  // silently false against the other — which is exactly how the resend guard
+  // died, fixed in c71abc7.
+  //
+  // These two are on the public submit path, so a dead guard here would accept
+  // an expired invitation or a second enrollment. Written this way they hold
+  // whichever type arrives, and survive the procedure being rewritten.
+  if(!invitation.is_valid) throw new AppError("This invitation has expired. Please ask your HR to resend it.", 410);
+  if(invitation.is_enrolled) throw new AppError("You have already submitted an enrollment", 409);
 
   enrollmentData.employer_id = invitation.employer_id;
   enrollmentData.email_address = invitation.email_address;
