@@ -1,10 +1,40 @@
 import InvitationService from '../services/invitationService.js';
+import { parsePaging } from '../utils/parsePaging.js';
+
+// "0" and "1" only. Anything else means no filter, including an absent
+// parameter — and the check has to be written against the strings, because
+// Number("0") is falsy and would read as absent when it is the one value HR
+// filters on most.
+const parseIsEnrolled = (value) => {
+    if (value === '0') return 0;
+    if (value === '1') return 1;
+
+    return null;
+};
+
+// An empty search is no search. Passing "" through would reach the procedure as
+// LIKE '%%', which matches every row and pays for a scan to do it.
+const parseSearch = (value) => {
+    if (typeof value !== 'string') return null;
+
+    const trimmed = value.trim();
+
+    return trimmed === '' ? null : trimmed;
+};
 
 export const getInvitations = async (req, res, next) => {
     try {
         const { user_id } = req.user;
+        const { page, pageSize } = parsePaging(req.query);
 
-        const userInvitation = await InvitationService.getInvitations(user_id);
+        const userInvitation = await InvitationService.getInvitations(user_id, {
+            page,
+            pageSize,
+            isEnrolled: parseIsEnrolled(req.query.is_enrolled),
+            status: req.query.status ?? null,
+            sendStatus: req.query.send_status ?? null,
+            search: parseSearch(req.query.search)
+        });
 
         return res.status(200).json({
             success: true,
