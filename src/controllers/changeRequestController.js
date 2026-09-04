@@ -7,6 +7,7 @@ import ReferenceModel from "../models/referenceModel.js";
 import { poolPromise } from "../config/db.js";
 import { AppError } from "../utils/AppError.js";
 import { sendChangeRequestDecisionEmail } from "../services/emailService.js";
+import { buildPage, parsePaging } from "../utils/parsePaging.js";
 
 // The employee submits the full intended state, exactly as the removed
 // PUT /api/employee/enrollment did: a beneficiary carrying an id is an edit, one
@@ -186,6 +187,7 @@ const REVIEW_DECISIONS = ["APPROVED", "REJECTED"];
 export const getChangeRequests = async (req, res, next) => {
   try {
     const { status } = req.query;
+    const paging = parsePaging(req.query);
 
     const pool = await poolPromise;
 
@@ -193,11 +195,12 @@ export const getChangeRequests = async (req, res, next) => {
       pool,
       req.user.user_id,
       status,
+      paging,
     );
 
     return res.status(200).json({
       success: true,
-      data: requests,
+      data: buildPage(requests, paging),
     });
   } catch (error) {
     next(error);
