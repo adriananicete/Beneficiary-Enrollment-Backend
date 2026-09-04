@@ -4,6 +4,7 @@ import EnrollmentService from "../services/enrollmentService.js";
 import InvitationModel from '../models/invitationModel.js';
 import UserModel from "../models/userModel.js";
 import { AppError } from "../utils/AppError.js";
+import { isInvitationToken } from "../middlewares/validateIdParam.js";
 import AgreementModel from "../models/agreementModel.js"
 
 export const submitEnrollment = async (req, res, next) => {
@@ -122,6 +123,17 @@ export const getInvitationByToken = async (req, res, next) => {
   try {
     const { token } = req.query;
     if(!token) throw new AppError('Token is required', 400);
+
+    // Checked before the token reaches NVarChar(64) in the model. Without this
+    // a string longer than 64 characters is refused by the driver, and that
+    // error is neither an AppError nor a mapped SQL number — so this public
+    // endpoint answers 500 and writes a stack trace, for anyone, with no
+    // account. The same rule already guards the submit path.
+    //
+    // 404, the same answer a token that does not exist gets. A caller trying
+    // tokens learns nothing from the difference.
+    if(!isInvitationToken(token)) throw new AppError('Invitation not found', 404);
+
     const pool = await poolPromise;
 
     const invitation = await InvitationModel.getInvitationByToken(pool, token)
