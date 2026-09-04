@@ -25,6 +25,25 @@ const getInvitationsByUser = async (pool, userId, filters = {}) => {
     return result.recordset;
 };
 
+// Answers one question — does this invitation belong to this caller's company —
+// rather than fetching the company to look the answer up in it. Applies the same
+// scoping as usp_sel_enrollment_invitations_by_user.
+//
+// Returns the row or undefined. No rows is how "not yours" arrives: the
+// procedure does not throw for it, so the caller decides what to say.
+//
+// It returns `token`, which the list deliberately does not. That is correct
+// here — this row never leaves the server, and the resend path needs the token
+// to rebuild the enrollment link.
+const getInvitationById = async (pool, userId, invitationId) => {
+    const result = await pool.request()
+    .input('invitation_id', sql.BigInt, invitationId)
+    .input('us01_user_id', sql.BigInt, userId)
+    .execute('usp_sel_enrollment_invitation_by_id')
+
+    return result.recordset[0];
+};
+
 const getEmployersByUser = async (pool, userId) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
@@ -70,6 +89,7 @@ const updateSendStatus = async (pool, invitationId, sendStatus, lastSendError, m
 
 export default {
     getInvitationByToken,
+    getInvitationById,
     getInvitationsByUser,
     getEmployersByUser,
     createInvitation,

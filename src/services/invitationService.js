@@ -5,7 +5,7 @@ import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
 import { partitionEmails } from "../utils/partitionEmails.js";
 import { chunk, delay, runWithConcurrency } from "../utils/concurrency.js";
-import { buildPage, MAX_PAGE_SIZE } from "../utils/parsePaging.js";
+import { buildPage } from "../utils/parsePaging.js";
 import InvitationJobStore from "./invitationJobStore.js";
 import config from "../config/env.js";
 
@@ -314,46 +314,17 @@ const recordSendStatus = async (pool, invitationId, sendStatus, errorMessage, us
   }
 };
 
-// Revoke and resend identify an invitation by id, and this list is the only
+// Revoke and resend identify an invitation by id, and this lookup is the only
 // company scoping they have — `usp_del_enrollment_invitation` and
 // `usp_upd_enrollment_invitation_resend` take `modified_by` as an audit field,
-// not as a filter. Without this check an HR could revoke or resend another
-// company's invitation by guessing an id.
+// not as a filter. Without it an HR could revoke or resend another company's
+// invitation by guessing an id.
 //
-// That is why paging the list could not simply be paged: at the default 25 the
-// check would stop seeing invitations that exist, and every legitimate revoke
-// beyond the first page would answer 403.
-//
-// So it walks the pages, bounded by the total the first page reports. It is a
-// stopgap and the replacement is written up in DBA-REQUESTS.md — a by-id lookup
-// scoped to the caller, which makes both of these one round trip. Worth doing:
-// even before paging, both of them read every invitation in the company to
-// check a single id.
-const findOwnedInvitation = async (pool, userId, invitationId) => {
-  const pageSize = MAX_PAGE_SIZE;
-  let page = 1;
-  let total = null;
-
-  while (total === null || (page - 1) * pageSize < total) {
-    const rows = await InvitationModel.getInvitationsByUser(pool, userId, {
-      page,
-      pageSize,
-    });
-
-    if (rows.length === 0) return null;
-
-    total = rows[0].total_count;
-
-    const match = rows.find(
-      (i) => String(i.invitation_id) === String(invitationId),
-    );
-    if (match) return match;
-
-    page += 1;
-  }
-
-  return null;
-};
+// It used to answer that by loading every invitation in the company and
+// searching the list, then — once the list was paged — by walking the pages.
+// Both worked; both read everything to check one id. This asks the question.
+const findOwnedInvitation = (pool, userId, invitationId) =>
+  InvitationModel.getInvitationById(pool, userId, invitationId);
 
 const revokeInvitation = async (userId, invitationId) => {
   const pool = await poolPromise;
