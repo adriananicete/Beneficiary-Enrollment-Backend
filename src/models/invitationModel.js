@@ -8,9 +8,18 @@ const getInvitationByToken = async (pool, token) => {
     return result.recordset[0];
 };
 
-const getInvitationsByUser = async (pool, userId) => {
+// The five filters are all optional in the procedure, so an undefined here has
+// to reach it as NULL rather than as a value. mssql sends undefined as NULL,
+// but passing it explicitly says so out loud.
+const getInvitationsByUser = async (pool, userId, filters = {}) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
+    .input('page', sql.Int, filters.page)
+    .input('page_size', sql.Int, filters.pageSize)
+    .input('is_enrolled', sql.Bit, filters.isEnrolled ?? null)
+    .input('status', sql.VarChar(1), filters.status ?? null)
+    .input('send_status', sql.VarChar(10), filters.sendStatus ?? null)
+    .input('search', sql.VarChar(150), filters.search ?? null)
     .execute('usp_sel_enrollment_invitations_by_user')
 
     return result.recordset;

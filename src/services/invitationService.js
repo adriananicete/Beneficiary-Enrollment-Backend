@@ -5,6 +5,7 @@ import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
 import { partitionEmails } from "../utils/partitionEmails.js";
 import { chunk, delay, runWithConcurrency } from "../utils/concurrency.js";
+import { MAX_PAGE_SIZE } from "../utils/parsePaging.js";
 import InvitationJobStore from "./invitationJobStore.js";
 import config from "../config/env.js";
 
@@ -268,12 +269,34 @@ const cancelInvitationJob = (userId, jobId) => {
 // The token is the credential that opens the enrollment form as the invited
 // person. The backend needs it to rebuild the link on resend; a browser never
 // does, so it is stripped before the list leaves the server.
-const getInvitations = async (userId) => {
+const getInvitations = async (userId, filters) => {
   const pool = await poolPromise;
 
-  const invitations = await InvitationModel.getInvitationsByUser(pool, userId);
+  const invitations = await InvitationModel.getInvitationsByUser(
+    pool,
+    userId,
+    filters,
+  );
 
-  return invitations.map(({ token, ...invitation }) => invitation);
+  // The procedure carries the total on every row via COUNT(*) OVER(), so it
+  // comes back without a second query — but a filtered set with no matches
+  // returns no rows at all, and therefore no count either. Defaulting to 0 is
+  // what keeps an empty page from reporting `undefined` rows out of `NaN`.
+  const total = invitations.length > 0 ? invitations[0].total_count : 0;
+
+  // total_count is dropped from the rows because it is the same number repeated
+  // on each one, and it is already in the envelope.
+  const rows = invitations.map(
+    ({ token, total_count, ...invitation }) => invitation,
+  );
+
+  return {
+    rows,
+    page: filters.page,
+    pageSize: filters.pageSize,
+    total,
+    totalPages: Math.ceil(total / filters.pageSize),
+  };
 };
 
 // The SP caps last_send_error at 500 characters; Graph errors carry the whole
@@ -304,12 +327,52 @@ const recordSendStatus = async (pool, invitationId, sendStatus, errorMessage, us
   }
 };
 
+// Revoke and resend identify an invitation by id, and this list is the only
+// company scoping they have — `usp_del_enrollment_invitation` and
+// `usp_upd_enrollment_invitation_resend` take `modified_by` as an audit field,
+// not as a filter. Without this check an HR could revoke or resend another
+// company's invitation by guessing an id.
+//
+// That is why paging the list could not simply be paged: at the default 25 the
+// check would stop seeing invitations that exist, and every legitimate revoke
+// beyond the first page would answer 403.
+//
+// So it walks the pages, bounded by the total the first page reports. It is a
+// stopgap and the replacement is written up in DBA-REQUESTS.md — a by-id lookup
+// scoped to the caller, which makes both of these one round trip. Worth doing:
+// even before paging, both of them read every invitation in the company to
+// check a single id.
+const findOwnedInvitation = async (pool, userId, invitationId) => {
+  const pageSize = MAX_PAGE_SIZE;
+  let page = 1;
+  let total = null;
+
+  while (total === null || (page - 1) * pageSize < total) {
+    const rows = await InvitationModel.getInvitationsByUser(pool, userId, {
+      page,
+      pageSize,
+    });
+
+    if (rows.length === 0) return null;
+
+    total = rows[0].total_count;
+
+    const match = rows.find(
+      (i) => String(i.invitation_id) === String(invitationId),
+    );
+    if (match) return match;
+
+    page += 1;
+  }
+
+  return null;
+};
+
 const revokeInvitation = async (userId, invitationId) => {
   const pool = await poolPromise;
 
-  const invitations = await InvitationModel.getInvitationsByUser(pool, userId);
-  const ownedIds = new Set(invitations.map(i => String(i.invitation_id)))
-  if(!ownedIds.has(String(invitationId)))
+  const invitation = await findOwnedInvitation(pool, userId, invitationId);
+  if(!invitation)
     throw new AppError("Invitation does not belong to your company", 403);
 
   await InvitationModel.revokeInvitation(pool, invitationId, userId)
@@ -317,8 +380,7 @@ const revokeInvitation = async (userId, invitationId) => {
 
 const resendInvitation = async (userId, invitationId) => {
   const pool = await poolPromise;
-  const invitations = await InvitationModel.getInvitationsByUser(pool, userId);
-  const invitation = invitations.find(i => String(i.invitation_id) === String(invitationId));
+  const invitation = await findOwnedInvitation(pool, userId, invitationId);
   if(!invitation) throw new AppError('Invitation does not belong to your company', 403);
 
   if(invitation.is_enrolled === 1) throw new AppError('This employee has already submitted an enrollment', 409);
