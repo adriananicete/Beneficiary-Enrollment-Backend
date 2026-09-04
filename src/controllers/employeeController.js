@@ -2,6 +2,7 @@ import UserModel from "../models/userModel.js";
 import ClientModel from "../models/clientModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AddressModel from "../models/addressModel.js";
+import PasswordService from "../services/passwordService.js";
 import { poolPromise } from "../config/db.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -136,52 +137,14 @@ export const changePassword = async (req, res, next) => {
     const { oldPassword, newPassword } = req.body;
     const { username } = req.resetUser;
 
-    if (!oldPassword || !newPassword)
-      throw new AppError("All fields required", 400);
-
     const pool = await poolPromise;
 
-    const user = await UserModel.findUserByUsername(pool, username);
-    // Uniform message for both a missing user and a wrong password, so this
-    // cannot be used to work out which usernames exist.
-    if (!user) throw new AppError("Invalid Credentials", 400);
-
-    const isPasswordMatch = await bcrypt.compare(
+    await PasswordService.changePassword(pool, {
+      username,
       oldPassword,
-      user.us01_password,
-    );
-    if (!isPasswordMatch) throw new AppError("Invalid Credentials", 400);
-
-    // A reset token issued before the account was closed stays valid for its
-    // full 15 minutes, so this path needs the same guard as the login.
-    if (!user.us01_is_active || user.us01_is_locked)
-      throw new AppError(
-        "This account is no longer active. Please contact your HR.",
-        403,
-      );
-
-    if (oldPassword === newPassword)
-      throw new AppError(
-        "New password cannot be the same as the old password",
-        400,
-      );
-
-    const passwordPolicy = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
-    if (!passwordPolicy.test(newPassword))
-      throw new AppError(
-        "Password must be at least 8 characters and include a letter and a number",
-        400,
-      );
-
-    const newHashPassword = await bcrypt.hash(newPassword, 10);
-
-    await UserModel.changePassword(pool, {
-      us01_username: username,
-      oldpass: user.us01_password,
-      newpass: newHashPassword,
+      newPassword,
+      allowedRoles: [EMPLOYEE],
     });
-
-    await UserModel.updateLastLogin(pool, username);
 
     res.clearCookie("reset_token", cookieOptions);
 
