@@ -9,6 +9,22 @@ export const verifyClientAccess = async (req, res, next) => {
     const { role_name, user_id } = req.user;
     const { client_id } = req.params;
 
+    // Checked before the id goes anywhere near the driver, and before the role
+    // branches, so both roles get the same answer.
+    //
+    // GET /admin/enrollments/agreements has no route of its own, so Express
+    // matches it against /enrollments/:client_id with client_id = "agreements".
+    // Bound as sql.BigInt that fails inside the driver and surfaces as a
+    // generic 500 — a typo in a URL producing a server fault and a stack trace
+    // in the log.
+    //
+    // 404 rather than 400: an id that cannot exist is answered the same way as
+    // one that does not exist, which is the rule already applied to malformed
+    // invitation tokens. It tells a caller probing ids nothing, and it is what
+    // a mistyped URL deserves.
+    if(!/^\d+$/.test(String(client_id)))
+      throw new AppError('Enrollment not found', 404);
+
     if(role_name === SUPER_ADMIN) return next();
     if(role_name === ADMIN) {
         // One row, or none. This used to load every employee in the company to
