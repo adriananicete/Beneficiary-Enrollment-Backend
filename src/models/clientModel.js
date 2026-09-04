@@ -31,10 +31,17 @@ const insertClient = async (pool, clientData) => {
   return result.output.client_id;
 };
 
-const getHrEmployees = async (pool, userId) => {
+// `page_size` undefined reaches the procedure as NULL, and NULL means the whole
+// set — which is why the two callers that need every row keep working without
+// being told about paging. `exportService.js` is the one that matters: a page
+// there would produce a spreadsheet quietly missing most of the company.
+const getHrEmployees = async (pool, userId, options = {}) => {
   const result = await pool
     .request()
     .input("us01_user_id", sql.BigInt, userId)
+    .input("page", sql.Int, options.page)
+    .input("page_size", sql.Int, options.pageSize)
+    .input("search", sql.VarChar(150), options.search ?? null)
     .execute("usp_sel_hr_employees");
 
   return result.recordset;

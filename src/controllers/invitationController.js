@@ -1,5 +1,5 @@
 import InvitationService from '../services/invitationService.js';
-import { parsePaging } from '../utils/parsePaging.js';
+import { parsePaging, parseSearch } from '../utils/parsePaging.js';
 
 // "0" and "1" only. Anything else means no filter, including an absent
 // parameter — and the check has to be written against the strings, because
@@ -10,16 +10,6 @@ const parseIsEnrolled = (value) => {
     if (value === '1') return 1;
 
     return null;
-};
-
-// An empty search is no search. Passing "" through would reach the procedure as
-// LIKE '%%', which matches every row and pays for a scan to do it.
-const parseSearch = (value) => {
-    if (typeof value !== 'string') return null;
-
-    const trimmed = value.trim();
-
-    return trimmed === '' ? null : trimmed;
 };
 
 export const getInvitations = async (req, res, next) => {

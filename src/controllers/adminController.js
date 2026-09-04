@@ -4,6 +4,7 @@ import ClientModel from "../models/clientModel.js";
 import UserModel from "../models/userModel.js";
 import ExportService from "../services/exportService.js";
 import { poolPromise } from "../config/db.js";
+import { buildPage, parsePaging } from "../utils/parsePaging.js";
 import { AppError } from "../utils/AppError.js";
 import { sendCredentialsEmail } from "../services/emailService.js";
 import bcrypt from "bcrypt";
@@ -12,14 +13,18 @@ import crypto from "crypto";
 export const getEnrollment = async (req, res, next) => {
   try {
     const { user_id } = req.user;
+    const paging = parsePaging(req.query);
 
     const pool = await poolPromise;
 
-    const getEnrollementData = await ClientModel.getHrEmployees(pool, user_id);
+    const employees = await ClientModel.getHrEmployees(pool, user_id, {
+      ...paging,
+      search: parseSearch(req.query.search),
+    });
 
     return res.status(200).json({
       success: true,
-      data: getEnrollementData,
+      data: buildPage(employees, paging),
     });
   } catch (error) {
     next(error);
