@@ -1,4 +1,17 @@
 export const sqlErrorMap = {
+    // Thrown by usp_sel_hr_employees, which backs the enrollment list.
+    //
+    // verifyToken and allowedRoles refuse these callers long before the
+    // procedure runs, with one exception: a session that was already open when
+    // the account was deactivated keeps its JWT until it expires — up to thirty
+    // days with rememberMe. That user reaches the procedure, and until now got
+    // a generic 500 where the login answers this same sentence.
+    //
+    // 403 rather than 401 for both, matching the login: the token is valid,
+    // the account is not.
+    50001: { statusCode: 403, message: 'This account is no longer active. Please contact your HR.' },
+    50002: { statusCode: 403, message: 'You are not authorized to view employee information' },
+
     50009: {statusCode: 409, message: 'TIN number already registered'},
     50010: {statusCode: 409, message: 'Email address already registered'},
     50019: {statusCode: 409, message: 'You have already submitted an enrollment'},
