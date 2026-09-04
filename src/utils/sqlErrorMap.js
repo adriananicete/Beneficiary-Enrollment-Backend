@@ -12,6 +12,27 @@ export const sqlErrorMap = {
     50001: { statusCode: 403, message: 'This account is no longer active. Please contact your HR.' },
     50002: { statusCode: 403, message: 'You are not authorized to view employee information' },
 
+    // Thrown by usp_ins_beneficiary, on the public enrollment submit path. Its
+    // only caller is enrollmentService.js:107, once per beneficiary, inside the
+    // backend's transaction.
+    //
+    // 50006 is deliberately NOT mapped. It means the enrollment row does not
+    // exist — but that row was inserted moments earlier in the same
+    // transaction, so it firing is a fault on our side rather than anything the
+    // employee did or can act on. A generic 500 is the honest answer; the full
+    // error is still logged. Same reasoning as 50076.
+    //
+    // 50007 is the reachable one and the form allows it: two children with the
+    // same first name, or the same person entered twice.
+    50007: { statusCode: 409, message: 'Two beneficiaries cannot have the same name. Please correct one and submit again.' },
+
+    // Unreachable through validateCoverage, which requires the total to be
+    // exactly 100 in whole multiples of 5 before the request reaches the
+    // procedure. Mapped anyway: it is the database's own guard on the rule, and
+    // if it ever fires the employee should be told what is wrong with their
+    // form rather than that the server broke.
+    50008: { statusCode: 400, message: 'Total beneficiary coverage cannot exceed 100%' },
+
     50009: {statusCode: 409, message: 'TIN number already registered'},
     50010: {statusCode: 409, message: 'Email address already registered'},
     50019: {statusCode: 409, message: 'You have already submitted an enrollment'},
