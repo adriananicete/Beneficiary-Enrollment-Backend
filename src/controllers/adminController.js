@@ -4,7 +4,7 @@ import ClientModel from "../models/clientModel.js";
 import UserModel from "../models/userModel.js";
 import ExportService from "../services/exportService.js";
 import { poolPromise } from "../config/db.js";
-import { buildPage, parsePaging } from "../utils/parsePaging.js";
+import { buildPage, parsePaging, parseSearch } from "../utils/parsePaging.js";
 import { AppError } from "../utils/AppError.js";
 import { sendCredentialsEmail } from "../services/emailService.js";
 import bcrypt from "bcrypt";
