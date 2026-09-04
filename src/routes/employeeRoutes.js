@@ -7,6 +7,7 @@ import { verifyResetToken } from '../middlewares/verifyResetToken.js';
 import { authIpLimiter, strictLimiter } from '../middlewares/rateLimiter.js';
 import { getMyAgreements } from '../controllers/enrollmentController.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
+import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { cancelMyChangeRequest, getMyChangeRequests, submitChangeRequest } from '../controllers/changeRequestController.js';
 
 const router = express.Router();
@@ -18,6 +19,6 @@ router.get('/enrollment', verifyToken, allowedRoles(EMPLOYEE), getMyEnrollment);
 router.get('/agreements', verifyToken, allowedRoles(EMPLOYEE), getMyAgreements);
 router.post('/change-requests', verifyToken, allowedRoles(EMPLOYEE), validateEnrollmentUpdate, submitChangeRequest);
 router.get('/change-requests', verifyToken, allowedRoles(EMPLOYEE), getMyChangeRequests);
-router.patch('/change-requests/:request_id/cancel', verifyToken, allowedRoles(EMPLOYEE), cancelMyChangeRequest);
+router.patch('/change-requests/:request_id/cancel', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('request_id', 'Change request not found'), cancelMyChangeRequest);
 
 export default router;
