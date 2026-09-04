@@ -29,6 +29,16 @@ export const parsePaging = (query = {}) => {
     return { page, pageSize };
 };
 
+// An empty search is no search. Passing "" through would reach the procedure as
+// LIKE '%%', which matches every row and pays for a scan to do it.
+export const parseSearch = (value) => {
+    if (typeof value !== 'string') return null;
+
+    const trimmed = value.trim();
+
+    return trimmed === '' ? null : trimmed;
+};
+
 // The response envelope, in the same file as the parameters that produce it,
 // so the contract is one thing rather than a shape each list reinvents.
 //
