@@ -383,7 +383,11 @@ const resendInvitation = async (userId, invitationId) => {
   const invitation = await findOwnedInvitation(pool, userId, invitationId);
   if(!invitation) throw new AppError('Invitation does not belong to your company', 403);
 
-  if(invitation.is_enrolled === 1) throw new AppError('This employee has already submitted an enrollment', 409);
+  // Truthy rather than `=== 1`. The procedure returns is_enrolled as a BIT,
+  // which mssql hands back as a JavaScript boolean, so the strict comparison
+  // against 1 was never true and this guard never fired. Written this way it
+  // holds whether the column comes back as a boolean or as a number.
+  if(invitation.is_enrolled) throw new AppError('This employee has already submitted an enrollment', 409);
 
   await InvitationModel.resendInvitation(pool, invitationId, userId);
 
