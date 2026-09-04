@@ -126,8 +126,12 @@ export const getInvitationByToken = async (req, res, next) => {
 
     const invitation = await InvitationModel.getInvitationByToken(pool, token)
     if(!invitation) throw new AppError('Invitation not found', 404);
-    if(invitation.is_valid === 0) throw new AppError('This invitation has expired. Please ask your HR to resend it.', 410);
-    if(invitation.is_enrolled === 1) throw new AppError('You have already submitted an enrollment', 409);
+    // Truthiness rather than === 0 and === 1, for the reason set out at the
+    // same two checks in enrollmentService.js: the two invitation procedures
+    // return these computed columns as different types, and a strict
+    // comparison is silently false against one of them.
+    if(!invitation.is_valid) throw new AppError('This invitation has expired. Please ask your HR to resend it.', 410);
+    if(invitation.is_enrolled) throw new AppError('You have already submitted an enrollment', 409);
 
     return res.status(200).json({
       success: true,
