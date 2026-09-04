@@ -3,10 +3,13 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import config from "../config/env.js";
 import {
+  ADMIN,
   EMPLOYEE,
   REMEMBER_ME_EXPIRY,
   SESSION_EXPIRY,
+  SUPER_ADMIN,
 } from "../utils/constants.js";
+import PasswordService from "../services/passwordService.js";
 import { poolPromise } from "../config/db.js";
 import { cookieOptions } from "../utils/cookieConfig.js";
 import { AppError } from "../utils/AppError.js";
@@ -40,11 +43,34 @@ export const login = async (req, res, next) => {
     if (user.us02_role_name === EMPLOYEE)
       throw new AppError("Employees must use the employee login", 403);
 
-    if (user.us01_must_change_password)
+    // The reset token is the whole answer here. Without it this response was a
+    // dead end: the caller was told to change their password and given nothing
+    // to change it with, and no session either, so a seeded HR account could
+    // not be used at all.
+    //
+    // No `rememberMe` on this one. It is fifteen minutes whatever the caller
+    // asked for, because it is a key to one action rather than a session.
+    if (user.us01_must_change_password) {
+      const changePasswordToken = jwt.sign(
+        {
+          user_id: user.us01_user_id,
+          username: user.us01_username,
+          purpose: "password_reset",
+        },
+        config.jwtSecret,
+        { expiresIn: "15m" },
+      );
+
+      res.cookie("reset_token", changePasswordToken, {
+        ...cookieOptions,
+        maxAge: 15 * 60 * 1000,
+      });
+
       return res.status(200).json({
         success: true,
         data: { mustChangePassword: true },
       });
+    }
 
     const token = jwt.sign(
       {
@@ -67,6 +93,31 @@ export const login = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: "Login successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const changePassword = async (req, res, next) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    const { username } = req.resetUser;
+
+    const pool = await poolPromise;
+
+    await PasswordService.changePassword(pool, {
+      username,
+      oldPassword,
+      newPassword,
+      allowedRoles: [SUPER_ADMIN, ADMIN],
+    });
+
+    res.clearCookie("reset_token", cookieOptions);
+
+    return res.status(200).json({
+      success: true,
+      message: "Password changed successfully",
     });
   } catch (error) {
     next(error);
