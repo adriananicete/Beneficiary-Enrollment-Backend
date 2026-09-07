@@ -1,6 +1,7 @@
 import ClientModel from "../models/clientModel.js";
 import InvitationModel from "../models/invitationModel.js";
 import ChangeRequestModel from "../models/changeRequestModel.js";
+import * as ReferenceModel from "../models/referenceModel.js";
 import { SUPER_ADMIN } from "../utils/constants.js";
 
 // Two dashboards, because the two roles do different jobs.
@@ -26,33 +27,51 @@ import { SUPER_ADMIN } from "../utils/constants.js";
 // reads through usp_sel_hr_employees rather than a query of its own. A
 // dashboard is a screen rather than a file, but the rule is the same.
 
-// Grouped on company_code, which is the only company key
-// usp_sel_hr_employees returns — the projection carries company_code and
-// company_name but not employer_id.
+// Seeded from the employer list so that every active company appears, then
+// filled in from the employee rows. Seeding is what makes a newly onboarded
+// company read as 0 rather than as absent — which is exactly the moment
+// somebody wants to see the zero.
 //
-// KNOWN GAP: a company with no employee rows at all does not appear here, so a
-// newly onboarded company shows as absent rather than as zero — which is
-// exactly when somebody would want to see the zero. A company that has
-// employees but no enrollments does show 0, because those rows are a LEFT JOIN
-// miss rather than a missing row.
+// The seed is complete, and this is why rather than a hope:
+// usp_sel_hr_employees joins `dbo.employers AS e ... AND e.status = 'A'`, so
+// an employee can only ever belong to an active employer. usp_sel_employers
+// with its default @include_inactive = 0 returns exactly that set. The employee
+// rows are a subset of the seed by construction.
 //
-// The fix is to read the employer list and fill the gaps from it. Not done
-// here because usp_sel_employers has never been read in this project and its
-// columns would be a guess — and because it is unscoped, so it must never be
-// used on the HR branch below.
-const countByCompany = (employees) => {
-  const byCode = new Map();
+// The orphan branch below is still there because "by construction" is a claim
+// about two procedures that could drift apart, and dropping a company silently
+// is worse than showing one that surprises us.
+//
+// Grouped on company_code. employer_id comes from the employer list — the
+// employee projection does not carry it — so it is null for an orphan.
+//
+// ⛔ ReferenceModel.getEmployers is UNSCOPED: it returns every active employer
+// regardless of who is asking. That is correct here and only here, because
+// this branch runs for an Administrator. It must never move to the HR branch.
+const countByCompany = (employers, employees) => {
+  const byCode = new Map(
+    employers.map((employer) => [
+      employer.company_code,
+      {
+        employer_id: employer.employer_id,
+        company_code: employer.company_code,
+        company_name: employer.company_name,
+        enrolled: 0,
+      },
+    ]),
+  );
 
   for (const row of employees) {
-    const existing = byCode.get(row.company_code) ?? {
+    const company = byCode.get(row.company_code) ?? {
+      employer_id: null,
       company_code: row.company_code,
       company_name: row.company_name,
       enrolled: 0,
     };
 
-    if (row.enrollment_id != null) existing.enrolled += 1;
+    if (row.enrollment_id != null) company.enrolled += 1;
 
-    byCode.set(row.company_code, existing);
+    byCode.set(row.company_code, company);
   }
 
   return [...byCode.values()].sort((a, b) =>
@@ -108,12 +127,15 @@ const getStats = async (pool, { user_id, role_name }) => {
 
   // `scope` is here so the frontend can branch on a field rather than sniff
   // which keys arrived. Two shapes from one endpoint is worth saying out loud.
-  if (role_name === SUPER_ADMIN)
+  if (role_name === SUPER_ADMIN) {
+    const employers = await ReferenceModel.getEmployers(pool);
+
     return {
       scope: "all-companies",
       enrolled,
-      byCompany: countByCompany(employees),
+      byCompany: countByCompany(employers, employees),
     };
+  }
 
   const pendingChangeRequests = await ChangeRequestModel.getPendingCountByUser(
     pool,

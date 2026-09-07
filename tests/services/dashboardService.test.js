@@ -86,7 +86,20 @@ const HR_ANSWERS = {
   usp_sel_enrollment_invitations_by_user: invitationAnswer,
 };
 
-const ADMIN_ANSWERS = { usp_sel_hr_employees: ALL_EMPLOYEES };
+// usp_sel_employers with its default @include_inactive = 0 returns every
+// ACTIVE employer, ordered by company_name. Nova has no employees at all —
+// a company onboarded but not yet invited.
+const EMPLOYERS = [
+  { employer_id: 1, company_code: "CFG", company_name: "Coforge", status: "A" },
+  { employer_id: 2, company_code: "HCL", company_name: "HCL", status: "A" },
+  { employer_id: 4, company_code: "NVA", company_name: "Nova", status: "A" },
+  { employer_id: 3, company_code: "ZZZ", company_name: "Zenith", status: "A" },
+];
+
+const ADMIN_ANSWERS = {
+  usp_sel_hr_employees: ALL_EMPLOYEES,
+  usp_sel_employers: EMPLOYERS,
+};
 
 describe("DashboardService.getStats — HR", () => {
   test("returns the four counts HR works from", async () => {
@@ -174,11 +187,44 @@ describe("DashboardService.getStats — Administrator", () => {
       scope: "all-companies",
       enrolled: 3,
       byCompany: [
-        { company_code: "CFG", company_name: "Coforge", enrolled: 2 },
-        { company_code: "HCL", company_name: "HCL", enrolled: 1 },
-        { company_code: "ZZZ", company_name: "Zenith", enrolled: 0 },
+        { employer_id: 1, company_code: "CFG", company_name: "Coforge", enrolled: 2 },
+        { employer_id: 2, company_code: "HCL", company_name: "HCL", enrolled: 1 },
+        { employer_id: 4, company_code: "NVA", company_name: "Nova", enrolled: 0 },
+        { employer_id: 3, company_code: "ZZZ", company_name: "Zenith", enrolled: 0 },
       ],
     });
+  });
+
+  test("a company with no employees at all still appears, at zero", async () => {
+    // Nova is onboarded and has never been invited. Before the employer list
+    // was seeded in, it was absent from the split — which is the one moment
+    // somebody most wants to see a zero.
+    const { pool } = fakePool(ADMIN_ANSWERS);
+
+    const stats = await DashboardService.getStats(pool, ADMINISTRATOR);
+    const nova = stats.byCompany.find((c) => c.company_code === "NVA");
+
+    assert.equal(nova.enrolled, 0);
+    assert.equal(nova.employer_id, 4);
+  });
+
+  test("a company in the employee rows but not the employer list is not dropped", async () => {
+    // Cannot happen by construction — usp_sel_hr_employees joins employers on
+    // status = 'A' and usp_sel_employers returns exactly that set. Covered
+    // anyway, because "by construction" is a claim about two procedures that
+    // could drift apart, and silently dropping a company is worse than showing
+    // one that surprises us. employer_id is null because the employee
+    // projection does not carry it.
+    const { pool } = fakePool({
+      ...ADMIN_ANSWERS,
+      usp_sel_employers: [EMPLOYERS[0]],
+    });
+
+    const stats = await DashboardService.getStats(pool, ADMINISTRATOR);
+    const hcl = stats.byCompany.find((c) => c.company_code === "HCL");
+
+    assert.equal(hcl.enrolled, 1);
+    assert.equal(hcl.employer_id, null);
   });
 
   test("the per-company numbers add up to the total", async () => {
@@ -209,7 +255,7 @@ describe("DashboardService.getStats — Administrator", () => {
 
     assert.deepEqual(
       stats.byCompany.map((c) => c.company_name),
-      ["Coforge", "HCL", "Zenith"],
+      ["Coforge", "HCL", "Nova", "Zenith"],
     );
   });
 
@@ -235,8 +281,8 @@ describe("DashboardService.getStats — Administrator", () => {
     await DashboardService.getStats(pool, ADMINISTRATOR);
 
     assert.deepEqual(
-      [...new Set(calls.map((c) => c.procedure))],
-      ["usp_sel_hr_employees"],
+      [...new Set(calls.map((c) => c.procedure))].sort(),
+      ["usp_sel_employers", "usp_sel_hr_employees"],
     );
   });
 });
