@@ -37,6 +37,59 @@ for (let i of envVar) {
 //
 // Refusing to start is the point. A server that will not boot is a five-minute
 // problem; a server that boots and sends a thousand dead links is not.
+// TRUST_PROXY decides what req.ip means, and it is read in two places that
+// matter for different reasons.
+//
+// enrollmentController.js:15 writes it onto every consent record. If production
+// sits behind a reverse proxy and this is wrong, every data subject appears to
+// have consented from the same address — which proves nothing about who
+// consented, and cannot be recovered afterwards. BUSINESS-REQUIREMENTS §4.5.
+//
+// rateLimiter.js keys five limiters on it. Wrong here collapses every caller
+// into one bucket, which is recoverable later; the consent record is not.
+//
+// It was `false` hardcoded in server.js with the comment "no reverse proxy in
+// dev" — correct for dev and silently wrong for production, in the way that
+// does not announce itself. The value is now required in production and the
+// server refuses to start without it, the same treatment APP_URL got in PR #85.
+//
+// The accepted values are a hop count, or `false`. `true` is refused on
+// purpose: it trusts a client-supplied X-Forwarded-For, so anyone can put any
+// address on their own consent record just by sending a header.
+const parseTrustProxy = (raw) => {
+    if (raw === undefined || raw === '') return undefined;
+    if (raw === 'false') return false;
+
+    if (raw === 'true')
+        throw new Error(
+            'TRUST_PROXY must not be true. `true` trusts a client-supplied X-Forwarded-For header, ' +
+            'so any caller could choose the IP address recorded on their own consent record. ' +
+            'Set it to the number of proxies in front of this server — usually 1 — or to false if there are none.',
+        );
+
+    const hops = Number(raw);
+
+    if (!Number.isInteger(hops) || hops < 0)
+        throw new Error(
+            `TRUST_PROXY must be a whole number of proxy hops, or false. Received "${raw}".`,
+        );
+
+    return hops;
+};
+
+const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
+
+// Not in the required list above, because development should keep working
+// without it. Production is where the silent default is dangerous.
+if (process.env.NODE_ENV === 'production' && trustProxy === undefined)
+    throw new Error(
+        'TRUST_PROXY must be set in production. It decides what req.ip resolves to, which is ' +
+        'written onto every consent record and used to key the rate limiters. Left unset it ' +
+        'defaults to no proxy, and if there is one then every consent record stores the proxy ' +
+        'address instead of the employee\'s — which is not recoverable after the fact. ' +
+        'Set it to the number of proxies in front of this server, or to false if there are none.',
+    );
+
 const DEV_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0'];
 
 const pointsAtDevHost = (value) =>
@@ -56,6 +109,9 @@ if(process.env.NODE_ENV === 'production') {
 
 const config = {
   PORT: process.env.PORT || 7000,
+  // false when unset, which is the old hardcoded behaviour — but production
+  // can no longer reach here unset, because the guard above refuses to start.
+  trustProxy: trustProxy ?? false,
   // How many invitation emails are in flight at once. Microsoft Graph limits
   // concurrent sends per mailbox, so this is deliberately small. Optional, and
   // kept out of the required list above so existing .env files keep working.

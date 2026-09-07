@@ -11,7 +11,12 @@ import {errorHandler} from './src/middlewares/errorHandler.js';
 import helmet from 'helmet';
 
 const app = express();
-app.set('trust proxy', false); // no reverse proxy in dev
+// Was `false` hardcoded here. It decides what req.ip resolves to, which is
+// written onto every consent record and keys five rate limiters — and it is
+// the one setting that is silently wrong rather than absent when it is wrong.
+// env.js now refuses to start in production without TRUST_PROXY set, and
+// refuses `true` at any time. The reasoning is there.
+app.set('trust proxy', config.trustProxy);
 
 app.use(helmet());
 app.use(cors({
