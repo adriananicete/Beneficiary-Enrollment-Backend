@@ -10,6 +10,7 @@ import {
   validateCivilStatus,
 } from "../utils/validateCivilStatus.js";
 import { validateZipCode } from "../utils/validateZipCode.js";
+import { normaliseTinId, validateTinId } from "../utils/validateTinId.js";
 import {
   ADDRESS_FIELD_LENGTHS,
   BENEFICIARY_FIELD_LENGTHS,
@@ -27,6 +28,7 @@ export const validateEnrollmentUpdate = (req, res, next) => {
   // itself as missing rather than as outside a set.
   req.body.gender = normaliseGender(req.body.gender);
   req.body.civil_status = normaliseCivilStatus(req.body.civil_status);
+  req.body.tin_id = normaliseTinId(req.body.tin_id);
 
   const requiredFields = [
     "first_name",
@@ -119,6 +121,9 @@ export const validateEnrollmentUpdate = (req, res, next) => {
 
   const civilStatusError = validateCivilStatus(req.body.civil_status);
   if (civilStatusError) return next(new AppError(civilStatusError, 400));
+
+  const tinIdError = validateTinId(req.body.tin_id);
+  if (tinIdError) return next(new AppError(tinIdError, 400));
 
   // Only when an address is being changed. zip_code is not in the base
   // required list on this path — it joins it above, alongside barangay_id and

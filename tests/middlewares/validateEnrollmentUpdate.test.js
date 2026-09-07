@@ -172,6 +172,26 @@ describe("validateEnrollmentUpdate — gender, civil status and zip code", () =>
   });
 });
 
+describe("validateEnrollmentUpdate — TIN is normalised here too", () => {
+  test("adds the dashes", () => {
+    const body = { ...validBody(), tin_id: "543453566" };
+    const req = makeReq({ body });
+    const next = makeNext();
+
+    validateEnrollmentUpdate(req, makeRes(), next);
+
+    assert.ok(next.passed());
+    assert.equal(req.body.tin_id, "543-453-566");
+  });
+
+  test("refuses a malformed TIN", () => {
+    assert.match(
+      run({ ...validBody(), tin_id: "147-852-96" }).refusal().message,
+      /9 or 12 digits/,
+    );
+  });
+});
+
 describe("validateEnrollmentUpdate — birthdate and age are applied here too", () => {
   test("refuses a malformed birthdate", () => {
     const body = validBody();
