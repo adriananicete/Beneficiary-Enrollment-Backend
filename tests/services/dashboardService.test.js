@@ -51,18 +51,29 @@ const fakePool = (answers) => {
 const HR = { user_id: 7, role_name: "HR" };
 const ADMINISTRATOR = { user_id: 1, role_name: "Administrator" };
 
-// Three enrolled, one client with no enrollment row — the LEFT JOIN miss that
-// makes total_count the wrong number to count with.
-const EMPLOYEES = [
-  { client_id: 1, enrollment_id: 11, total_count: 4 },
-  { client_id: 2, enrollment_id: 12, total_count: 4 },
-  { client_id: 3, enrollment_id: 13, total_count: 4 },
-  { client_id: 4, enrollment_id: null, total_count: 4 },
+// One company. Three enrolled, one client with no enrollment row — the LEFT
+// JOIN miss that makes total_count the wrong number to count with.
+const HR_EMPLOYEES = [
+  { client_id: 1, enrollment_id: 11, company_code: "CFG", company_name: "Coforge", total_count: 4 },
+  { client_id: 2, enrollment_id: 12, company_code: "CFG", company_name: "Coforge", total_count: 4 },
+  { client_id: 3, enrollment_id: 13, company_code: "CFG", company_name: "Coforge", total_count: 4 },
+  { client_id: 4, enrollment_id: null, company_code: "CFG", company_name: "Coforge", total_count: 4 },
+];
+
+// What an Administrator sees: usp_sel_hr_employees skips the employer filter
+// for them, so every company comes back in one result set. HCL has an employee
+// with no enrollment, which is how a company reaches zero rather than absent.
+const ALL_EMPLOYEES = [
+  { client_id: 1, enrollment_id: 11, company_code: "CFG", company_name: "Coforge", total_count: 5 },
+  { client_id: 2, enrollment_id: 12, company_code: "CFG", company_name: "Coforge", total_count: 5 },
+  { client_id: 3, enrollment_id: 13, company_code: "HCL", company_name: "HCL", total_count: 5 },
+  { client_id: 4, enrollment_id: null, company_code: "HCL", company_name: "HCL", total_count: 5 },
+  { client_id: 5, enrollment_id: null, company_code: "ZZZ", company_name: "Zenith", total_count: 5 },
 ];
 
 const invitationAnswer = (inputs) => {
-  // total_count is what the procedure returns for the whole filtered set, and
-  // it does not change with page_size.
+  // total_count is the count of the whole filtered set and does not change
+  // with page_size.
   if (inputs.is_enrolled === 0) return { recordset: [{ total_count: 13 }], output: {} };
   if (inputs.send_status === "failed") return { recordset: [{ total_count: 2 }], output: {} };
 
@@ -70,18 +81,19 @@ const invitationAnswer = (inputs) => {
 };
 
 const HR_ANSWERS = {
-  usp_sel_hr_employees: EMPLOYEES,
+  usp_sel_hr_employees: HR_EMPLOYEES,
   usp_sel_client_change_request_pending_count: [{ pendingCount: 3 }],
   usp_sel_enrollment_invitations_by_user: invitationAnswer,
 };
 
+const ADMIN_ANSWERS = { usp_sel_hr_employees: ALL_EMPLOYEES };
+
 describe("DashboardService.getStats — HR", () => {
-  test("returns the four counts", async () => {
+  test("returns the four counts HR works from", async () => {
     const { pool } = fakePool(HR_ANSWERS);
 
-    const stats = await DashboardService.getStats(pool, HR);
-
-    assert.deepEqual(stats, {
+    assert.deepEqual(await DashboardService.getStats(pool, HR), {
+      scope: "company",
       enrolled: 3,
       awaitingEnrollment: 13,
       pendingChangeRequests: 3,
@@ -90,21 +102,17 @@ describe("DashboardService.getStats — HR", () => {
   });
 
   test("counts enrollments, not employees", async () => {
-    // The fixture has four employees and three enrollments, and total_count
-    // says 4. Reading total_count would be cheaper and wrong: an employee
-    // whose enrollment row is missing is a LEFT JOIN miss, not an enrollee.
+    // Four employees, three enrollments, and total_count says 4. Reading
+    // total_count would be cheaper and wrong.
     const { pool } = fakePool(HR_ANSWERS);
 
     const stats = await DashboardService.getStats(pool, HR);
 
     assert.equal(stats.enrolled, 3);
-    assert.notEqual(stats.enrolled, EMPLOYEES[0].total_count);
+    assert.notEqual(stats.enrolled, HR_EMPLOYEES[0].total_count);
   });
 
   test("asks the invitation procedure for one row, not the whole list", async () => {
-    // COUNT(*) OVER() is computed before OFFSET/FETCH, so the count is right
-    // whatever the page size. Pulling every invitation to count them would be
-    // the thing this avoids.
     const { pool, calls } = fakePool(HR_ANSWERS);
 
     await DashboardService.getStats(pool, HR);
@@ -118,9 +126,8 @@ describe("DashboardService.getStats — HR", () => {
   });
 
   test("reads every count through a procedure that already carries the scoping", async () => {
-    // The design constraint, asserted rather than left to a comment. Company
-    // scoping is an access rule; a raw query reproducing it would be a second
-    // implementation of it. If one ever appears here, this goes red.
+    // The design constraint, asserted rather than left to a comment. If a raw
+    // query ever appears in this service, this goes red.
     const { pool, calls } = fakePool(HR_ANSWERS);
 
     await DashboardService.getStats(pool, HR);
@@ -149,53 +156,87 @@ describe("DashboardService.getStats — HR", () => {
     assert.equal(stats.awaitingEnrollment, 0);
     assert.equal(stats.failedInvitations, 0);
   });
+
+  test("HR gets no per-company breakdown — they have one company", async () => {
+    const { pool } = fakePool(HR_ANSWERS);
+
+    const stats = await DashboardService.getStats(pool, HR);
+
+    assert.equal(stats.byCompany, undefined);
+  });
 });
 
 describe("DashboardService.getStats — Administrator", () => {
-  test("the two invitation counts are null, not zero", async () => {
-    // usp_sel_enrollment_invitations_by_user throws 50073 for any caller who
-    // is not HR — it checks r.us02_role_name = 'HR' with no Administrator
-    // branch, unlike every other list procedure. PARK.md §3.
-    //
-    // Zero would say nobody is waiting to enrol. The truth is that we were not
-    // allowed to look, and those are different answers.
-    const { pool } = fakePool({
-      usp_sel_hr_employees: EMPLOYEES,
-      usp_sel_client_change_request_pending_count: [{ pendingCount: 3 }],
+  test("returns the total across every company, and the split", async () => {
+    const { pool } = fakePool(ADMIN_ANSWERS);
+
+    assert.deepEqual(await DashboardService.getStats(pool, ADMINISTRATOR), {
+      scope: "all-companies",
+      enrolled: 3,
+      byCompany: [
+        { company_code: "CFG", company_name: "Coforge", enrolled: 2 },
+        { company_code: "HCL", company_name: "HCL", enrolled: 1 },
+        { company_code: "ZZZ", company_name: "Zenith", enrolled: 0 },
+      ],
     });
+  });
+
+  test("the per-company numbers add up to the total", async () => {
+    // Cheap, and it is the assertion somebody would actually notice on screen.
+    const { pool } = fakePool(ADMIN_ANSWERS);
+
+    const stats = await DashboardService.getStats(pool, ADMINISTRATOR);
+    const summed = stats.byCompany.reduce((total, c) => total + c.enrolled, 0);
+
+    assert.equal(summed, stats.enrolled);
+  });
+
+  test("a company with employees but no enrollments shows zero, not absent", async () => {
+    // Zenith has one employee and no enrollment. Those rows are a LEFT JOIN
+    // miss rather than missing rows, so the company is visible with 0.
+    const { pool } = fakePool(ADMIN_ANSWERS);
+
+    const stats = await DashboardService.getStats(pool, ADMINISTRATOR);
+    const zenith = stats.byCompany.find((c) => c.company_code === "ZZZ");
+
+    assert.equal(zenith.enrolled, 0);
+  });
+
+  test("sorted by company name, so the list does not reorder between loads", async () => {
+    const { pool } = fakePool(ADMIN_ANSWERS);
 
     const stats = await DashboardService.getStats(pool, ADMINISTRATOR);
 
-    assert.equal(stats.awaitingEnrollment, null);
-    assert.equal(stats.failedInvitations, null);
+    assert.deepEqual(
+      stats.byCompany.map((c) => c.company_name),
+      ["Coforge", "HCL", "Zenith"],
+    );
   });
 
-  test("still gets the two counts an Administrator is allowed", async () => {
-    const { pool } = fakePool({
-      usp_sel_hr_employees: EMPLOYEES,
-      usp_sel_client_change_request_pending_count: [{ pendingCount: 3 }],
-    });
+  test("none of the three HR queues appear", async () => {
+    // Deliberate, settled 2026-09-07. Chasing the unenrolled, deciding change
+    // requests and resending failed invitations are HR's work, not oversight.
+    const { pool } = fakePool(ADMIN_ANSWERS);
 
     const stats = await DashboardService.getStats(pool, ADMINISTRATOR);
 
-    assert.equal(stats.enrolled, 3);
-    assert.equal(stats.pendingChangeRequests, 3);
+    assert.equal(stats.awaitingEnrollment, undefined);
+    assert.equal(stats.pendingChangeRequests, undefined);
+    assert.equal(stats.failedInvitations, undefined);
   });
 
-  test("does not call the invitation procedure at all", async () => {
-    // Refused before it is asked rather than asked and caught. Catching a 403
-    // would work and would also swallow a real failure.
-    const { pool, calls } = fakePool({
-      usp_sel_hr_employees: EMPLOYEES,
-      usp_sel_client_change_request_pending_count: [{ pendingCount: 3 }],
-    });
+  test("only one procedure is called at all", async () => {
+    // The fake throws for any procedure it has no answer for, so calling the
+    // invitation or pending-count procedures here would fail rather than pass
+    // quietly. usp_sel_enrollment_invitations_by_user would have thrown 50073
+    // for an Administrator anyway — this is the reason that no longer matters.
+    const { pool, calls } = fakePool(ADMIN_ANSWERS);
 
     await DashboardService.getStats(pool, ADMINISTRATOR);
 
-    assert.ok(
-      !calls.some(
-        (c) => c.procedure === "usp_sel_enrollment_invitations_by_user",
-      ),
+    assert.deepEqual(
+      [...new Set(calls.map((c) => c.procedure))],
+      ["usp_sel_hr_employees"],
     );
   });
 });
