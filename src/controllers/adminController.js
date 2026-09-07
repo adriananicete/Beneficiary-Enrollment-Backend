@@ -3,6 +3,7 @@ import AgreementModel from "../models/agreementModel.js";
 import ClientModel from "../models/clientModel.js";
 import UserModel from "../models/userModel.js";
 import ExportService from "../services/exportService.js";
+import DashboardService from "../services/dashboardService.js";
 import { getPool } from "../config/db.js";
 import { buildPage, parsePaging, parseSearch } from "../utils/parsePaging.js";
 import { AppError } from "../utils/AppError.js";
@@ -183,28 +184,16 @@ export const exportEnrollments = async (req, res, next) => {
   }
 };
 
-export const getDashboardStats = async (req, res) => {
-  // try {
-  //   const { companyID, role } = req.user;
+export const getDashboardStats = async (req, res, next) => {
+  try {
+    const pool = await getPool();
 
-  //   const pool = await getPool();
+    const stats = await DashboardService.getStats(pool, req.user);
 
-  //   const dashBoardStats = await EnrollmentModel.getEnrollmentStats(
-  //     pool,
-  //     companyID,
-  //     role,
-  //   );
-
-  //   return res.status(200).json({
-  //     success: true,
-  //     data: dashBoardStats,
-  //   });
-  // } catch (error) {
-  //   console.error(error);
-  //   return res.status(500).json({ error: error.message });
-  // }
-
-  return res.status(501).json({ success: false, message: "Not implemented yet" });
+    return res.status(200).json({ success: true, data: stats });
+  } catch (error) {
+    next(error);
+  }
 };
 
 export const getEnrollmentAgreements = async (req, res, next) => {
