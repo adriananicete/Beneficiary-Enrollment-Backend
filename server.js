@@ -1,6 +1,6 @@
 import express from 'express';
 import config from './src/config/env.js';
-import { poolPromise } from './src/config/db.js';
+import { getPool } from './src/config/db.js';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import authRoutes from './src/routes/authRoutes.js';
@@ -60,5 +60,16 @@ app.use('/api', (req, res, next) => {
 });
 
 app.use(errorHandler);
+
+// The connection is made here rather than at import of src/config/db.js, so a
+// database that cannot be reached is a server that refuses to start instead of
+// a module that kills whatever imported it — the test runner included. The
+// behaviour on this path is unchanged: no database, no boot.
+try {
+    await getPool();
+} catch (err) {
+    console.error('Database connection failed:', err);
+    process.exit(1);
+}
 
 app.listen(config.PORT, "0.0.0.0", () => console.log(`Server is running on port ${config.PORT}`));

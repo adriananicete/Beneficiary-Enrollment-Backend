@@ -10,13 +10,13 @@ import {
   SUPER_ADMIN,
 } from "../utils/constants.js";
 import PasswordService from "../services/passwordService.js";
-import { poolPromise } from "../config/db.js";
+import { getPool } from "../config/db.js";
 import { cookieOptions } from "../utils/cookieConfig.js";
 import { AppError } from "../utils/AppError.js";
 
 export const login = async (req, res, next) => {
   try {
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const { username, password, rememberMe } = req.body;
     if (!username || !password)
@@ -104,7 +104,7 @@ export const changePassword = async (req, res, next) => {
     const { oldPassword, newPassword } = req.body;
     const { username } = req.resetUser;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     await PasswordService.changePassword(pool, {
       username,

@@ -2,11 +2,11 @@ import { AppError } from "../utils/AppError.js";
 import { ADMIN, SUPER_ADMIN } from "../utils/constants.js";
 import ClientModel from "../models/clientModel.js";
 import { isNumericId } from "./validateIdParam.js";
-import { poolPromise } from "../config/db.js";
+import { getPool } from "../config/db.js";
 
 export const verifyClientAccess = async (req, res, next) => {
   try {
-    const pool = await poolPromise;
+    const pool = await getPool();
     const { role_name, user_id } = req.user;
     const { client_id } = req.params;
 

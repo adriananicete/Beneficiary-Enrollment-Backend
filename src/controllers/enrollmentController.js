@@ -1,4 +1,4 @@
-import { poolPromise } from "../config/db.js";
+import { getPool } from "../config/db.js";
 import ReferenceModel from "../models/referenceModel.js";
 import EnrollmentService from "../services/enrollmentService.js";
 import InvitationModel from '../models/invitationModel.js';
@@ -29,7 +29,7 @@ export const submitEnrollment = async (req, res, next) => {
 
 export const getEmployeeClassifications = async (req, res, next) => {
   try {
-    const pool = await poolPromise;
+    const pool = await getPool();
     const employeeClassifications = await ReferenceModel.getEmployeeClassifications(pool);
 
     return res.status(200).json({
@@ -43,7 +43,7 @@ export const getEmployeeClassifications = async (req, res, next) => {
 
 export const getEmployers = async (req, res, next) => {
   try {
-    const pool = await poolPromise;
+    const pool = await getPool();
     const employers = await ReferenceModel.getEmployers(pool);
 
     return res.status(200).json({
@@ -57,7 +57,7 @@ export const getEmployers = async (req, res, next) => {
 
 export const getRegions = async (req, res, next) => {
   try {
-    const pool = await poolPromise;
+    const pool = await getPool();
     const regions = await ReferenceModel.getRegions(pool);
 
     return res.status(200).json({
@@ -73,7 +73,7 @@ export const getProvincesByRegion = async (req, res, next) => {
   try {
     const { region_code } = req.params;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
     const provincesByRegion = await ReferenceModel.getProvincesByRegion(pool, region_code);
 
     return res.status(200).json({
@@ -90,7 +90,7 @@ export const getCitiesByProvince = async (req, res, next) => {
   try {
     const { province_code } = req.params;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
     const citiesByProvince = await ReferenceModel.getCitiesByProvince(pool, province_code);
 
     return res.status(200).json({
@@ -107,7 +107,7 @@ export const getBarangaysByCity = async (req, res, next) => {
   try {
     const { city_code } = req.params;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
     const barangaysByCity = await ReferenceModel.getBarangaysByCity(pool, city_code);
 
     return res.status(200).json({
@@ -134,7 +134,7 @@ export const getInvitationByToken = async (req, res, next) => {
     // tokens learns nothing from the difference.
     if(!isInvitationToken(token)) throw new AppError('Invitation not found', 404);
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const invitation = await InvitationModel.getInvitationByToken(pool, token)
     if(!invitation) throw new AppError('Invitation not found', 404);
@@ -157,7 +157,7 @@ export const getInvitationByToken = async (req, res, next) => {
 export const getMyAgreements = async (req, res, next) => {
   try {
     const { user_id } = req.user;
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const user = await UserModel.findUserById(pool, user_id);
     if(!user?.client_id) throw new AppError('No enrollment found for this account', 404);

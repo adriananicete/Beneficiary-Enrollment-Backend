@@ -3,7 +3,7 @@ import AgreementModel from "../models/agreementModel.js";
 import ClientModel from "../models/clientModel.js";
 import UserModel from "../models/userModel.js";
 import ExportService from "../services/exportService.js";
-import { poolPromise } from "../config/db.js";
+import { getPool } from "../config/db.js";
 import { buildPage, parsePaging, parseSearch } from "../utils/parsePaging.js";
 import { AppError } from "../utils/AppError.js";
 import { sendCredentialsEmail } from "../services/emailService.js";
@@ -15,7 +15,7 @@ export const getEnrollment = async (req, res, next) => {
     const { user_id } = req.user;
     const paging = parsePaging(req.query);
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const employees = await ClientModel.getHrEmployees(pool, user_id, {
       ...paging,
@@ -35,7 +35,7 @@ export const getEnrollmentDetails = async (req, res, next) => {
   try {
     const { client_id } = req.params;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const enrollmentData = await EnrollmentService.getFullEnrollmentDetails(
       pool,
@@ -64,7 +64,7 @@ export const resendCredentials = async (req, res, next) => {
     const { client_id } = req.params;
     const { user_id } = req.user;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const user = await UserModel.findUserByClientId(pool, client_id);
     if (!user)
@@ -187,7 +187,7 @@ export const getDashboardStats = async (req, res) => {
   // try {
   //   const { companyID, role } = req.user;
 
-  //   const pool = await poolPromise;
+  //   const pool = await getPool();
 
   //   const dashBoardStats = await EnrollmentModel.getEnrollmentStats(
   //     pool,
@@ -210,7 +210,7 @@ export const getDashboardStats = async (req, res) => {
 export const getEnrollmentAgreements = async (req, res, next) => {
   try {
     const { client_id } = req.params;
-    const pool = await poolPromise;
+    const pool = await getPool();
     const agreements = await AgreementModel.getClientAgreements(
       pool,
       client_id,

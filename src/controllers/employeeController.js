@@ -3,7 +3,7 @@ import ClientModel from "../models/clientModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AddressModel from "../models/addressModel.js";
 import PasswordService from "../services/passwordService.js";
-import { poolPromise } from "../config/db.js";
+import { getPool } from "../config/db.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import config from "../config/env.js";
@@ -15,7 +15,7 @@ export const login = async (req, res, next) => {
   try {
     const { username, password } = req.body;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const user = await UserModel.findUserByUsername(pool, username);
 
@@ -102,7 +102,7 @@ export const getMyEnrollment = async (req, res, next) => {
   try {
     const { user_id } = req.user;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const enrollment = await ClientModel.getMyEnrollment(pool, user_id);
     if (enrollment.length === 0)
@@ -137,7 +137,7 @@ export const changePassword = async (req, res, next) => {
     const { oldPassword, newPassword } = req.body;
     const { username } = req.resetUser;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     await PasswordService.changePassword(pool, {
       username,

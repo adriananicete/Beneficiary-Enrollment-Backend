@@ -4,7 +4,7 @@ import UserModel from "../models/userModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AddressModel from "../models/addressModel.js";
 import ReferenceModel from "../models/referenceModel.js";
-import { poolPromise } from "../config/db.js";
+import { getPool } from "../config/db.js";
 import { AppError } from "../utils/AppError.js";
 import { sendChangeRequestDecisionEmail } from "../services/emailService.js";
 import { buildPage, parsePaging } from "../utils/parsePaging.js";
@@ -85,7 +85,7 @@ export const submitChangeRequest = async (req, res, next) => {
   try {
     const { user_id } = req.user;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const enrollment = await ClientModel.getMyEnrollment(pool, user_id);
     if (!enrollment || enrollment.length === 0)
@@ -189,7 +189,7 @@ export const getChangeRequests = async (req, res, next) => {
     const { status } = req.query;
     const paging = parsePaging(req.query);
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const requests = await ChangeRequestModel.getChangeRequestsByUser(
       pool,
@@ -210,7 +210,7 @@ export const getChangeRequests = async (req, res, next) => {
 // Drives the badge on the HR screen, polled every thirty seconds. One number.
 export const getPendingChangeRequestCount = async (req, res, next) => {
   try {
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const pendingCount = await ChangeRequestModel.getPendingCountByUser(
       pool,
@@ -230,7 +230,7 @@ export const getChangeRequestDetails = async (req, res, next) => {
   try {
     const { request_id } = req.params;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const details = await ChangeRequestModel.getChangeRequestById(
       pool,
@@ -271,7 +271,7 @@ export const reviewChangeRequest = async (req, res, next) => {
     if (status === "REJECTED" && !review_remarks?.trim())
       throw new AppError("Review remarks are required when rejecting", 400);
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     // Read the request before deciding on it. This settles company scoping
     // before any procedure runs, and it is the only chance to capture the
@@ -418,7 +418,7 @@ export const getMyChangeRequests = async (req, res, next) => {
   try {
     const { user_id } = req.user;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const enrollment = await ClientModel.getMyEnrollment(pool, user_id);
     if (!enrollment || enrollment.length === 0)
@@ -443,7 +443,7 @@ export const cancelMyChangeRequest = async (req, res, next) => {
     const { user_id } = req.user;
     const { request_id } = req.params;
 
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     const enrollment = await ClientModel.getMyEnrollment(pool, user_id);
     if (!enrollment || enrollment.length === 0)
