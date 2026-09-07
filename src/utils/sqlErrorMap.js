@@ -73,6 +73,56 @@ export const sqlErrorMap = {
     // hardest to explain — a returning employee whose own client row was
     // deactivated. PARK.md §3.
     50083: {statusCode: 409, message: 'SSS/GSIS number already registered'},
+
+    // ── usp_ins_insurance_enrollment: the configuration faults ──────────────
+    //
+    // These three are the first 5xx entries in this file, and the status code
+    // is deliberate. Nothing the employee did caused them and nothing they can
+    // type will fix them, so 4xx would be a lie — but a bare 500 says "Server
+    // Error", which sends them back to the form to try again forever.
+    //
+    // A mapped entry's message is returned verbatim whatever the status code
+    // (errorHandler.js:14), so mapping to 500 keeps the honest class and still
+    // gives them a sentence: stop, and go to HR. The full error is logged.
+    //
+    // Whoever adds a 4xx here later should check that the caller can actually
+    // act on it. That is the whole line between these and the 409s above.
+
+    // The likeliest of the three by a distance. Onboarding a company means
+    // creating an employer row, and nothing forces policy_no to be filled —
+    // usp_ins_insurance_enrollment builds every policy number from it. Miss it
+    // and EVERY enrollment for that company fails from the first invitation
+    // onward, with the cause one column away in a table the employee cannot
+    // see. DBA-OUTBOX question 3b asks which employers are missing it.
+    50071: {statusCode: 500, message: 'Your company is not set up for enrollment yet. Please contact your HR.'},
+
+    // The policy sequence for this company and year has passed 99999. Far off,
+    // and a real ceiling rather than a fault — mapped while the file is open
+    // because the day it fires nobody will remember this procedure generates
+    // the number itself.
+    50072: {statusCode: 500, message: 'This company has reached its enrollment limit for the year. Please contact your HR.'},
+
+    // ── us04_usp_assign_role ────────────────────────────────────────────────
+    //
+    // Role id 3 — EMPLOYEE_ROLE_ID — has been deactivated. Unguarded: nothing
+    // pre-checks it, unlike the classification below. It would take down every
+    // enrollment in the system rather than one company's, and the message must
+    // not mention roles, which mean nothing to the person reading it.
+    50052: {statusCode: 500, message: 'Enrollment is not available right now. Please contact your HR.'},
+
+    // ── usp_ins_insurance_enrollment: the one the caller can act on ─────────
+    //
+    // 400 rather than 500, and that is the whole distinction. The employee
+    // picked a classification that has since been deactivated, and choosing a
+    // different one fixes it.
+    //
+    // Nearly unreachable: enrollmentService.js:51 validates the id against the
+    // active list before the transaction opens, so this only fires if the
+    // classification is deactivated in the milliseconds between. Mapped anyway
+    // for the same reason as 50008 — it is the database's own guard on a rule
+    // we also check, and if it ever fires the employee should be told what to
+    // change rather than that the server broke.
+    50018: {statusCode: 400, message: 'That employee classification is no longer available. Please choose another.'},
     50019: {statusCode: 409, message: 'You have already submitted an enrollment'},
     50020: {statusCode: 404, message: 'Beneficiary not found'},
     50021: {statusCode: 409, message: 'This enrollment already has a beneficiary with that name'},
