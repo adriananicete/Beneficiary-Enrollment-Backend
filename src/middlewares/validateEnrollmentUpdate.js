@@ -2,6 +2,8 @@ import { AppError } from "../utils/AppError.js";
 import { validateCoverage } from "../utils/validateCoverage.js";
 import { validateHeight } from "../utils/validateHeight.js";
 import { validateWeight } from "../utils/validateWeight.js";
+import { validateBirthdate } from "../utils/validateBirthdate.js";
+import { validateBeneficiaryAge } from "../utils/validateBeneficiaryAge.js";
 import {
   ADDRESS_FIELD_LENGTHS,
   BENEFICIARY_FIELD_LENGTHS,
@@ -65,10 +67,14 @@ export const validateEnrollmentUpdate = (req, res, next) => {
     for (let i = 0; i < beneficiaries.length; i++) {
       if (!beneficiaries[i].full_name)
         return next(new AppError("Beneficiary full_name is required", 400));
-      if (!beneficiaries[i].age)
-        return next(new AppError("Beneficiary age is required", 400));
       if (!beneficiaries[i].relationship)
         return next(new AppError("Beneficiary relationship is required", 400));
+
+      // Same fix as the submit path: `!age` was false for 0, so a newborn
+      // could not be added or kept through a change request either.
+      const ageError = validateBeneficiaryAge(beneficiaries[i].age);
+      if (ageError)
+        return next(new AppError(`Beneficiary ${i + 1}: ${ageError}`, 400));
 
       const lengthError = validateFieldLengths(
         beneficiaries[i],
@@ -90,6 +96,9 @@ export const validateEnrollmentUpdate = (req, res, next) => {
 
   const weightError = validateWeight(req.body.weight);
   if (weightError) return next(new AppError(weightError, 400));
+
+  const birthdateError = validateBirthdate(req.body.birthdate);
+  if (birthdateError) return next(new AppError(birthdateError, 400));
 
   next();
 };

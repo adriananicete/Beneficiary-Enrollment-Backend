@@ -2,6 +2,8 @@ import { AppError } from "../utils/AppError.js";
 import { validateCoverage } from "../utils/validateCoverage.js";
 import { validateHeight } from "../utils/validateHeight.js";
 import { validateWeight } from "../utils/validateWeight.js";
+import { validateBirthdate } from "../utils/validateBirthdate.js";
+import { validateBeneficiaryAge } from "../utils/validateBeneficiaryAge.js";
 import { isInvitationToken } from "./validateIdParam.js";
 import {
   ADDRESS_FIELD_LENGTHS,
@@ -50,6 +52,9 @@ export const validateEnrollment = (req, res, next) => {
   const weightError = validateWeight(req.body.weight);
   if (weightError) return next(new AppError(weightError, 400));
 
+  const birthdateError = validateBirthdate(req.body.birthdate);
+  if (birthdateError) return next(new AppError(birthdateError, 400));
+
   // Checking the shape here means every malformed token gets the same answer as
   // a token that does not exist, which is the honest one. The rule itself is in
   // validateIdParam.js, shared with the public lookup endpoint.
@@ -74,10 +79,15 @@ export const validateEnrollment = (req, res, next) => {
   for (let i = 0; i < beneficiaries.length; i++) {
     if (!beneficiaries[i].full_name)
       return next(new AppError("Beneficiary name is required", 400));
-    if (!beneficiaries[i].age)
-      return next(new AppError("Beneficiary age is required", 400));
     if (!beneficiaries[i].relationship)
       return next(new AppError("Beneficiary relationship is required", 400));
+
+    // Not `if (!age)`, which was false for 0 and refused a newborn child with
+    // "Beneficiary age is required". validateBeneficiaryAge carries the
+    // presence check as well as the range.
+    const ageError = validateBeneficiaryAge(beneficiaries[i].age);
+    if (ageError)
+      return next(new AppError(`Beneficiary ${i + 1}: ${ageError}`, 400));
 
     const lengthError = validateFieldLengths(
       beneficiaries[i],

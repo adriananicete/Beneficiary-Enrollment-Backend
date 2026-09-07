@@ -160,3 +160,55 @@ describe("validateEnrollment", () => {
     assert.match(refusal.message, /first_name/);
   });
 });
+
+// The rules themselves are pinned in validateBirthdate.test.js and
+// validateBeneficiaryAge.test.js. These exist because a rule that is written
+// and not wired in is worth nothing, and nothing else asserts the wiring.
+describe("validateEnrollment — birthdate and age are actually applied", () => {
+  test("refuses a malformed birthdate", () => {
+    const body = validBody();
+    body.birthdate = "11/03/1994";
+
+    const refusal = run(body).refusal();
+
+    assert.equal(refusal.statusCode, 400);
+    assert.match(refusal.message, /YYYY-MM-DD/);
+  });
+
+  test("refuses a date that parses but is not real", () => {
+    const body = validBody();
+    body.birthdate = "1994-02-30";
+
+    assert.match(run(body).refusal().message, /not a real date/);
+  });
+
+  test("refuses a birthdate in the future", () => {
+    const body = validBody();
+    body.birthdate = `${new Date().getFullYear() + 1}-03-11`;
+
+    assert.match(run(body).refusal().message, /cannot be in the future/);
+  });
+
+  test("ACCEPTS a beneficiary aged 0", () => {
+    // The regression this branch fixes. `if (!age)` refused a newborn with
+    // "Beneficiary age is required", which was both a refusal of a valid
+    // nomination and a message about the wrong thing.
+    const body = validBody();
+    body.beneficiaries = [
+      { full_name: "Baby Bautista", relationship: "Son", age: 0, coverage_percent: 100 },
+    ];
+
+    assert.ok(run(body).passed());
+  });
+
+  test("refuses a non-numeric beneficiary age and names which one", () => {
+    const body = validBody();
+    body.beneficiaries[1].age = "twelve";
+
+    const refusal = run(body).refusal();
+
+    assert.equal(refusal.statusCode, 400);
+    assert.match(refusal.message, /Beneficiary 2/);
+    assert.match(refusal.message, /whole number/);
+  });
+});
