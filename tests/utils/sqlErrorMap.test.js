@@ -18,6 +18,14 @@ const MUST_BE_MAPPED = [
   [50052, 500, /contact your HR/i],
   [50071, 500, /not set up for enrollment/i],
   [50072, 500, /enrollment limit for the year/i],
+  [50038, 403, /no longer active/i],
+  [50063, 409, /no longer active/i],
+  [50079, 404, /Enrollment not found/i],
+  [50081, 404, /Enrollment not found/i],
+  [50082, 404, /No enrollment is linked/i],
+  [50108, 400, /Invalid beneficiary change action/i],
+  [50109, 400, /Invalid beneficiary reference/i],
+  [50134, 403, /cannot view employee enrollment/i],
   [50078, 409, /already completed an enrollment/i],
   [50110, 404, /no pending change request/i],
   [50115, 400, /100%/],
@@ -99,6 +107,33 @@ describe("sqlErrorMap", () => {
     assert.equal(sqlErrorMap[50018].statusCode, 400);
   });
 
+  test("50110, 50111 and 50112 carry the APPROVE meanings — the collision is not resolved here", () => {
+    // Found in the full THROW audit, 2026-09-07. These three numbers mean
+    // different things in two procedures the backend calls:
+    //
+    //   number   usp_ins_client_change_request      ..._approve
+    //   50110    beneficiary name/coverage required  pending request not found
+    //   50111    beneficiary name already exists     client inactive/not found
+    //   50112    coverage must equal 100%            TIN conflict
+    //
+    // This file was written from the approve procedure, so on the SUBMIT path
+    // an employee with two beneficiaries sharing a name is told "This
+    // employee record is no longer active" — reachable, because
+    // validateEnrollmentUpdate checks the coverage total and that a name is
+    // present, but not that the names differ.
+    //
+    // ONE NUMBER CAN ONLY HAVE ONE ENTRY, so this cannot be fixed here. The
+    // DBA has been asked to renumber the submit procedure's three — the
+    // approve meanings were mapped first and are in use.
+    //
+    // Pinned to stop the obvious wrong fix: flipping these to the submit
+    // meanings would repair one path by breaking the other. When the new
+    // numbers arrive, add them; do not edit these.
+    assert.match(sqlErrorMap[50110].message, /no pending change request/i);
+    assert.match(sqlErrorMap[50111].message, /no longer active/i);
+    assert.match(sqlErrorMap[50112].message, /TIN number/i);
+  });
+
   test("no entry leaks a raw procedure message", () => {
     // errorHandler returns mapped.message straight to the client, so these are
     // user-facing strings rather than the database's own wording.
@@ -135,6 +170,12 @@ describe("the numbers deliberately left unmapped", () => {
     // Unreachable rather than ours: the agreement version is hardcoded to 1.0
     // and the client is always new, so a duplicate agreement cannot occur.
     [50005, "the client is always new and the agreement version is hardcoded, so a duplicate cannot occur"],
+
+    // Thrown by usp_ins_enrollment_invitation and deliberately not mapped:
+    // invitationService.js:99 catches it and marks that one recipient
+    // `already_invited` instead of failing the send. A mapping would be dead
+    // code and would hide where the handling actually is.
+    [50064, "invitationService catches it to mark one recipient already_invited rather than failing the send"],
   ];
 
   for (const [number, why] of DELIBERATELY_ABSENT) {
