@@ -25,7 +25,6 @@ const validBody = () => ({
   tin_id: "123-456-789",
   sss_gsis_no: "34-1234567-8",
   contact_no: "09171234567",
-  office_no: "8123456",
   occupation: "Analyst",
   position_title: "Senior Analyst",
   source_of_income: "Employment",
@@ -164,6 +163,27 @@ describe("validateEnrollment", () => {
 // The rules themselves are pinned in validateBirthdate.test.js and
 // validateBeneficiaryAge.test.js. These exist because a rule that is written
 // and not wired in is worth nothing, and nothing else asserts the wiring.
+describe("validateEnrollment — office_no is not required", () => {
+  test("a payload without office_no passes", () => {
+    // It was required and never stored: no model binding, no parameter in
+    // usp_ins_client, no column. The enrollment was being refused for a field
+    // the system then threw away.
+    const body = validBody();
+    delete body.office_no;
+
+    assert.ok(run(body).passed());
+  });
+
+  test("sending it anyway is harmless", () => {
+    // The models bind explicitly, so an unknown field never reaches the
+    // database. Pinned so removing the requirement is not mistaken for the
+    // frontend having to stop sending it.
+    const body = { ...validBody(), office_no: "8123456" };
+
+    assert.ok(run(body).passed());
+  });
+});
+
 describe("validateEnrollment — birthdate and age are actually applied", () => {
   test("refuses a malformed birthdate", () => {
     const body = validBody();

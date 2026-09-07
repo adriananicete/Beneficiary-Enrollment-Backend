@@ -34,7 +34,14 @@ export const validateEnrollment = (req, res, next) => {
     "weight",
     "sss_gsis_no",
     "contact_no",
-    "office_no",
+    // office_no was here and is not stored anywhere. It has no binding in any
+    // model, no parameter in usp_ins_client, and no column — grepped across
+    // src on 2026-09-07 and it appeared only on this line. The backend was
+    // refusing an enrollment for a missing field and then discarding it.
+    //
+    // Removed rather than wired up, because nothing has ever asked for it to
+    // be stored. If it turns out the business wants an office number, that is
+    // a column, a procedure parameter and a binding — not a line here.
     "occupation",
     "source_of_income",
     "consent_privacy",
