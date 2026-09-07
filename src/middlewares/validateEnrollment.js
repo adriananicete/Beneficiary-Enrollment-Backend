@@ -4,6 +4,12 @@ import { validateHeight } from "../utils/validateHeight.js";
 import { validateWeight } from "../utils/validateWeight.js";
 import { validateBirthdate } from "../utils/validateBirthdate.js";
 import { validateBeneficiaryAge } from "../utils/validateBeneficiaryAge.js";
+import { normaliseGender, validateGender } from "../utils/validateGender.js";
+import {
+  normaliseCivilStatus,
+  validateCivilStatus,
+} from "../utils/validateCivilStatus.js";
+import { validateZipCode } from "../utils/validateZipCode.js";
 import { isInvitationToken } from "./validateIdParam.js";
 import {
   ADDRESS_FIELD_LENGTHS,
@@ -14,6 +20,13 @@ import {
 
 export const validateEnrollment = (req, res, next) => {
   const { beneficiaries } = req.body;
+
+  // Normalised first, validated further down. The order is load-bearing:
+  // CLIENT_FIELD_LENGTHS caps gender at 1 because the column is char(1), so a
+  // form sending "Female" is six characters and would be refused for length
+  // before it ever became "F". Fold to the stored value, then measure it.
+  req.body.gender = normaliseGender(req.body.gender);
+  req.body.civil_status = normaliseCivilStatus(req.body.civil_status);
 
   const requiredFields = [
     "employee_id_number",
@@ -61,6 +74,15 @@ export const validateEnrollment = (req, res, next) => {
 
   const birthdateError = validateBirthdate(req.body.birthdate);
   if (birthdateError) return next(new AppError(birthdateError, 400));
+
+  const genderError = validateGender(req.body.gender);
+  if (genderError) return next(new AppError(genderError, 400));
+
+  const civilStatusError = validateCivilStatus(req.body.civil_status);
+  if (civilStatusError) return next(new AppError(civilStatusError, 400));
+
+  const zipCodeError = validateZipCode(req.body.zip_code);
+  if (zipCodeError) return next(new AppError(zipCodeError, 400));
 
   // Checking the shape here means every malformed token gets the same answer as
   // a token that does not exist, which is the honest one. The rule itself is in
