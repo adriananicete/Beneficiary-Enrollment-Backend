@@ -54,6 +54,25 @@ export const sqlErrorMap = {
 
     50009: {statusCode: 409, message: 'TIN number already registered'},
     50010: {statusCode: 409, message: 'Email address already registered'},
+
+    // usp_ins_client, added by the DBA on 2026-09-07 at our request.
+    //
+    // Before it existed, a duplicate SSS number was not refused by the
+    // procedure at all — dbo.clients has a UNIQUE index on sss_gsis_no and
+    // nothing checked it, so the caller got SQL Server's own 2627, which this
+    // file can only render as "Duplicate record". That message names no field,
+    // so the employee had nothing to act on.
+    //
+    // Worth keeping: 2627 fires for any unique violation on any table, so it
+    // can never say which column. A mapped number is the only way this becomes
+    // a sentence somebody can use.
+    //
+    // The check behind it deliberately has no `status = 'A'` filter, unlike
+    // 50009 above. The index has no such filter either, and a check narrower
+    // than its constraint leaves the raw 2627 in exactly the case that is
+    // hardest to explain — a returning employee whose own client row was
+    // deactivated. PARK.md §3.
+    50083: {statusCode: 409, message: 'SSS/GSIS number already registered'},
     50019: {statusCode: 409, message: 'You have already submitted an enrollment'},
     50020: {statusCode: 404, message: 'Beneficiary not found'},
     50021: {statusCode: 409, message: 'This enrollment already has a beneficiary with that name'},

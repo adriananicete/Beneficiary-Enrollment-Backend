@@ -13,6 +13,7 @@ const MUST_BE_MAPPED = [
   [50008, 400, /cannot exceed 100/i],
   [50019, 409, /already submitted/i],
   [50033, 400, /Invalid Credentials/i],
+  [50083, 409, /SSS\/GSIS number already registered/i],
   [50078, 409, /already completed an enrollment/i],
   [50110, 404, /no pending change request/i],
   [50115, 400, /100%/],
@@ -35,6 +36,36 @@ describe("sqlErrorMap", () => {
       assert.equal(typeof mapped.statusCode, "number", `${number} statusCode`);
       assert.equal(typeof mapped.message, "string", `${number} message`);
       assert.ok(mapped.message.length > 0, `${number} message is empty`);
+    }
+  });
+
+  test("2627 stays, and stays generic — it is the fallback these numbers exist to avoid", () => {
+    // SQL Server's own unique-constraint violation. It fires for any unique
+    // index on any table, so it can never name the column and its message can
+    // never be more useful than this. Every mapped duplicate number above is
+    // one more case that no longer lands here.
+    //
+    // Pinned so nobody makes it specific: the day it says "TIN already
+    // registered" is the day some unrelated constraint tells that lie.
+    assert.equal(sqlErrorMap[2627].statusCode, 409);
+    assert.match(sqlErrorMap[2627].message, /^Duplicate record$/);
+  });
+
+  test("the three fields with a unique index all have a mapped number", () => {
+    // dbo.clients carries UNIQUE indexes on tin_id and sss_gsis_no, and
+    // sec.us01_users on us01_username. Each needs a procedure check with a
+    // mapped number, or the caller gets 2627 instead of a sentence.
+    //
+    // sss_gsis_no had neither until 2026-09-07: the index existed, nothing
+    // checked it, and a duplicate reached the employee as "Duplicate record".
+    for (const number of [50009, 50035, 50083]) {
+      assert.ok(sqlErrorMap[number], `${number} is not mapped`);
+      assert.equal(sqlErrorMap[number].statusCode, 409, `${number}`);
+      assert.match(
+        sqlErrorMap[number].message,
+        /already registered/i,
+        `${number} should say what is already taken`,
+      );
     }
   });
 
