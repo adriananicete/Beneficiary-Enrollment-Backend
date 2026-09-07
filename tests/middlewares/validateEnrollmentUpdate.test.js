@@ -129,3 +129,46 @@ describe("validateEnrollmentUpdate", () => {
     assert.match(run(body).refusal().message, /height is required/);
   });
 });
+
+// The change request path gets the same two rules as the submit path. An
+// employee proposing a change is the only way a birthdate or a beneficiary age
+// moves after enrollment, so a rule enforced on one door and not the other is
+// not a rule.
+describe("validateEnrollmentUpdate — birthdate and age are applied here too", () => {
+  test("refuses a malformed birthdate", () => {
+    const body = validBody();
+    body.birthdate = "11/03/1994";
+
+    assert.match(run(body).refusal().message, /YYYY-MM-DD/);
+  });
+
+  test("refuses a birthdate in the future", () => {
+    const body = validBody();
+    body.birthdate = `${new Date().getFullYear() + 1}-03-11`;
+
+    assert.match(run(body).refusal().message, /cannot be in the future/);
+  });
+
+  test("ACCEPTS a beneficiary aged 0", () => {
+    const body = validBody();
+    body.beneficiaries = [
+      { full_name: "Baby Bautista", relationship: "Son", age: 0, coverage_percent: 100 },
+    ];
+
+    assert.ok(run(body).passed());
+  });
+
+  test("refuses a non-numeric beneficiary age", () => {
+    // Beneficiaries are optional on this path, so the fixture has none. They
+    // are supplied here rather than added to validBody, which would change
+    // what every other test in this file is sending.
+    const body = {
+      ...validBody(),
+      beneficiaries: [
+        { full_name: "Marco Bautista", relationship: "Son", age: "twelve", coverage_percent: 100 },
+      ],
+    };
+
+    assert.match(run(body).refusal().message, /whole number/);
+  });
+});
