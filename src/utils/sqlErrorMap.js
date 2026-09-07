@@ -7,10 +7,25 @@ export const sqlErrorMap = {
     // days with rememberMe. That user reaches the procedure, and until now got
     // a generic 500 where the login answers this same sentence.
     //
-    // 403 rather than 401 for both, matching the login: the token is valid,
-    // the account is not.
+    // 403 rather than 401, matching the login: the token is valid, the
+    // account is not.
     50001: { statusCode: 403, message: 'This account is no longer active. Please contact your HR.' },
-    50002: { statusCode: 403, message: 'You are not authorized to view employee information' },
+
+    // The role guard on the same procedure, and it MOVED. It threw 50002 when
+    // this file was written; the live procedure throws 50133, with the same
+    // sentence. Read 2026-09-07.
+    //
+    // So the 50002 entry that used to sit here was dead: the number it mapped
+    // was no longer thrown by the procedure the comment named, and an
+    // unauthorised caller was getting a generic 500 instead of this.
+    //
+    // 50002 is now UNMAPPED on purpose — usp_del_beneficiary throws it for
+    // 'beneficiary does not exist', which is a different thing entirely.
+    // Nothing calls that procedure today, but leaving the old entry in place
+    // would have meant the first caller who did got "You are not authorized to
+    // view employee information" for a missing beneficiary. Same shape as the
+    // 50110/50111/50112 collision.
+    50133: { statusCode: 403, message: 'You are not authorized to view employee information' },
 
     // Thrown by usp_ins_beneficiary, on the public enrollment submit path. Its
     // only caller is enrollmentService.js:107, once per beneficiary, inside the

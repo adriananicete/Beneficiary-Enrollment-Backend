@@ -8,7 +8,7 @@ import { sqlErrorMap } from "../../src/utils/sqlErrorMap.js";
 // shows the message, retries, or sends the user somewhere else.
 const MUST_BE_MAPPED = [
   [50001, 403, /no longer active/i],
-  [50002, 403, /not authorized/i],
+  [50133, 403, /not authorized/i],
   [50007, 409, /same name/i],
   [50008, 400, /cannot exceed 100/i],
   [50019, 409, /already submitted/i],
@@ -176,6 +176,14 @@ describe("the numbers deliberately left unmapped", () => {
     // `already_invited` instead of failing the send. A mapping would be dead
     // code and would hide where the handling actually is.
     [50064, "invitationService catches it to mark one recipient already_invited rather than failing the send"],
+
+    // Was mapped to "You are not authorized to view employee information",
+    // taken from usp_sel_hr_employees. That procedure now throws 50133 for the
+    // same check with the same sentence, so the entry was dead — and 50002 is
+    // usp_del_beneficiary's "beneficiary does not exist", which nothing calls
+    // yet. Keeping the old entry would have meant the first caller of that
+    // procedure got an authorization message for a missing beneficiary.
+    [50002, "usp_sel_hr_employees renumbered its role guard to 50133, and 50002 now belongs to usp_del_beneficiary with a different meaning"],
   ];
 
   for (const [number, why] of DELIBERATELY_ABSENT) {
