@@ -14,6 +14,10 @@ const MUST_BE_MAPPED = [
   [50019, 409, /already submitted/i],
   [50033, 400, /Invalid Credentials/i],
   [50083, 409, /SSS\/GSIS number already registered/i],
+  [50018, 400, /classification is no longer available/i],
+  [50052, 500, /contact your HR/i],
+  [50071, 500, /not set up for enrollment/i],
+  [50072, 500, /enrollment limit for the year/i],
   [50078, 409, /already completed an enrollment/i],
   [50110, 404, /no pending change request/i],
   [50115, 400, /100%/],
@@ -69,6 +73,32 @@ describe("sqlErrorMap", () => {
     }
   });
 
+  test("a 5xx entry still carries a real message, which is the point of mapping it", () => {
+    // errorHandler returns mapped.message verbatim whatever the status code,
+    // so a mapped 500 says something useful where an unmapped one says
+    // "Server Error". That is the only reason these three are worth an entry.
+    for (const number of [50052, 50071, 50072]) {
+      const mapped = sqlErrorMap[number];
+
+      assert.equal(mapped.statusCode, 500, `${number}`);
+      assert.notEqual(mapped.message, "Server Error", `${number}`);
+      assert.match(mapped.message, /contact your HR/i, `${number}`);
+    }
+  });
+
+  test("the configuration faults stay 5xx — they are not the caller's fault", () => {
+    // The line this file now draws. 4xx means the caller can fix it by
+    // sending something different; these three cannot be fixed from the form
+    // at any price, so calling them 4xx would send the employee back to retry
+    // forever. Pinned so nobody "tidies" them into 400s.
+    for (const number of [50052, 50071, 50072])
+      assert.ok(sqlErrorMap[number].statusCode >= 500, `${number} must stay 5xx`);
+
+    // And the contrast, from the same procedure: this one IS actionable —
+    // pick a different classification — so it is a 400.
+    assert.equal(sqlErrorMap[50018].statusCode, 400);
+  });
+
   test("no entry leaks a raw procedure message", () => {
     // errorHandler returns mapped.message straight to the client, so these are
     // user-facing strings rather than the database's own wording.
@@ -89,6 +119,22 @@ describe("the numbers deliberately left unmapped", () => {
     [50006, "the enrollment row was inserted moments earlier in the same transaction, so this firing is our fault and nothing the caller can act on"],
     [50034, "compares two bcrypt hashes for equality, which different salts make impossible — it cannot fire"],
     [50076, "means our own code sent an invalid send-status value, which is a bug on our side rather than something the caller can act on"],
+
+    // The rest of the enrollment submit path, swept 2026-09-07. Every one of
+    // these reports that a row written moments earlier in the same
+    // transaction is missing — our fault, not the caller's, and a generic 500
+    // is the honest answer. Mapping them would dress a bug up as advice.
+    [50011, "the client was inserted moments earlier in the same transaction"],
+    [50012, "the address was inserted moments earlier in the same transaction"],
+    [50013, "the client-employer link was created moments earlier in the same transaction"],
+    [50016, "the client was inserted moments earlier in the same transaction"],
+    [50017, "the employer assignment was created moments earlier in the same transaction"],
+    [50051, "the user was inserted moments earlier in the same transaction"],
+    [50053, "the user was created moments earlier and cannot already have a role"],
+
+    // Unreachable rather than ours: the agreement version is hardcoded to 1.0
+    // and the client is always new, so a duplicate agreement cannot occur.
+    [50005, "the client is always new and the agreement version is hardcoded, so a duplicate cannot occur"],
   ];
 
   for (const [number, why] of DELIBERATELY_ABSENT) {
