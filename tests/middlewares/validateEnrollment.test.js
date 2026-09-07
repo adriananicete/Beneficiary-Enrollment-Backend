@@ -163,6 +163,51 @@ describe("validateEnrollment", () => {
 // The rules themselves are pinned in validateBirthdate.test.js and
 // validateBeneficiaryAge.test.js. These exist because a rule that is written
 // and not wired in is worth nothing, and nothing else asserts the wiring.
+describe("validateEnrollment — gender, civil status and zip code", () => {
+  test("normalises the words the form sends into what is stored", () => {
+    // The assertion that matters is on req.body afterwards, not on passing.
+    // The column is char(1), so if the word reached the model it would be
+    // truncated to "M" for Male and "F" for Female by coincidence — and to
+    // "O" for Other, also by coincidence. Coincidence is not the same as
+    // correct, and it breaks the moment a value does not start with its letter.
+    const body = { ...validBody(), gender: "Male", civil_status: "married" };
+    const req = makeReq({ body });
+    const next = makeNext();
+
+    validateEnrollment(req, makeRes(), next);
+
+    assert.ok(next.passed());
+    assert.equal(req.body.gender, "M");
+    assert.equal(req.body.civil_status, "Married");
+  });
+
+  test("refuses a gender outside the three", () => {
+    const body = { ...validBody(), gender: "X" };
+
+    assert.match(run(body).refusal().message, /Gender must be one of/);
+  });
+
+  test("refuses a civil status outside the six, and lists them", () => {
+    const body = { ...validBody(), civil_status: "Complicated" };
+    const refusal = run(body).refusal();
+
+    assert.equal(refusal.statusCode, 400);
+    assert.match(refusal.message, /Legally Separated/);
+  });
+
+  test("refuses a zip code that is four characters but not four digits", () => {
+    const body = { ...validBody(), zip_code: "11A0" };
+
+    assert.match(run(body).refusal().message, /exactly 4 digits/);
+  });
+
+  test("keeps a leading zero on the zip code", () => {
+    const body = { ...validBody(), zip_code: "0900" };
+
+    assert.ok(run(body).passed());
+  });
+});
+
 describe("validateEnrollment — office_no is not required", () => {
   test("a payload without office_no passes", () => {
     // It was required and never stored: no model binding, no parameter in

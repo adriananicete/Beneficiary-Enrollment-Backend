@@ -4,6 +4,12 @@ import { validateHeight } from "../utils/validateHeight.js";
 import { validateWeight } from "../utils/validateWeight.js";
 import { validateBirthdate } from "../utils/validateBirthdate.js";
 import { validateBeneficiaryAge } from "../utils/validateBeneficiaryAge.js";
+import { normaliseGender, validateGender } from "../utils/validateGender.js";
+import {
+  normaliseCivilStatus,
+  validateCivilStatus,
+} from "../utils/validateCivilStatus.js";
+import { validateZipCode } from "../utils/validateZipCode.js";
 import {
   ADDRESS_FIELD_LENGTHS,
   BENEFICIARY_FIELD_LENGTHS,
@@ -13,6 +19,14 @@ import {
 
 export const validateEnrollmentUpdate = (req, res, next) => {
   const { client_address_id, beneficiaries } = req.body;
+
+  // Before the length check below, not after. gender is capped at 1 to match
+  // char(1), so "Female" would be refused for length before it could become
+  // "F". Fold to the stored value first, then measure it. Validated at the
+  // bottom, alongside height and weight, so a missing field still reports
+  // itself as missing rather than as outside a set.
+  req.body.gender = normaliseGender(req.body.gender);
+  req.body.civil_status = normaliseCivilStatus(req.body.civil_status);
 
   const requiredFields = [
     "first_name",
@@ -99,6 +113,20 @@ export const validateEnrollmentUpdate = (req, res, next) => {
 
   const birthdateError = validateBirthdate(req.body.birthdate);
   if (birthdateError) return next(new AppError(birthdateError, 400));
+
+  const genderError = validateGender(req.body.gender);
+  if (genderError) return next(new AppError(genderError, 400));
+
+  const civilStatusError = validateCivilStatus(req.body.civil_status);
+  if (civilStatusError) return next(new AppError(civilStatusError, 400));
+
+  // Only when an address is being changed. zip_code is not in the base
+  // required list on this path — it joins it above, alongside barangay_id and
+  // address_line, when client_address_id is present.
+  if (client_address_id) {
+    const zipCodeError = validateZipCode(req.body.zip_code);
+    if (zipCodeError) return next(new AppError(zipCodeError, 400));
+  }
 
   next();
 };

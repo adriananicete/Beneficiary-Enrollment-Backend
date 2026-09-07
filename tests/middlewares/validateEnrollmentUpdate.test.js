@@ -134,6 +134,44 @@ describe("validateEnrollmentUpdate", () => {
 // employee proposing a change is the only way a birthdate or a beneficiary age
 // moves after enrollment, so a rule enforced on one door and not the other is
 // not a rule.
+describe("validateEnrollmentUpdate — gender, civil status and zip code", () => {
+  test("normalises here as well as at submit", () => {
+    const body = { ...validBody(), gender: "female", civil_status: "WIDOWED" };
+    const req = makeReq({ body });
+    const next = makeNext();
+
+    validateEnrollmentUpdate(req, makeRes(), next);
+
+    assert.ok(next.passed());
+    assert.equal(req.body.gender, "F");
+    assert.equal(req.body.civil_status, "Widowed");
+  });
+
+  test("refuses a civil status outside the six", () => {
+    const body = { ...validBody(), civil_status: "Separated" };
+
+    assert.match(run(body).refusal().message, /must be one of/);
+  });
+
+  test("checks the zip code only when the address is being changed", () => {
+    // zip_code is not part of the base payload on this path — it joins the
+    // required list alongside barangay_id and address_line when
+    // client_address_id is present. Checking it unconditionally would refuse
+    // every personal-details-only change request.
+    assert.ok(run(validBody()).passed());
+
+    const withAddress = {
+      ...validBody(),
+      client_address_id: 5,
+      barangay_id: "012801001",
+      address_line: "12 Mabini St",
+      zip_code: "11A0",
+    };
+
+    assert.match(run(withAddress).refusal().message, /exactly 4 digits/);
+  });
+});
+
 describe("validateEnrollmentUpdate — birthdate and age are applied here too", () => {
   test("refuses a malformed birthdate", () => {
     const body = validBody();
