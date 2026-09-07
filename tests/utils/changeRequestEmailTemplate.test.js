@@ -47,8 +47,11 @@ describe("changeRequestEmailTemplate", () => {
 describe("escaping — the only guard on HR's free text", () => {
   // reviewRemarks is written by HR and rendered into an email the employee
   // opens. It is the one place in this system where one user's text reaches
-  // another user's inbox, which is why this template escapes and the other
-  // three do not.
+  // another user's inbox, and the only field in any template that does.
+  //
+  // All four templates escape now — the shared escapeHtml and the cases
+  // covering the other three are in escapeHtml.test.js. These stay here
+  // because this is the field that actually needs them.
 
   test("a script tag arrives escaped, not as markup", () => {
     const content = build({
@@ -64,13 +67,21 @@ describe("escaping — the only guard on HR's free text", () => {
   });
 
   test("an attribute break-out is escaped", () => {
+    // Both assertions here used to be unfailable, found 2026-09-07 by stripping
+    // the escaping and watching this stay green. The first looked for a closing
+    // quote the payload never had; the second matched /&quot;/, which the
+    // template's own `&quot;Segoe UI&quot;` font stack satisfies on every
+    // render. Now it asserts on the payload as it would survive unescaped.
     const content = build({
       approved: false,
       reviewRemarks: `" onmouseover="alert(1)`,
     }).content;
 
-    assert.ok(!content.includes(`onmouseover="alert(1)"`));
-    assert.match(content, /&quot;|&#39;/);
+    assert.ok(
+      !content.includes(`" onmouseover="`),
+      "the quote closed the attribute and a handler was injected",
+    );
+    assert.match(content, /&quot; onmouseover=&quot;/);
   });
 
   test("an ampersand is escaped first, so escaping is not double-applied", () => {

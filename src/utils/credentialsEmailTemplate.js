@@ -1,10 +1,4 @@
-const escapeHtml = (value) =>
-  String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+import { escapeHtml } from "./escapeHtml.js";
 
 // Sent when HR reissues an employee's credentials. Deliberately not the
 // enrollment confirmation template — that one opens with "Your account has been

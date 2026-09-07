@@ -1,5 +1,10 @@
+import { escapeHtml } from "./escapeHtml.js";
 
-
+// `username` is the employee id straight off the enrollment form. It is
+// required and capped at 50 characters and its shape is not validated, so it
+// can carry markup. It goes only to the person who typed it, which is why this
+// is consistency rather than a fix — but the same two values are escaped in
+// credentialsEmailTemplate, and one of the two had to be wrong.
 export const emailTemplate = ({
   policyNo,
   username,
@@ -78,16 +83,16 @@ export const emailTemplate = ({
                 font-weight: bold;
               "
             >
-              Policy Number: ${policyNo}
+              Policy Number: ${escapeHtml(policyNo)}
             </h2>
           </div>
           
           <p style="font-size: 16px;">
-            Hi ${firstName} this is your temporary account:
+            Hi ${escapeHtml(firstName)} this is your temporary account:
           </p>
 
           <p style="text-align: center; border-radius: 5px; border: 1px solid #4caf50; padding: 20px 0; font-size: 16px">
-            Username: ${username} <br/> Password: ${password}
+            Username: ${escapeHtml(username)} <br/> Password: ${escapeHtml(password)}
           </p>
 
           <p style="margin: 20px 0; font-size: 16px">
