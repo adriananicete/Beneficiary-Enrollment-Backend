@@ -232,6 +232,49 @@ describe("validateEnrollment — TIN", () => {
   });
 });
 
+describe("validateEnrollment — contact number and SSS/GSIS", () => {
+  test("folds +63 and adds the SSS dashes before storing", () => {
+    const body = {
+      ...validBody(),
+      contact_no: "+639171234567",
+      sss_gsis_no: "3398271045",
+    };
+    const req = makeReq({ body });
+    const next = makeNext();
+
+    validateEnrollment(req, makeRes(), next);
+
+    assert.ok(next.passed());
+    assert.equal(req.body.contact_no, "09171234567");
+    assert.equal(req.body.sss_gsis_no, "33-9827104-5");
+  });
+
+  test("accepts an 11-digit GSIS number, left bare", () => {
+    const body = { ...validBody(), sss_gsis_no: "12345678901" };
+    const req = makeReq({ body });
+    const next = makeNext();
+
+    validateEnrollment(req, makeRes(), next);
+
+    assert.ok(next.passed());
+    assert.equal(req.body.sss_gsis_no, "12345678901");
+  });
+
+  test("refuses a landline in the mobile field", () => {
+    const refusal = run({ ...validBody(), contact_no: "0281234567" }).refusal();
+
+    assert.equal(refusal.statusCode, 400);
+    assert.match(refusal.message, /starting with 09/);
+  });
+
+  test("refuses an SSS number that is neither 10 nor 11 digits", () => {
+    assert.match(
+      run({ ...validBody(), sss_gsis_no: "1234567890111" }).refusal().message,
+      /10 digits/,
+    );
+  });
+});
+
 describe("validateEnrollment — office_no is not required", () => {
   test("a payload without office_no passes", () => {
     // It was required and never stored: no model binding, no parameter in

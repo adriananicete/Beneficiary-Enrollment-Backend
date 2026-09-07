@@ -172,6 +172,31 @@ describe("validateEnrollmentUpdate — gender, civil status and zip code", () =>
   });
 });
 
+describe("validateEnrollmentUpdate — contact number and SSS/GSIS here too", () => {
+  test("normalises both", () => {
+    const body = {
+      ...validBody(),
+      contact_no: "+639181234567",
+      sss_gsis_no: "4567890123",
+    };
+    const req = makeReq({ body });
+    const next = makeNext();
+
+    validateEnrollmentUpdate(req, makeRes(), next);
+
+    assert.ok(next.passed());
+    assert.equal(req.body.contact_no, "09181234567");
+    assert.equal(req.body.sss_gsis_no, "45-6789012-3");
+  });
+
+  test("refuses a malformed contact number", () => {
+    assert.match(
+      run({ ...validBody(), contact_no: "543453566" }).refusal().message,
+      /starting with 09/,
+    );
+  });
+});
+
 describe("validateEnrollmentUpdate — TIN is normalised here too", () => {
   test("adds the dashes", () => {
     const body = { ...validBody(), tin_id: "543453566" };
