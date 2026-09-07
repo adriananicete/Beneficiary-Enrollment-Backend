@@ -12,6 +12,14 @@ import {
 import { validateZipCode } from "../utils/validateZipCode.js";
 import { normaliseTinId, validateTinId } from "../utils/validateTinId.js";
 import {
+  normaliseContactNo,
+  validateContactNo,
+} from "../utils/validateContactNo.js";
+import {
+  normaliseSssGsisNo,
+  validateSssGsisNo,
+} from "../utils/validateSssGsisNo.js";
+import {
   ADDRESS_FIELD_LENGTHS,
   BENEFICIARY_FIELD_LENGTHS,
   CLIENT_FIELD_LENGTHS,
@@ -29,6 +37,8 @@ export const validateEnrollmentUpdate = (req, res, next) => {
   req.body.gender = normaliseGender(req.body.gender);
   req.body.civil_status = normaliseCivilStatus(req.body.civil_status);
   req.body.tin_id = normaliseTinId(req.body.tin_id);
+  req.body.contact_no = normaliseContactNo(req.body.contact_no);
+  req.body.sss_gsis_no = normaliseSssGsisNo(req.body.sss_gsis_no);
 
   const requiredFields = [
     "first_name",
@@ -124,6 +134,12 @@ export const validateEnrollmentUpdate = (req, res, next) => {
 
   const tinIdError = validateTinId(req.body.tin_id);
   if (tinIdError) return next(new AppError(tinIdError, 400));
+
+  const contactNoError = validateContactNo(req.body.contact_no);
+  if (contactNoError) return next(new AppError(contactNoError, 400));
+
+  const sssGsisNoError = validateSssGsisNo(req.body.sss_gsis_no);
+  if (sssGsisNoError) return next(new AppError(sssGsisNoError, 400));
 
   // Only when an address is being changed. zip_code is not in the base
   // required list on this path — it joins it above, alongside barangay_id and
