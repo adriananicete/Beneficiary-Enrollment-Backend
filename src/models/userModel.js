@@ -41,15 +41,27 @@ const findUserById = async (pool, userId) => {
     return result.recordset[0];
 };
 
+// Returns nothing on purpose. It used to declare a us01_user_id output and
+// return it, mirroring createUser above — but createUser follows an INSERT and
+// this one follows an UPDATE. sec.us01_usp_first_login set that parameter with
+// SCOPE_IDENTITY(), which has nothing to return after an UPDATE, so the value
+// was NULL every time. The DBA removed that line on 2026-09-07 and now nothing
+// assigns the parameter at all.
+//
+// Dropped rather than fixed, because the id is already in hand: passwordService
+// calls findUserByUsername immediately above this, and that row carries
+// us01_user_id — the same value authController reads for the JWT. The procedure
+// was returning something the caller already had.
+//
+// The reason not to leave the dead return: it looked like it returned a user
+// id, so `const userId = await UserModel.changePassword(...)` would have read
+// null with no error and no throw. That is the shape of the PR #77 bug.
 const changePassword = async (pool, userData) => {
-    const result = await pool.request()
+    await pool.request()
     .input('us01_username', sql.VarChar, userData.us01_username)
     .input('oldpass', sql.VarChar, userData.oldpass)
     .input('newpass', sql.VarChar, userData.newpass)
-    .output('us01_user_id', sql.BigInt)
     .execute('sec.us01_usp_first_login')
-
-    return result.output.us01_user_id;
 };
 
 const updateLastLogin = async (pool, username) => {
