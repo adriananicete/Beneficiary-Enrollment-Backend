@@ -208,6 +208,30 @@ describe("validateEnrollment — gender, civil status and zip code", () => {
   });
 });
 
+describe("validateEnrollment — TIN", () => {
+  test("adds the dashes to a bare TIN before it is stored", () => {
+    const body = { ...validBody(), tin_id: "543453566" };
+    const req = makeReq({ body });
+    const next = makeNext();
+
+    validateEnrollment(req, makeRes(), next);
+
+    assert.ok(next.passed());
+    assert.equal(req.body.tin_id, "543-453-566");
+  });
+
+  test("accepts the twelve-digit form too", () => {
+    assert.ok(run({ ...validBody(), tin_id: "123-456-789-000" }).passed());
+  });
+
+  test("refuses a digit count that is neither 9 nor 12", () => {
+    const refusal = run({ ...validBody(), tin_id: "147-852-96" }).refusal();
+
+    assert.equal(refusal.statusCode, 400);
+    assert.match(refusal.message, /9 or 12 digits/);
+  });
+});
+
 describe("validateEnrollment — office_no is not required", () => {
   test("a payload without office_no passes", () => {
     // It was required and never stored: no model binding, no parameter in
