@@ -19,6 +19,40 @@ describe("chunk", () => {
   test("an empty list is no groups, not one empty group", () => {
     assert.deepEqual(chunk([], 5), []);
   });
+
+  // Zero and negative hung the process before the guard existed. A test that
+  // hangs does not report a failure - it is killed by the runner's timeout
+  // long after the suite stopped being useful - so these are the cases most
+  // worth pinning and the least likely to be found by hitting them.
+  //
+  // Unreachable today: the one caller passes BATCH_SIZE, a module constant of
+  // 20. The guard is for whoever next reaches for a shared utility and passes
+  // a number that came from somewhere else.
+  test("refuses a size of zero rather than looping forever", () => {
+    assert.throws(() => chunk([1, 2, 3], 0), TypeError);
+  });
+
+  test("refuses a negative size", () => {
+    assert.throws(() => chunk([1, 2, 3], -1), TypeError);
+  });
+
+  test("refuses a fractional size, which groups unevenly rather than hanging", () => {
+    // This one terminates and loses nothing, which is why it is the quiet
+    // fault. Measured, not assumed: 2.5 over six items returns
+    // [[1,2],[3,4,5],[6]], and 0.5 returns six empty groups interleaved with
+    // the items. Neither is a batch of BATCH_SIZE.
+    assert.throws(() => chunk([1, 2, 3, 4, 5, 6], 2.5), TypeError);
+    assert.throws(() => chunk([1, 2, 3], 0.5), TypeError);
+  });
+
+  test("refuses a size that is not a number at all", () => {
+    assert.throws(() => chunk([1, 2, 3], undefined), TypeError);
+    assert.throws(() => chunk([1, 2, 3], "20"), TypeError);
+  });
+
+  test("names the offending value, since the caller passed it from somewhere", () => {
+    assert.throws(() => chunk([1], 0), /received 0/);
+  });
 });
 
 describe("runWithConcurrency", () => {

@@ -1,4 +1,24 @@
 export const chunk = (items, size) => {
+  // Two different faults, and only the first is the loud one.
+  //
+  // A size of 0 or less never advances the cursor below, so the loop runs
+  // forever: the process hangs with no error, no log and nothing to grep for.
+  //
+  // A fractional size terminates, and is refused for a different reason. It
+  // loses nothing and duplicates nothing — `slice` truncates its arguments —
+  // but the groups come out uneven, and below 1 it emits empty ones:
+  // `chunk([1..6], 2.5)` is `[[1,2],[3,4,5],[6]]` and `0.5` gives six empty
+  // groups interleaved with the items. For a batch send that is a batch of
+  // zero addresses and batches that are not BATCH_SIZE.
+  //
+  // Throwing rather than returning [] is deliberate. The only caller is the
+  // bulk invitation send, and an empty list of batches there would send nothing
+  // and report the job finished. A silent success is worse than a hang, and a
+  // TypeError here reaches errorHandler without a statusCode, so the caller
+  // gets a generic 500 and the whole thing is logged.
+  if (!Number.isInteger(size) || size < 1)
+    throw new TypeError(`chunk size must be a positive integer, received ${size}`);
+
   const chunks = [];
 
   for (let i = 0; i < items.length; i += size) {
