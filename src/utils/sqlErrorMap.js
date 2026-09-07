@@ -148,6 +148,22 @@ export const sqlErrorMap = {
     50104: { statusCode: 409, message: 'TIN number already registered' },
     50105: { statusCode: 409, message: 'Email address already registered' },
     50106: { statusCode: 403, message: 'Address does not belong to this enrollment' },
+
+    // Same procedure, found in the full THROW audit on 2026-09-07. Both mean
+    // the beneficiary change block did not parse into something usable —
+    // 50108 an action outside the allowed set, 50109 an id that does not go
+    // with the action given.
+    //
+    // The employee cannot fix either from the form; the cause is the payload.
+    // 400 is still right, because it is the request that is wrong, and the
+    // wording matches 50102 and 50103 above rather than inventing a new voice.
+    //
+    // Worth knowing why they fire at all: the JSON keys inside a change
+    // request are camelCase, alone in this API, because that is OPENJSON's
+    // contract — and a wrong key does not error, it reads as NULL. So a typo
+    // in the frontend arrives here rather than at the point it was made.
+    50108: { statusCode: 400, message: 'Invalid beneficiary change action' },
+    50109: { statusCode: 400, message: 'Invalid beneficiary reference in the change request' },
     50107: { statusCode: 403, message: 'Beneficiary does not belong to this enrollment' },
 
     // usp_upd_client_change_request_approve
@@ -181,6 +197,54 @@ export const sqlErrorMap = {
     // exists, so 404 is the honest status for both.
     50131: { statusCode: 404, message: 'No pending change request found' },
     50132: { statusCode: 404, message: 'No pending change request found' },
+
+    // ── The read paths, from the full THROW audit on 2026-09-07 ────────────
+    //
+    // One query over sys.sql_modules listed every THROW in every procedure,
+    // which is the audit PARK.md §6 had been asking for since 2026-09-03.
+    // These are the numbers it found on procedures this backend actually
+    // calls. Everything below was a generic 500 until now.
+
+    // us01_usp_sel_user_by_id, reached from getMyAgreements.
+    // us01_usp_sel_user_by_username throws 50039 for the same reason and is
+    // not called here, so it is not mapped.
+    //
+    // Same class as 50001 and the same sentence, deliberately: verifyToken and
+    // allowedRoles refuse an inactive account long before this, with one
+    // exception — a session already open when the account was deactivated
+    // keeps its JWT until it expires, up to thirty days with rememberMe.
+    50038: { statusCode: 403, message: 'This account is no longer active. Please contact your HR.' },
+
+    // usp_sel_beneficiaries. The enrollment id comes from the employee's own
+    // record moments earlier, so this means the enrollment vanished between
+    // the two reads — or that they have none.
+    50079: { statusCode: 404, message: 'Enrollment not found' },
+
+    // usp_sel_client_agreement, behind the consent records on both the
+    // employee and the admin side.
+    50081: { statusCode: 404, message: 'Enrollment not found' },
+
+    // usp_sel_insurance_enrollment. 50082 is a user row with no client_id —
+    // an account that exists but was never linked to an enrollment, which is
+    // exactly the state a half-finished manual seed leaves behind. The
+    // employee can do nothing with it except be told who to ask.
+    50082: { statusCode: 404, message: 'No enrollment is linked to this account. Please contact your HR.' },
+
+    // Same procedure, the role guard. allowedRoles(EMPLOYEE) already refuses
+    // these callers, so this is the stale-session case again.
+    50134: { statusCode: 403, message: 'This account cannot view employee enrollment details' },
+
+    // usp_ins_enrollment_invitation, on the HR send path. The company itself
+    // is inactive, which HR cannot fix and would otherwise see as a server
+    // error in the middle of a bulk send.
+    //
+    // 50064 from the same procedure is NOT mapped and must not be: it means
+    // an active invitation already exists for that address, and
+    // invitationService.js:99 catches it to mark that one recipient
+    // `already_invited` rather than failing the send. Mapping it here would
+    // do nothing, but the next person reading this file should know it is
+    // handled rather than missed.
+    50063: { statusCode: 409, message: 'This company is no longer active. Please contact PhilLife.' },
 
     2627: {statusCode: 409, message: 'Duplicate record'},
 }
