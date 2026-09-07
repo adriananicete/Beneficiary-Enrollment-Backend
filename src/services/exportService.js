@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import ClientModel from "../models/clientModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
-import { poolPromise } from "../config/db.js";
+import { getPool } from "../config/db.js";
 import { AppError } from "../utils/AppError.js";
 
 // Taken from the email templates so a printed report and an email from the same
@@ -263,7 +263,7 @@ const applyPrintSetup = (sheet) => {
 export const buildEnrollmentReport = async (userId, range = {}) => {
   const { start, end } = parseRange(range);
 
-  const pool = await poolPromise;
+  const pool = await getPool();
 
   // usp_sel_hr_employees carries the company scoping — is_current, both status
   // flags, us08_is_active, and the Administrator branch. It is not reproduced

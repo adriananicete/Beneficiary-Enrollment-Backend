@@ -1,4 +1,4 @@
-import { poolPromise, sql } from "../config/db.js";
+import { getPool, sql } from "../config/db.js";
 import ClientModel from "../models/clientModel.js";
 import AddressModel from "../models/addressModel.js";
 import EmployerModel from "../models/employerModel.js";
@@ -16,7 +16,7 @@ import crypto from "crypto";
 import config from "../config/env.js";
 
 const createEnrollment = async (enrollmentData) => {
-  const pool = await poolPromise;
+  const pool = await getPool();
 
   const invitation = await InvitationModel.getInvitationByToken(pool, enrollmentData.token)
   if(!invitation) throw new AppError("Invitation not found", 404);

@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { poolPromise } from "../config/db.js";
+import { getPool } from "../config/db.js";
 import InvitationModel from "../models/invitationModel.js";
 import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
@@ -128,7 +128,7 @@ const processAddress = async (pool, jobId, userId, employer, email) => {
 // caught, recorded against the job, and the run continues to the next address.
 const runInvitationJob = async (jobId, userId, employer, emails) => {
   try {
-    const pool = await poolPromise;
+    const pool = await getPool();
 
     // An address failure is skipped; a systemic failure stops the run. Without
     // this, a Graph outage would burn through every address, mark them all
@@ -190,7 +190,7 @@ const runInvitationJob = async (jobId, userId, employer, emails) => {
 };
 
 const sendInvitations = async (userId, emails) => {
-  const pool = await poolPromise;
+  const pool = await getPool();
 
   const employers = await InvitationModel.getEmployersByUser(pool, userId);
   if (employers.length === 0)
@@ -270,7 +270,7 @@ const cancelInvitationJob = (userId, jobId) => {
 // person. The backend needs it to rebuild the link on resend; a browser never
 // does, so it is stripped before the list leaves the server.
 const getInvitations = async (userId, filters) => {
-  const pool = await poolPromise;
+  const pool = await getPool();
 
   const invitations = await InvitationModel.getInvitationsByUser(
     pool,
@@ -327,7 +327,7 @@ const findOwnedInvitation = (pool, userId, invitationId) =>
   InvitationModel.getInvitationById(pool, userId, invitationId);
 
 const revokeInvitation = async (userId, invitationId) => {
-  const pool = await poolPromise;
+  const pool = await getPool();
 
   const invitation = await findOwnedInvitation(pool, userId, invitationId);
   if(!invitation)
@@ -337,7 +337,7 @@ const revokeInvitation = async (userId, invitationId) => {
 };
 
 const resendInvitation = async (userId, invitationId) => {
-  const pool = await poolPromise;
+  const pool = await getPool();
   const invitation = await findOwnedInvitation(pool, userId, invitationId);
   if(!invitation) throw new AppError('Invitation does not belong to your company', 403);
 
