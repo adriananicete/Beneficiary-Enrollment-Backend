@@ -1,3 +1,8 @@
+import { escapeHtml } from "./escapeHtml.js";
+
+// `companyName` comes from the employers table rather than from a form, so this
+// is the lowest-risk of the four. Escaped anyway, so that all four templates
+// read the same way and nobody has to work out why one differs.
 export const invitationEmailTemplate = ({ companyName, enrollmentUrl }) => {
   return {
     contentType: "HTML",
@@ -62,7 +67,7 @@ export const invitationEmailTemplate = ({ companyName, enrollmentUrl }) => {
           </h2>
 
           <p style="margin: 0 0 14px 0">
-            <strong>${companyName}</strong> has invited you to complete your
+            <strong>${escapeHtml(companyName)}</strong> has invited you to complete your
             insurance enrollment for your group life insurance coverage with
             PhilLife. Before you begin, please have these ready:
           </p>

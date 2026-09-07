@@ -1,12 +1,7 @@
 // HR's review remarks are free text written by one person about another and go
-// straight into an HTML document. Escaped rather than trusted.
-const escapeHtml = (value) =>
-  String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+// straight into an HTML document. Escaped rather than trusted — this is the
+// only field in any template that crosses a user boundary.
+import { escapeHtml } from "./escapeHtml.js";
 
 export const changeRequestEmailTemplate = ({
   firstName,
