@@ -181,10 +181,32 @@ export const sqlErrorMap = {
     50109: { statusCode: 400, message: 'Invalid beneficiary reference in the change request' },
     50107: { statusCode: 403, message: 'Beneficiary does not belong to this enrollment' },
 
+    // Still usp_ins_client_change_request, and these three were wrong until
+    // 2026-09-08. They carried the approve procedure's meanings, because both
+    // procedures used 50110/50111/50112 for different things and one number can
+    // only hold one message.
+    //
+    // The DBA renumbered on 2026-09-08 — and renumbered the *approve* procedure
+    // rather than the submit one we asked for, which resolves it just as well:
+    // submit keeps 110/111/112, approve moved to 118/119/120.
+    //
+    // 50111 is the one an employee actually met, and it told them "This employee
+    // record is no longer active" — false, and it sent them to HR about an
+    // account that was fine. validateEnrollmentUpdate checks that the coverage
+    // totals 100 and that each beneficiary has a name, but not that the names
+    // differ, so it reached here from the form.
+    50110: { statusCode: 400, message: 'Every beneficiary needs a name and a coverage percentage between 1 and 100' },
+    50111: { statusCode: 409, message: 'This change would leave two beneficiaries with the same name on the enrollment. Correct one and resubmit.' },
+    50112: { statusCode: 400, message: 'Beneficiary coverage must total exactly 100%' },
+
     // usp_upd_client_change_request_approve
-    50110: { statusCode: 404, message: 'No pending change request found' },
-    50111: { statusCode: 409, message: 'This employee record is no longer active' },
-    50112: { statusCode: 409, message: 'The proposed TIN number is already registered to someone else' },
+    //
+    // 50118, 50119 and 50120 are where 50110, 50111 and 50112 went. The meanings
+    // are unchanged — only the numbers moved — so these three keep the wording
+    // they have had since the approve path was first mapped.
+    50118: { statusCode: 404, message: 'No pending change request found' },
+    50119: { statusCode: 409, message: 'This employee record is no longer active' },
+    50120: { statusCode: 409, message: 'The proposed TIN number is already registered to someone else' },
     50113: { statusCode: 409, message: 'The proposed email address is already registered to someone else' },
     50114: { statusCode: 400, message: 'A beneficiary coverage percentage is invalid' },
     // The one HR actually meets. It fires when the beneficiary changes would
@@ -201,7 +223,17 @@ export const sqlErrorMap = {
     50117: { statusCode: 409, message: 'This change would leave two beneficiaries with the same name on the enrollment. Ask the employee to correct one and resubmit.' },
 
     // usp_upd_client_change_request_reject
-    50120: { statusCode: 404, message: 'No pending change request found' },
+    //
+    // This entry read 50120 until 2026-09-08 and the reject procedure has never
+    // thrown that. It throws 50121, and nothing was mapped to it — so rejecting
+    // an already-decided request answered a generic 500, while the map looked
+    // like it covered the case.
+    //
+    // The stale number is why nobody noticed: an entry naming the right
+    // procedure and the right message hides a missing one better than an empty
+    // space would. Found by comparing the map against the THROW audit rather
+    // than by reading either alone.
+    50121: { statusCode: 404, message: 'No pending change request found' },
 
     // The role guard shared by the three change request read procedures.
     50130: { statusCode: 403, message: 'You are not authorized to view change requests' },
