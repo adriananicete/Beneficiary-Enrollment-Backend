@@ -1,4 +1,5 @@
 import InvitationService from '../services/invitationService.js';
+import { getPool } from '../config/db.js';
 import { parsePaging, parseSearch } from '../utils/parsePaging.js';
 
 // "0" and "1" only. Anything else means no filter, including an absent
@@ -17,7 +18,9 @@ export const getInvitations = async (req, res, next) => {
         const { user_id } = req.user;
         const { page, pageSize } = parsePaging(req.query);
 
-        const userInvitation = await InvitationService.getInvitations(user_id, {
+        const pool = await getPool();
+
+        const userInvitation = await InvitationService.getInvitations(pool, user_id, {
             page,
             pageSize,
             isEnrolled: parseIsEnrolled(req.query.is_enrolled),
@@ -40,7 +43,9 @@ export const sendInvitations = async (req, res, next) => {
         const { user_id } = req.user;
         const { emails } = req.body;
 
-        const job = await InvitationService.sendInvitations(user_id, emails);
+        const pool = await getPool();
+
+        const job = await InvitationService.sendInvitations(pool, user_id, emails);
 
         // 202: the addresses have been accepted, the sending happens behind this.
         return res.status(202).json({
@@ -93,7 +98,9 @@ export const revokeInvitation = async (req, res, next) => {
         const { user_id } = req.user;
         const { invitation_id } = req.params;
 
-        await InvitationService.revokeInvitation(user_id, invitation_id);
+        const pool = await getPool();
+
+        await InvitationService.revokeInvitation(pool, user_id, invitation_id);
 
         return res.status(200).json({
             success: true,
@@ -109,7 +116,9 @@ export const resendInvitation = async (req, res, next) => {
         const { user_id } = req.user;
         const { invitation_id } = req.params;
 
-        const resend = await InvitationService.resendInvitation(user_id, invitation_id);
+        const pool = await getPool();
+
+        const resend = await InvitationService.resendInvitation(pool, user_id, invitation_id);
 
         return res.status(200).json({
             success: true,

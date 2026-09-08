@@ -1,7 +1,6 @@
 import ExcelJS from "exceljs";
 import ClientModel from "../models/clientModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
-import { getPool } from "../config/db.js";
 import { AppError } from "../utils/AppError.js";
 
 // Taken from the email templates so a printed report and an email from the same
@@ -257,13 +256,16 @@ const applyPrintSetup = (sheet) => {
   sheet.headerFooter = { oddFooter: "&LPhilLife Finance Corporation&RPage &P of &N" };
 };
 
-// Takes only the user id. The caller's role never reaches here on purpose —
-// usp_sel_hr_employees resolves it internally and branches on Administrator
-// itself, so passing it would invite someone to make a second decision from it.
-export const buildEnrollmentReport = async (userId, range = {}) => {
+// Takes the pool as its first argument, like the models and dashboardService.
+// It used to call getPool() itself, which left this function — the whole Excel
+// report — with nowhere for a test to stand: calling it opened a real database
+// connection, which the suite must never do.
+//
+// The caller's role still never reaches here on purpose — usp_sel_hr_employees
+// resolves it internally and branches on Administrator itself, so passing it
+// would invite someone to make a second decision from it.
+export const buildEnrollmentReport = async (pool, userId, range = {}) => {
   const { start, end } = parseRange(range);
-
-  const pool = await getPool();
 
   // usp_sel_hr_employees carries the company scoping — is_current, both status
   // flags, us08_is_active, and the Administrator branch. It is not reproduced
