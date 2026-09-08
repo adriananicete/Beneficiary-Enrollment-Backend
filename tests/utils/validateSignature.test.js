@@ -107,15 +107,19 @@ describe("readSignature — the size cap", () => {
   test("refuses a file one byte over the cap", () => {
     const result = readSignature(fileOf(PNG_MAGIC, MAX_SIGNATURE_BYTES + 1));
 
-    assert.match(result.error, /10MB or smaller/);
+    assert.match(result.error, /500KB or smaller/);
   });
 
   // The message has to name a number the employee can act on. "Too large" sends
   // them back to try the same photograph again.
-  test("the refusal names the limit in megabytes", () => {
+  //
+  // In practice they should never meet it: the browser downscales to 1600px
+  // before sending, which lands well under the cap. Reaching this means the
+  // downscale did not run, and the message is what tells them so.
+  test("the refusal names the limit", () => {
     const result = readSignature(fileOf(PNG_MAGIC, MAX_SIGNATURE_BYTES + 1));
 
-    assert.match(result.error, /10MB/);
+    assert.match(result.error, /500KB/);
   });
 });
 
