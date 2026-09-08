@@ -1,7 +1,12 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { enrollmentTokenKey } from "../../src/middlewares/rateLimiter.js";
+import {
+  AUTH_IP_BURST,
+  ENROLLMENT_BURST,
+  enrollmentTokenKey,
+} from "../../src/middlewares/rateLimiter.js";
+import { MAX_INVITATION_EMAILS } from "../../src/utils/partitionEmails.js";
 import { makeReq } from "../helpers/http.js";
 
 // The limiters themselves are objects built at import and are not worth
@@ -70,5 +75,43 @@ describe("enrollmentTokenKey", () => {
     const key = enrollmentTokenKey(makeReq({ body: { token: "" }, ip: "203.0.113.7" }));
 
     assert.doesNotMatch(key, /^token:/);
+  });
+});
+
+// A limiter object does not expose its own ceiling, so what is asserted is the
+// relationship the ceilings were derived from — which is the part that can go
+// quietly wrong. Both numbers were guessed twice before they were measured
+// against anything, and both were too small.
+describe("the IP ceilings are sized from the largest burst the system can create", () => {
+  // HR can create MAX_INVITATION_EMAILS invitations in one action, and every
+  // one of those people may enrol the same day from the same office. A ceiling
+  // below that refuses the system's own maximum.
+  test("the enrollment ceiling clears one full invitation upload", () => {
+    assert.ok(
+      ENROLLMENT_BURST >= MAX_INVITATION_EMAILS,
+      `${ENROLLMENT_BURST} would refuse an upload of ${MAX_INVITATION_EMAILS} before it finished enrolling`,
+    );
+  });
+
+  // Each employee costs at least two requests against the shared enrollment
+  // limiter — the lookup when they open the link, and the submit — before any
+  // refresh or any submission refused by validation.
+  test("and leaves room for the lookup as well as the submit", () => {
+    assert.ok(ENROLLMENT_BURST >= MAX_INVITATION_EMAILS * 2);
+  });
+
+  // Fifteen-minute window, so four of them to the hour.
+  test("a company's worth of first logins fits inside an hour", () => {
+    assert.ok(
+      AUTH_IP_BURST * 4 >= MAX_INVITATION_EMAILS,
+      `${AUTH_IP_BURST} per 15 minutes cannot absorb ${MAX_INVITATION_EMAILS} logins in an hour`,
+    );
+  });
+
+  // The point of deriving them. If the invitation cap moves and these do not,
+  // the arithmetic above catches it rather than a blocked employee doing so.
+  test("both are derived from the invitation cap rather than fixed", () => {
+    assert.equal(ENROLLMENT_BURST % MAX_INVITATION_EMAILS, 0);
+    assert.equal(MAX_INVITATION_EMAILS % AUTH_IP_BURST, 0);
   });
 });

@@ -1,6 +1,39 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { MAX_INVITATION_EMAILS } from "../utils/partitionEmails.js";
 
 const isDev = process.env.NODE_ENV !== "production";
+
+// ── What the IP-keyed limits in this file can and cannot do ─────────────────
+//
+// They exist to refuse a flood from one address. But an employee enrols from
+// their company's office and an HR user works from that same office, so **the
+// legitimate users all share one address too.** That tension does not resolve
+// into a better number; it resolves into knowing which limit is doing the work.
+//
+// The limits that actually bound abuse are the ones keyed on an IDENTITY — the
+// invitation token below, `ip:username` on strictLimiter, `user_id` on the four
+// HR limiters. Those bound one caller no matter where they call from.
+//
+// The IP ceilings are a crude backstop, set high enough that they can never
+// catch legitimate traffic. **Volumetric defence belongs at the proxy in front
+// of this app**, which is one of the deployment questions still open.
+//
+// So the numbers below are derived from the largest burst this system can
+// legitimately produce, not chosen for how strict they feel.
+
+// One HR upload creates up to MAX_INVITATION_EMAILS invitations, and every one
+// of those employees may enrol the same day from the same office.
+//
+// Each costs at least two requests against the shared enrollment limiter — the
+// lookup when they open the link, and the submit — plus refreshes and any
+// submission refused by validation. Three times the cap is the honest figure.
+export const ENROLLMENT_BURST = MAX_INVITATION_EMAILS * 3;
+
+// Per fifteen minutes, so a full company's worth of first logins fits inside an
+// hour. Exported for the same reason as the one above: the relationship to the
+// invitation cap is the thing worth pinning, and a limiter object does not
+// expose its own ceiling to a test.
+export const AUTH_IP_BURST = MAX_INVITATION_EMAILS / 4;
 
 export const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -15,19 +48,21 @@ export const strictLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// The IP-side guard on the two public enrollment routes, and it is volumetric
-// only. It was 20 an hour, which is wrong for the shape of this system: an
-// employee enrols from their company's office, so a whole company shares one
-// public address. Two hundred people invited on Monday and told to enrol that
-// week would have hit it at the twenty-first, and the twenty-first would have
-// read "Too many requests" about something they had done once.
+// The IP-side guard on the two public enrollment routes, and volumetric only.
 //
-// The per-invitation limit below is what actually bounds one caller. This is
-// here so a flood from one address is still refused — 300 an hour is five a
-// minute, at up to 1MB each once a signature is attached.
+// It was 20 an hour, then 300, and both were wrong for the same reason: they
+// were chosen for how strict they felt rather than measured against what this
+// system can legitimately produce. **HR can create a thousand invitations in
+// one action**, and every one of those people may enrol the same day from the
+// same office. Three hundred refuses that at a tenth of the way through.
+//
+// Sized from the invitation cap now, so raising `MAX_INVITATION_EMAILS` carries
+// this with it instead of leaving two numbers to be kept in step by memory.
+//
+// The per-invitation limit below is what actually bounds one caller.
 export const mediumLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: isDev ? 2000 : 300,
+  max: isDev ? ENROLLMENT_BURST * 5 : ENROLLMENT_BURST,
   message: {
     success: false,
     message: "Too many requests, please try again later.",
@@ -148,12 +183,18 @@ export const jobStatusLimiter = rateLimit({
 // in, and the failure reads as "too many requests" to somebody on their first
 // attempt.
 //
-// 100 in fifteen minutes still refuses a username sweep long before it is
-// useful, because the sweep has to get past strictLimiter one username at a
-// time anyway.
+// It was raised to 100, and that was still measured against nothing. A
+// thousand invited employees enrol and are then sent credentials, and a batch
+// of them signing in on one morning from one office is the ordinary case, not
+// the abusive one.
+//
+// A quarter of the invitation cap per fifteen minutes — a full company's worth
+// of first logins inside an hour. It still refuses a username sweep long before
+// one is useful, because the sweep has to get past strictLimiter — ten per
+// fifteen minutes, keyed on ip:username — one username at a time regardless.
 export const authIpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: isDev ? 1000 : 100,
+  max: isDev ? AUTH_IP_BURST * 4 : AUTH_IP_BURST,
   message: {
     success: false,
     message: "Too many requests from this IP address, please try again later.",
