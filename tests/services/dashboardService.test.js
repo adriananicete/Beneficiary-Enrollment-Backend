@@ -2,6 +2,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 import "../helpers/env.js";
+import { fakePool } from "../helpers/fakePool.js";
 
 const { default: DashboardService } = await import(
   "../../src/services/dashboardService.js"
@@ -15,38 +16,8 @@ const { default: DashboardService } = await import(
 // from a script keyed by procedure name. No mocking library and no
 // experimental flag — the models take their pool as the first argument, so a
 // pool that remembers what it was asked is enough.
-const fakePool = (answers) => {
-  const calls = [];
-
-  const request = () => {
-    const inputs = {};
-
-    const chain = {
-      input(name, type, value) {
-        inputs[name] = value;
-        return chain;
-      },
-      output() {
-        return chain;
-      },
-      async execute(procedure) {
-        calls.push({ procedure, inputs });
-
-        const answer = answers[procedure];
-        if (answer === undefined)
-          throw new Error(`fake pool has no answer for ${procedure}`);
-
-        return typeof answer === "function"
-          ? answer(inputs)
-          : { recordset: answer, output: {} };
-      },
-    };
-
-    return chain;
-  };
-
-  return { pool: { request }, calls };
-};
+// Moved to tests/helpers/fakePool.js when exportService and invitationService
+// needed the same thing, rather than copied into each.
 
 const HR = { user_id: 7, role_name: "HR" };
 const ADMINISTRATOR = { user_id: 1, role_name: "Administrator" };

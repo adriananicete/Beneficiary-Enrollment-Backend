@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import { getPool } from "../config/db.js";
 import InvitationModel from "../models/invitationModel.js";
 import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
@@ -126,10 +125,13 @@ const processAddress = async (pool, jobId, userId, employer, email) => {
 // Runs after the response has already gone out, so nothing here may throw: an
 // unhandled rejection would take the process down with it. Every failure is
 // caught, recorded against the job, and the run continues to the next address.
-const runInvitationJob = async (jobId, userId, employer, emails) => {
+//
+// The pool is handed in and outlives the request on purpose. getPool() memoises
+// a single long-lived pool rather than opening one per caller, so holding it
+// past the response is the same object the next request will use — nothing
+// request-scoped is being kept alive here.
+const runInvitationJob = async (pool, jobId, userId, employer, emails) => {
   try {
-    const pool = await getPool();
-
     // An address failure is skipped; a systemic failure stops the run. Without
     // this, a Graph outage would burn through every address, mark them all
     // failed, and leave that many live invitations that were never delivered
@@ -182,16 +184,19 @@ const runInvitationJob = async (jobId, userId, employer, emails) => {
     InvitationJobStore.completeJob(jobId, { cancelled });
   } catch (error) {
     // Either the circuit breaker tripped, or something outside the per-address
-    // handling broke — the pool, most likely. Either way the job is failed as a
-    // whole rather than left sitting at "processing" forever.
+    // handling broke. Either way the job is failed as a whole rather than left
+    // sitting at "processing" forever.
+    //
+    // Acquiring the pool used to be one of the things this caught. It now
+    // happens in the controller, before the 202 goes out, so a database that is
+    // down answers the request instead of accepting the upload and failing a
+    // job HR has to go and look at.
     console.error("Invitation job failed:", { jobId, error });
     InvitationJobStore.completeJob(jobId, { error });
   }
 };
 
-const sendInvitations = async (userId, emails) => {
-  const pool = await getPool();
-
+const sendInvitations = async (pool, userId, emails) => {
   const employers = await InvitationModel.getEmployersByUser(pool, userId);
   if (employers.length === 0)
     throw new AppError("No company is assigned to your account", 403);
@@ -213,7 +218,7 @@ const sendInvitations = async (userId, emails) => {
   // Intentionally not awaited: the response goes out now and the sending
   // continues behind it. The catch is belt and braces; runInvitationJob
   // already swallows everything.
-  runInvitationJob(job.id, userId, employer, valid).catch((error) =>
+  runInvitationJob(pool, job.id, userId, employer, valid).catch((error) =>
     console.error("Invitation job crashed:", { jobId: job.id, error }),
   );
 
@@ -269,9 +274,7 @@ const cancelInvitationJob = (userId, jobId) => {
 // The token is the credential that opens the enrollment form as the invited
 // person. The backend needs it to rebuild the link on resend; a browser never
 // does, so it is stripped before the list leaves the server.
-const getInvitations = async (userId, filters) => {
-  const pool = await getPool();
-
+const getInvitations = async (pool, userId, filters) => {
   const invitations = await InvitationModel.getInvitationsByUser(
     pool,
     userId,
@@ -326,9 +329,7 @@ const recordSendStatus = async (pool, invitationId, sendStatus, errorMessage, us
 const findOwnedInvitation = (pool, userId, invitationId) =>
   InvitationModel.getInvitationById(pool, userId, invitationId);
 
-const revokeInvitation = async (userId, invitationId) => {
-  const pool = await getPool();
-
+const revokeInvitation = async (pool, userId, invitationId) => {
   const invitation = await findOwnedInvitation(pool, userId, invitationId);
   if(!invitation)
     throw new AppError("Invitation does not belong to your company", 403);
@@ -336,8 +337,7 @@ const revokeInvitation = async (userId, invitationId) => {
   await InvitationModel.revokeInvitation(pool, invitationId, userId)
 };
 
-const resendInvitation = async (userId, invitationId) => {
-  const pool = await getPool();
+const resendInvitation = async (pool, userId, invitationId) => {
   const invitation = await findOwnedInvitation(pool, userId, invitationId);
   if(!invitation) throw new AppError('Invitation does not belong to your company', 403);
 

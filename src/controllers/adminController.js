@@ -146,7 +146,9 @@ export const exportEnrollments = async (req, res, next) => {
     const { user_id } = req.user;
     const { from, to } = req.query;
 
-    const { workbook } = await ExportService.buildEnrollmentReport(user_id, {
+    const pool = await getPool();
+
+    const { workbook } = await ExportService.buildEnrollmentReport(pool, user_id, {
       from,
       to,
     });
