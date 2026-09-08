@@ -8,78 +8,11 @@ import { getPool } from "../config/db.js";
 import { AppError } from "../utils/AppError.js";
 import { sendChangeRequestDecisionEmail } from "../services/emailService.js";
 import { buildPage, parsePaging } from "../utils/parsePaging.js";
-
-// The employee submits the full intended state, exactly as the removed
-// PUT /api/employee/enrollment did: a beneficiary carrying an id is an edit, one
-// without is new, and one left out is a removal. Keeping that contract means the
-// frontend changes a URL and nothing else, and validateEnrollmentUpdate keeps
-// working unchanged.
-//
-// The stored procedure wants the changes as actions, so the translation happens
-// here. Its OPENJSON keys are camelCase — the only camelCase in this API — and a
-// key it does not recognise reads as NULL rather than erroring, so a typo would
-// surface as a row of nulls at approval time rather than as a failure here.
-// Values arrive from the form as strings and from the database as numbers, so
-// they are compared as text after normalising. Null and empty string are treated
-// as the same thing — a cleared optional field arrives as one and is stored as
-// the other, and treating them as different would report a change on every
-// submit.
-const same = (a, b) => String(a ?? "").trim() === String(b ?? "").trim();
-
-const buildBeneficiaryChanges = (submitted, current, enrollmentId) => {
-  const currentIds = new Set(current.map((b) => String(b.beneficiary_id)));
-  const currentById = new Map(
-    current.map((b) => [String(b.beneficiary_id), b]),
-  );
-
-  const toUpdate = submitted.filter((b) => b.beneficiary_id);
-  const toInsert = submitted.filter((b) => !b.beneficiary_id);
-
-  for (const beneficiary of toUpdate) {
-    if (!currentIds.has(String(beneficiary.beneficiary_id)))
-      throw new AppError("Beneficiary does not belong to this enrollment", 403);
-  }
-
-  const submittedIds = new Set(toUpdate.map((b) => String(b.beneficiary_id)));
-  if (submittedIds.size !== toUpdate.length)
-    throw new AppError(
-      "Duplicate beneficiary is not allowed in the same request.",
-      400,
-    );
-
-  const toDelete = [...currentIds].filter((id) => !submittedIds.has(id));
-
-  // Only genuinely edited beneficiaries become U rows. Sending one for every
-  // existing beneficiary would work, but the review screen lists these rows as
-  // they are — so HR would see every beneficiary marked as changed when the
-  // employee corrected one name, and the whole point of the screen is knowing
-  // what actually changed.
-  const changed = toUpdate.filter((b) => {
-    const existing = currentById.get(String(b.beneficiary_id));
-    return (
-      !same(b.full_name, existing.full_name) ||
-      !same(b.relationship, existing.relationship) ||
-      !same(b.age, existing.age) ||
-      !same(b.coverage_percent, existing.coverage_percent)
-    );
-  });
-
-  const row = (action, beneficiary, beneficiaryId = null) => ({
-    beneficiaryId,
-    enrollmentId: Number(enrollmentId),
-    action,
-    fullName: beneficiary?.full_name ?? null,
-    relationship: beneficiary?.relationship ?? null,
-    age: beneficiary?.age ?? null,
-    coveragePercent: beneficiary?.coverage_percent ?? null,
-  });
-
-  return [
-    ...toDelete.map((id) => row("D", null, Number(id))),
-    ...changed.map((b) => row("U", b, Number(b.beneficiary_id))),
-    ...toInsert.map((b) => row("I", b)),
-  ];
-};
+import {
+  assertAddressBelongs,
+  buildAddressChange,
+  buildBeneficiaryChanges,
+} from "../utils/changeRequestDiff.js";
 
 export const submitChangeRequest = async (req, res, next) => {
   try {
@@ -100,41 +33,25 @@ export const submitChangeRequest = async (req, res, next) => {
         client_id,
       );
 
-      if (
-        !currentAddress ||
-        String(currentAddress.client_address_id) !==
-          String(req.body.client_address_id)
-      )
-        throw new AppError("Address does not belong to this enrollment", 403);
+      assertAddressBelongs(req.body.client_address_id, currentAddress);
 
       // Checked here as well as at enrollment, because approving writes this
       // straight to client_address and the reference joins then resolve to
       // nothing — silently, since full_address and zip_code are stored
       // separately and the address still displays. See PARK.md.
+      //
+      // Kept ahead of the change check on purpose: an invalid barangay is
+      // refused whether or not the address turns out to have changed. Moving it
+      // after would let a bad code through on a no-op edit.
       const barangayIsReal = await ReferenceModel.barangayExists(
         pool,
         req.body.barangay_id,
       );
       if (!barangayIsReal) throw new AppError("Invalid barangay", 400);
 
-      // Same reasoning as the beneficiaries: only send a row if the address
-      // actually changed, so the review screen does not show an address change
-      // on every request.
-      const addressChanged =
-        !same(req.body.barangay_id, currentAddress.barangay_id) ||
-        !same(req.body.address_line, currentAddress.full_address) ||
-        !same(req.body.zip_code, currentAddress.zip_code);
+      const addressChange = buildAddressChange(req.body, currentAddress);
 
-      if (addressChanged)
-        addressesJson = JSON.stringify([
-          {
-            clientAddressId: Number(req.body.client_address_id),
-            action: "U",
-            barangayId: req.body.barangay_id,
-            addressLine: req.body.address_line,
-            zipCode: req.body.zip_code,
-          },
-        ]);
+      if (addressChange) addressesJson = JSON.stringify([addressChange]);
     }
 
     let beneficiariesJson = null;
