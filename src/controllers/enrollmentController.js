@@ -6,6 +6,8 @@ import UserModel from "../models/userModel.js";
 import { AppError } from "../utils/AppError.js";
 import { isInvitationToken } from "../middlewares/validateIdParam.js";
 import AgreementModel from "../models/agreementModel.js"
+import SignatureModel from "../models/signatureModel.js";
+import { sendSignature } from "../utils/signatureResponse.js";
 
 export const submitEnrollment = async (req, res, next) => {
   try {
@@ -158,6 +160,28 @@ export const getInvitationByToken = async (req, res, next) => {
       success: true,
       data: invitation
     })
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The employee's own signature. Same shape as getMyAgreements below: the
+// client_id comes from their own user row rather than from anything they sent,
+// so there is no id to scope and nothing to check beyond who they are.
+export const getMySignature = async (req, res, next) => {
+  try {
+    const { user_id } = req.user;
+    const pool = await getPool();
+
+    const user = await UserModel.findUserById(pool, user_id);
+    if (!user?.client_id)
+      throw new AppError("No enrollment found for this account", 404);
+
+    const signature = await SignatureModel.getSignatureByClient(pool, user.client_id);
+    if (!signature)
+      throw new AppError("No signature on file for this enrollment", 404);
+
+    return sendSignature(res, signature);
   } catch (error) {
     next(error);
   }

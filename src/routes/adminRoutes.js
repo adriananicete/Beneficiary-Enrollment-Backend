@@ -1,7 +1,7 @@
 import express from 'express';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
-import { exportEnrollments, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, resendCredentials } from '../controllers/adminController.js';
+import { exportEnrollments, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCredentials } from '../controllers/adminController.js';
 import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { cancelInvitationJob, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
@@ -31,6 +31,10 @@ router.get('/enrollments/export', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN),
 router.get('/dashboard/stats', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getDashboardStats);
 router.get('/enrollments/:client_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, getEnrollmentDetails);
 router.get('/enrollments/:client_id/agreements',verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, getEnrollmentAgreements);
+// Same chain as the two above it, and verifyClientAccess is doing the whole of
+// the company scoping — the procedure behind this takes a client_id and trusts
+// it. Answers image bytes rather than JSON.
+router.get('/enrollments/:client_id/signature', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, getEnrollmentSignature);
 router.post('/enrollments/:client_id/resend-credentials', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, credentialsResendLimiter, resendCredentials);
 // /pending-count is declared before /:request_id on purpose. Express matches in
 // order, so the param route would otherwise swallow it and try to read

@@ -5,7 +5,7 @@ import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { EMPLOYEE } from '../utils/constants.js';
 import { verifyResetToken } from '../middlewares/verifyResetToken.js';
 import { authIpLimiter, strictLimiter } from '../middlewares/rateLimiter.js';
-import { getMyAgreements } from '../controllers/enrollmentController.js';
+import { getMyAgreements, getMySignature } from '../controllers/enrollmentController.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { cancelMyChangeRequest, getMyChangeRequests, submitChangeRequest } from '../controllers/changeRequestController.js';
@@ -17,6 +17,9 @@ router.post('/logout', logout);
 router.post('/change-password', authIpLimiter, strictLimiter, verifyResetToken, changePassword);
 router.get('/enrollment', verifyToken, allowedRoles(EMPLOYEE), getMyEnrollment);
 router.get('/agreements', verifyToken, allowedRoles(EMPLOYEE), getMyAgreements);
+// No id in the path and nothing to scope: the client_id comes from the
+// caller's own user row.
+router.get('/signature', verifyToken, allowedRoles(EMPLOYEE), getMySignature);
 router.post('/change-requests', verifyToken, allowedRoles(EMPLOYEE), validateEnrollmentUpdate, submitChangeRequest);
 router.get('/change-requests', verifyToken, allowedRoles(EMPLOYEE), getMyChangeRequests);
 router.patch('/change-requests/:request_id/cancel', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('request_id', 'Change request not found'), cancelMyChangeRequest);

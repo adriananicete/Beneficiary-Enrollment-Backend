@@ -4,6 +4,8 @@ import ClientModel from "../models/clientModel.js";
 import UserModel from "../models/userModel.js";
 import ExportService from "../services/exportService.js";
 import DashboardService from "../services/dashboardService.js";
+import SignatureModel from "../models/signatureModel.js";
+import { sendSignature } from "../utils/signatureResponse.js";
 import { getPool } from "../config/db.js";
 import { buildPage, parsePaging, parseSearch } from "../utils/parsePaging.js";
 import { AppError } from "../utils/AppError.js";
@@ -136,6 +138,33 @@ export const resendCredentials = async (req, res, next) => {
       success: true,
       message: `New sign-in details sent to ${user.us01_email_address}`,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The signature, as an image. It is not folded into getEnrollmentDetails on
+// purpose: that response is opened every time HR looks at a record, and the
+// bytes would ride along whether or not anything displayed them.
+//
+// Company scoping is verifyClientAccess in front of this route and nothing
+// else — usp_sel_client_signature_by_client takes a client_id and trusts it,
+// exactly like usp_sel_hr_employees. That middleware is the whole of the rule.
+export const getEnrollmentSignature = async (req, res, next) => {
+  try {
+    const { client_id } = req.params;
+
+    const pool = await getPool();
+
+    const signature = await SignatureModel.getSignatureByClient(pool, client_id);
+
+    // 404 rather than an empty 200. Most enrollments have no signature — every
+    // one taken before this feature existed — and "there isn't one" is a
+    // different answer from "here is nothing".
+    if (!signature)
+      throw new AppError("No signature on file for this enrollment", 404);
+
+    return sendSignature(res, signature);
   } catch (error) {
     next(error);
   }
