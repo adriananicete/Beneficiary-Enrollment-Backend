@@ -9,7 +9,10 @@ import AgreementModel from "../models/agreementModel.js"
 
 export const submitEnrollment = async (req, res, next) => {
   try {
+    const pool = await getPool();
+
     const { enrollmentId, policyNo } = await EnrollmentService.createEnrollment(
+      pool,
       {
         ...req.body,
         ip_address: req.ip,
