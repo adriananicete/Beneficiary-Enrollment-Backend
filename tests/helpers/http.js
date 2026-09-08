@@ -39,7 +39,9 @@ export const makeNext = () => {
 };
 
 export const makeRes = () => {
-  const res = { statusCode: null, body: null };
+  // `headers` and `send` exist for the one response in this API that is not
+  // JSON — the signature, which leaves as image bytes.
+  const res = { statusCode: null, body: null, headers: {} };
 
   res.status = (code) => {
     res.statusCode = code;
@@ -47,6 +49,16 @@ export const makeRes = () => {
   };
 
   res.json = (payload) => {
+    res.body = payload;
+    return res;
+  };
+
+  res.setHeader = (name, value) => {
+    res.headers[name] = value;
+    return res;
+  };
+
+  res.send = (payload) => {
     res.body = payload;
     return res;
   };
