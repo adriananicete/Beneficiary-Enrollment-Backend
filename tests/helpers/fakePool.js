@@ -41,6 +41,17 @@ export const fakePool = (answers) => {
           ? answer(inputs)
           : { recordset: answer, output: {} };
       },
+
+      // A handful of model functions use a raw query rather than a procedure —
+      // updateLastLogin, getClientAddressId, checkUsernameExists. They are
+      // recorded by their SQL text so a test can assert one of them ran, and
+      // they answer empty rather than needing a script: none of them is read
+      // for its rows by the code that calls it.
+      async query(text) {
+        calls.push({ query: String(text).trim(), inputs });
+
+        return { recordset: [], rowsAffected: [1] };
+      },
     };
 
     return chain;
@@ -54,4 +65,8 @@ export const fakePool = (answers) => {
 export const inputsFor = (calls, procedure) =>
   calls.find((call) => call.procedure === procedure)?.inputs;
 
-export default { fakePool, inputsFor };
+// The raw-query equivalent, matched on the SQL text.
+export const queryMatching = (calls, pattern) =>
+  calls.find((call) => call.query && pattern.test(call.query));
+
+export default { fakePool, inputsFor, queryMatching };
