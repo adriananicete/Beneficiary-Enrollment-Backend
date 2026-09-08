@@ -20,6 +20,7 @@ import {
   validateSssGsisNo,
 } from "../utils/validateSssGsisNo.js";
 import { isInvitationToken } from "./validateIdParam.js";
+import { readSignature } from "../utils/validateSignature.js";
 import {
   ADDRESS_FIELD_LENGTHS,
   BENEFICIARY_FIELD_LENGTHS,
@@ -147,5 +148,53 @@ export const validateEnrollment = (req, res, next) => {
       return next(new AppError(`Beneficiary ${i + 1}: ${lengthError}`, 400));
   }
 
+  // The signature, if one was sent. Optional here on purpose — the branch that
+  // makes it required in production is its own, merged when the frontend
+  // confirms it is sending one.
+  //
+  // Note what is NOT happening: `signature` is not in CLIENT_FIELD_LENGTHS and
+  // never will be. Putting an image in a map of string caps is exactly what
+  // truncated every signature submitted between 2026-08-10 and 2026-08-13 to
+  // 500 characters.
+  if (req.body.signature !== undefined && req.body.signature !== "") {
+    const signatureError = attachSignature(req);
+    if (signatureError) return next(new AppError(signatureError, 400));
+  }
+
   next();
+};
+
+// Strips the data URL prefix if there is one and decodes. The prefix is
+// accepted and then ignored — `readSignature` resolves the type from the
+// decoded bytes, so what the caller declared is never consulted.
+const DATA_URL = /^data:[^;,]*(;base64)?,/i;
+
+const SOURCES = ["drawn", "uploaded"];
+
+const attachSignature = (req) => {
+  const { signature, signature_source } = req.body;
+
+  if (typeof signature !== "string")
+    return "signature must be a base64 image";
+
+  // Required whenever a signature is present, rather than defaulted. This is
+  // the only record of whether the employee drew it or photographed a signed
+  // page, and guessing a value for an audit field is worse than refusing.
+  if (!SOURCES.includes(signature_source))
+    return `signature_source must be one of: ${SOURCES.join(", ")}`;
+
+  const encoded = signature.replace(DATA_URL, "");
+
+  // Buffer.from is famously forgiving — it drops characters it does not
+  // recognise rather than failing — so a mangled string decodes to a short
+  // buffer instead of an error. readSignature catches that: the bytes will not
+  // begin with a PNG or JPEG header.
+  const content = Buffer.from(encoded, "base64");
+
+  const { error, mimeType, byteSize, sha256 } = readSignature(content);
+  if (error) return error;
+
+  req.signature = { content, mimeType, byteSize, sha256, source: signature_source };
+
+  return null;
 };

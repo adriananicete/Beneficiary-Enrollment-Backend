@@ -12,6 +12,8 @@ import UserModel from "../../src/models/userModel.js";
 import InvitationModel from "../../src/models/invitationModel.js";
 import ReferenceModel from "../../src/models/referenceModel.js";
 import ChangeRequestModel from "../../src/models/changeRequestModel.js";
+import SignatureModel from "../../src/models/signatureModel.js";
+import { sql } from "../../src/config/db.js";
 
 // One file rather than nine, and deliberately so.
 //
@@ -161,6 +163,32 @@ describe("model bindings — the types that destroy a value when they are wrong"
     assert.equal(coverage_percent.type.scale, 2);
   });
 
+  // The signature is the one binding in this codebase where getting the type
+  // wrong has already destroyed data — as a string in an NVarChar(500), every
+  // image submitted over four days was cut to 500 characters. Binary, and
+  // unbounded, is the whole correction.
+  test("the signature is bound as unbounded binary, never as text", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await SignatureModel.insertSignature(pool, {
+      content: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+      sha256: "a".repeat(64),
+    });
+
+    const { content, sha256 } = callTo(calls, "dbo.usp_ins_client_signature").bindings;
+
+    assert.equal(declarationOf(content.type), "varbinary");
+    assert.notEqual(declarationOf(content.type), "nvarchar");
+    assert.equal(content.type.length, sql.MAX, "the image has a length cap");
+
+    // char(64) exactly, matching the column. A hex sha256 is always 64
+    // characters, so a shorter binding would silently store a prefix — which is
+    // the same failure in miniature, on the field whose whole job is to prove
+    // the bytes were not altered.
+    assert.equal(declarationOf(sha256.type), "char");
+    assert.equal(sha256.type.length, 64);
+  });
+
   // The consent record's version. It is hardcoded to 1.0 today and PARK.md §3
   // holds the open question about where it should come from — but whatever it
   // becomes, a version that rounds is a version that lies about what was agreed.
@@ -260,6 +288,21 @@ describe("model bindings — output parameters", () => {
     assert.ok(
       callTo(calls, "sec.us01_usp_first_login").outputs.us01_user_id,
       "the call omits a mandatory parameter and SQL Server will refuse it outright",
+    );
+  });
+
+  // The signature's own output, and it is the good kind. usp_ins_client_signature
+  // sets it with scope_identity() after a real INSERT, and it is declared with
+  // no default, so omitting it would be refused with error 201 — the same trap
+  // as changePassword's, met on the first day rather than after a month.
+  test("insertSignature declares the signature_id its procedure demands", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await SignatureModel.insertSignature(pool, {});
+
+    assert.ok(
+      callTo(calls, "dbo.usp_ins_client_signature").outputs.signature_id,
+      "the call omits a mandatory parameter and SQL Server will refuse it",
     );
   });
 

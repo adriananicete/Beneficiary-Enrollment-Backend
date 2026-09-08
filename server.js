@@ -11,6 +11,14 @@ import {errorHandler} from './src/middlewares/errorHandler.js';
 import helmet from 'helmet';
 
 const app = express();
+
+// Declared once so a future v2 is a new mount rather than a search for every
+// literal. The version is not environment-driven on purpose — it describes the
+// contract, not where the contract is running.
+//
+// Declared up here rather than beside the mounts because the body-size choice
+// below needs it, and that runs before any route.
+const API_PREFIX = '/api/v1';
 // Was `false` hardcoded here. It decides what req.ip resolves to, which is
 // written onto every consent record and keys five rate limiters — and it is
 // the one setting that is silently wrong rather than absent when it is wrong.
@@ -25,7 +33,25 @@ app.use(cors({
 }));
 // A 1,000-address invitation upload is roughly 33KB. The default is 100kb, which
 // would hold, but the limit should be deliberate rather than inherited.
-app.use(express.json({ limit: '256kb' }));
+const parseJson = express.json({ limit: '256kb' });
+
+// The enrollment signature is a base64 image in the body — up to 500KB decoded,
+// which is around 685KB encoded. It does not fit the limit above, and raising
+// that limit globally would lift the ceiling on every endpoint to buy headroom
+// for one.
+//
+// This has to be a choice made HERE rather than a parser on the route, because
+// the app-level parser runs first: an oversized body would be refused with a
+// 413 before the router was ever reached.
+const parseEnrollmentJson = express.json({ limit: '1mb' });
+
+const SUBMIT_PATH = `${API_PREFIX}/enrollment/submit`;
+
+app.use((req, res, next) =>
+    req.method === 'POST' && req.path === SUBMIT_PATH
+        ? parseEnrollmentJson(req, res, next)
+        : parseJson(req, res, next),
+);
 app.use((req, res, next) => {
     if (req.body === undefined) req.body = {};
 
@@ -33,11 +59,6 @@ app.use((req, res, next) => {
 });
 
 app.use(cookieParser());
-
-// Declared once so a future v2 is a new mount rather than a search for every
-// literal. The version is not environment-driven on purpose — it describes the
-// contract, not where the contract is running.
-const API_PREFIX = '/api/v1';
 
 app.get('/', (req, res) => {
     res.send('Beneficiary Enrollment API v1');

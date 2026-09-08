@@ -8,6 +8,7 @@ import AgreementModel from "../models/agreementModel.js";
 import UserModel from "../models/userModel.js";
 import ReferenceModel from "../models/referenceModel.js";
 import InvitationModel from "../models/invitationModel.js";
+import SignatureModel from "../models/signatureModel.js";
 import bcrypt from "bcrypt";
 import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
@@ -89,6 +90,26 @@ const createEnrollment = async (pool, enrollmentData) => {
       ...enrollmentData,
       created_by: "system",
     });
+
+    // Inside the transaction, immediately after the client it belongs to. That
+    // placement is the whole design: the signature commits with the enrollment
+    // or nothing is written at all.
+    //
+    // The alternative — a file written before or after the transaction — is
+    // what made storage location and write order two of the five open
+    // questions in PARK.md. Keeping the bytes in the database answered both by
+    // removing them.
+    if (enrollmentData.signature) {
+      await SignatureModel.insertSignature(transaction, {
+        client_id: clientId,
+        content: enrollmentData.signature.content,
+        mime_type: enrollmentData.signature.mimeType,
+        byte_size: enrollmentData.signature.byteSize,
+        sha256: enrollmentData.signature.sha256,
+        source: enrollmentData.signature.source,
+        created_by: "system",
+      });
+    }
 
     const clientAddressId = await AddressModel.insertClientAddress(
       transaction,
