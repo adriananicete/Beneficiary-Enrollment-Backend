@@ -344,3 +344,117 @@ describe("validateEnrollment — birthdate and age are actually applied", () => 
     assert.match(refusal.message, /whole number/);
   });
 });
+
+// The signature. Optional here — the branch that makes it required in
+// production is its own — but everything about its shape is decided here.
+describe("validateEnrollment — the signature", () => {
+  const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  const JPEG_MAGIC = [0xff, 0xd8, 0xff];
+
+  const imageBase64 = (magic, totalBytes = 256) =>
+    Buffer.concat([
+      Buffer.from(magic),
+      Buffer.alloc(Math.max(0, totalBytes - magic.length), 0x2a),
+    ]).toString("base64");
+
+  const signed = (overrides) => {
+    const req = makeReq({
+      body: { ...validBody(), signature_source: "drawn", ...overrides },
+    });
+    const next = makeNext();
+
+    validateEnrollment(req, makeRes(), next);
+
+    return { req, next };
+  };
+
+  test("accepts a data URL and hands on the decoded image", () => {
+    const { req, next } = signed({
+      signature: `data:image/png;base64,${imageBase64(PNG_MAGIC)}`,
+    });
+
+    assert.ok(next.passed());
+    assert.equal(req.signature.mimeType, "image/png");
+    assert.equal(req.signature.byteSize, 256);
+    assert.equal(req.signature.source, "drawn");
+    assert.ok(Buffer.isBuffer(req.signature.content));
+    assert.equal(req.signature.sha256.length, 64);
+  });
+
+  test("accepts a bare base64 string with no data URL prefix", () => {
+    const { req, next } = signed({ signature: imageBase64(JPEG_MAGIC) });
+
+    assert.ok(next.passed());
+    assert.equal(req.signature.mimeType, "image/jpeg");
+  });
+
+  // The prefix is the caller's claim about their own file. It is stripped and
+  // then never consulted — the bytes decide.
+  test("ignores a data URL that lies about its type", () => {
+    const { req } = signed({
+      signature: `data:image/png;base64,${imageBase64(JPEG_MAGIC)}`,
+    });
+
+    assert.equal(req.signature.mimeType, "image/jpeg");
+  });
+
+  // THE REGRESSION GUARD. Every signature submitted between 2026-08-10 and
+  // 2026-08-13 was cut to exactly 500 characters, because it was sent in
+  // `signature_path`, which CLIENT_FIELD_LENGTHS caps at 500. A real data URL
+  // is thousands of characters and must pass untouched.
+  test("does not apply a string length cap to the image", () => {
+    const long = `data:image/png;base64,${imageBase64(PNG_MAGIC, 40 * 1024)}`;
+
+    assert.ok(long.length > 20000, "the fixture is too small to prove anything");
+
+    const { req, next } = signed({ signature: long });
+
+    assert.ok(next.passed(), "a real signature was refused for its length");
+    assert.equal(req.signature.byteSize, 40 * 1024);
+  });
+
+  test("refuses something that is not an image", () => {
+    const { next } = signed({
+      signature: Buffer.from("this is not an image", "utf8").toString("base64"),
+    });
+
+    assert.match(next.refusal().message, /PNG or JPEG/);
+  });
+
+  test("refuses a mangled base64 string, and does not answer 500", () => {
+    const { next } = signed({ signature: "!!!! not base64 !!!!" });
+
+    assert.equal(next.refusal().statusCode, 400);
+  });
+
+  // Guessing a value for the one field that records how the signature was
+  // captured would put a fabricated answer in an audit trail.
+  for (const [label, source] of [
+    ["missing", undefined],
+    ["empty", ""],
+    ["not one of the two", "scanned"],
+  ]) {
+    test(`refuses a signature whose source is ${label}`, () => {
+      const { next } = signed({
+        signature: imageBase64(PNG_MAGIC),
+        signature_source: source,
+      });
+
+      assert.match(next.refusal().message, /signature_source/);
+    });
+  }
+
+  test("a payload with no signature still passes, and attaches nothing", () => {
+    const { req, next } = signed({});
+
+    assert.ok(next.passed());
+    assert.equal(req.signature, undefined);
+  });
+
+  test("an empty signature is treated as absent rather than as a bad image", () => {
+    const { req, next } = signed({ signature: "" });
+
+    assert.ok(next.passed());
+    assert.equal(req.signature, undefined);
+  });
+});

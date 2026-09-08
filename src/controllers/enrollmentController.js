@@ -11,12 +11,18 @@ export const submitEnrollment = async (req, res, next) => {
   try {
     const pool = await getPool();
 
+    // The raw base64 is dropped here and the decoded form takes its name. It
+    // has no business travelling any further as a string: the last time an
+    // image did that it reached an NVarChar(500) and was cut to fit.
+    const { signature, ...body } = req.body;
+
     const { enrollmentId, policyNo } = await EnrollmentService.createEnrollment(
       pool,
       {
-        ...req.body,
+        ...body,
         ip_address: req.ip,
         user_agent: req.headers["user-agent"]?.slice(0,500),
+        signature: req.signature ?? null,
       },
     );
 
