@@ -46,6 +46,7 @@ const fakePool = () => {
 };
 
 const inputNames = (calls) => calls.inputs.map((i) => i.name);
+const outputNames = (calls) => calls.outputs.map((o) => o.name);
 
 describe("UserModel.changePassword", () => {
   test("calls the first-login procedure with the three inputs it needs", async () => {
@@ -82,10 +83,20 @@ describe("UserModel.changePassword", () => {
     assert.match(oldpass.value, /^\$2b\$/);
   });
 
-  test("declares no output parameter", async () => {
-    // The point of this branch. sec.us01_usp_first_login sets no user id — the
-    // SCOPE_IDENTITY() line that tried to was removed on 2026-09-07, and it
-    // followed an UPDATE so it returned NULL even before that.
+  // This test used to assert the opposite — `assert.deepEqual(calls.outputs, [])`
+  // — and its comment called that "the point of this branch". It was green while
+  // no employee could change their password.
+  //
+  // sec.us01_usp_first_login declares `@us01_user_id bigint output` with no
+  // default, and an OUTPUT parameter without a default is mandatory: SQL Server
+  // refuses the whole call with error 201 before the body runs. The value is
+  // still meaningless — nothing assigns it — but the parameter is not optional.
+  //
+  // A fake pool cannot know that. It accepts whatever it is handed, so the
+  // suite happily pinned a call the database rejects. This is `CLAUDE.md` §11
+  // as a live example: no unit test sees a disagreement with a procedure this
+  // repository does not own, and only the manual run found it.
+  test("declares the output parameter the procedure demands", async () => {
     const { pool, calls } = fakePool();
 
     await UserModel.changePassword(pool, {
@@ -94,7 +105,7 @@ describe("UserModel.changePassword", () => {
       newpass: "y",
     });
 
-    assert.deepEqual(calls.outputs, []);
+    assert.deepEqual(outputNames(calls), ["us01_user_id"]);
   });
 
   test("returns nothing, so a caller cannot read a null user id by accident", async () => {

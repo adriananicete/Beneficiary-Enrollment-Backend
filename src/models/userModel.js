@@ -41,26 +41,35 @@ const findUserById = async (pool, userId) => {
     return result.recordset[0];
 };
 
-// Returns nothing on purpose. It used to declare a us01_user_id output and
-// return it, mirroring createUser above — but createUser follows an INSERT and
-// this one follows an UPDATE. sec.us01_usp_first_login set that parameter with
-// SCOPE_IDENTITY(), which has nothing to return after an UPDATE, so the value
-// was NULL every time. The DBA removed that line on 2026-09-07 and now nothing
-// assigns the parameter at all.
+// The output parameter is declared because the procedure requires it, and the
+// value it carries is ignored because it means nothing. Those are two separate
+// facts and PR #90 collapsed them into one, which broke every forced password
+// change on main until 2026-09-08.
 //
-// Dropped rather than fixed, because the id is already in hand: passwordService
-// calls findUserByUsername immediately above this, and that row carries
-// us01_user_id — the same value authController reads for the JWT. The procedure
-// was returning something the caller already had.
+// sec.us01_usp_first_login declares `@us01_user_id bigint output` with no
+// default. **An OUTPUT parameter without a default is mandatory** — SQL Server
+// refuses the call outright with error 201, "expects parameter '@us01_user_id',
+// which was not supplied", before a line of the body runs. So the parameter has
+// to be supplied whether or not anybody wants what comes back.
 //
-// The reason not to leave the dead return: it looked like it returned a user
-// id, so `const userId = await UserModel.changePassword(...)` would have read
-// null with no error and no throw. That is the shape of the PR #77 bug.
+// What comes back is nothing useful, and that half of PR #90 was right and
+// stands. Nothing inside the procedure assigns it; it is echoed into the final
+// SELECT and arrives NULL. The id is already in hand anyway — passwordService
+// calls findUserByUsername immediately above this and that row carries
+// us01_user_id, the same value the JWT is built from.
+//
+// So: declare it, and still return nothing. Returning it would restore the
+// original trap, where `const userId = await UserModel.changePassword(...)`
+// reads null with no error and no throw — the shape of the PR #77 bug.
+//
+// → If the parameter is ever dropped from the procedure, or given a default,
+//   this line can go. That is `DBA-REQUESTS.md` item 14.
 const changePassword = async (pool, userData) => {
     await pool.request()
     .input('us01_username', sql.VarChar, userData.us01_username)
     .input('oldpass', sql.VarChar, userData.oldpass)
     .input('newpass', sql.VarChar, userData.newpass)
+    .output('us01_user_id', sql.BigInt)
     .execute('sec.us01_usp_first_login')
 };
 
