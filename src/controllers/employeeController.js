@@ -1,55 +1,35 @@
-import UserModel from "../models/userModel.js";
 import ClientModel from "../models/clientModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import AddressModel from "../models/addressModel.js";
 import PasswordService from "../services/passwordService.js";
+import AuthService from "../services/authService.js";
 import { getPool } from "../config/db.js";
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
-import config from "../config/env.js";
-import { EMPLOYEE, SESSION_EXPIRY } from "../utils/constants.js";
+import { EMPLOYEE } from "../utils/constants.js";
 import { cookieOptions } from "../utils/cookieConfig.js";
-import { AppError } from "../utils/AppError.js";
 
 export const login = async (req, res, next) => {
   try {
-    const { username, password } = req.body;
+    // See the note in authController: req.body is undefined when Express 5
+    // parsed nothing, and this path used to reach bcrypt with an undefined
+    // password, which throws and answers 500 rather than 400.
+    const { username, password } = req.body ?? {};
 
     const pool = await getPool();
 
-    const user = await UserModel.findUserByUsername(pool, username);
+    // No `rememberMe`. The employee session has always been a fixed eight
+    // hours, and the service defaults it off rather than reading it from a body
+    // that could ask for thirty days.
+    const result = await AuthService.login(pool, {
+      username,
+      password,
+      allowedRoles: [EMPLOYEE],
+      wrongDoorMessage: "Admin and HR must use the admin login",
+    });
 
-    if (!user) throw new AppError("Invalid credentials", 401);
-
-    const isPasswordMatch = await bcrypt.compare(password, user.us01_password);
-    if (!isPasswordMatch) throw new AppError("Invalid credentials", 401);
-
-    // Checked after the password on purpose. Only someone who already proved
-    // they know the password learns the account exists but is closed, so this
-    // tells an attacker nothing they did not already have.
-    if (!user.us01_is_active || user.us01_is_locked)
-      throw new AppError(
-        "This account is no longer active. Please contact your HR.",
-        403,
-      );
-
-    if (user.us02_role_name !== EMPLOYEE)
-      throw new AppError("Admin and HR must use the admin login", 403);
-
-    if (user.us01_must_change_password) {
-      const changePasswordToken = jwt.sign(
-        {
-          user_id: user.us01_user_id,
-          username: user.us01_username,
-          purpose: "password_reset",
-        },
-        config.jwtSecret,
-        { expiresIn: "15m" },
-      );
-
-      res.cookie("reset_token", changePasswordToken, {
+    if (result.mustChangePassword) {
+      res.cookie("reset_token", result.resetToken, {
         ...cookieOptions,
-        maxAge: 15 * 60 * 1000,
+        maxAge: result.maxAge,
       });
 
       return res.status(200).json({
@@ -58,23 +38,10 @@ export const login = async (req, res, next) => {
       });
     }
 
-    const token = jwt.sign(
-      {
-        user_id: user.us01_user_id,
-        username: user.us01_username,
-        role_id: user.us02_role_id,
-        role_name: user.us02_role_name,
-      },
-      config.jwtSecret,
-      { expiresIn: "8h" },
-    );
-
-    res.cookie("token", token, {
+    res.cookie("token", result.token, {
       ...cookieOptions,
-      maxAge: SESSION_EXPIRY,
+      maxAge: result.maxAge,
     });
-
-    await UserModel.updateLastLogin(pool, username);
 
     return res.status(200).json({
       success: true,
