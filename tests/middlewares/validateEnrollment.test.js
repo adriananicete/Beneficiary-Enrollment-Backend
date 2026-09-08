@@ -457,4 +457,68 @@ describe("validateEnrollment — the signature", () => {
     assert.ok(next.passed());
     assert.equal(req.signature, undefined);
   });
+
+  // Required in production, optional elsewhere. The gate exists so development
+  // and this suite can submit without building an image every time — it is not
+  // a rollout mechanism, because it is production that breaks if the frontend
+  // is not sending one.
+  describe("required in production", () => {
+    // Set and restored here rather than read from the runner, so the test says
+    // what it depends on instead of inheriting it.
+    const withNodeEnv = (value, run) => {
+      const original = process.env.NODE_ENV;
+      process.env.NODE_ENV = value;
+
+      try {
+        run();
+      } finally {
+        process.env.NODE_ENV = original;
+      }
+    };
+
+    test("refuses a submission with no signature", () => {
+      withNodeEnv("production", () => {
+        const { next } = signed({});
+
+        assert.equal(next.refusal().statusCode, 400);
+        assert.match(next.refusal().message, /signature is required/i);
+      });
+    });
+
+    test("refuses an empty string too, which is what the old field held", () => {
+      withNodeEnv("production", () => {
+        assert.match(signed({ signature: "" }).next.refusal().message, /required/i);
+      });
+    });
+
+    test("accepts one that is present and valid", () => {
+      withNodeEnv("production", () => {
+        const { req, next } = signed({ signature: imageBase64(PNG_MAGIC) });
+
+        assert.ok(next.passed());
+        assert.equal(req.signature.mimeType, "image/png");
+      });
+    });
+
+    // A bad image in production must still say what is wrong with it, rather
+    // than falling through to "a signature is required" — which would send the
+    // employee back to do the thing they already did.
+    test("still names the real problem when a signature is present but wrong", () => {
+      withNodeEnv("production", () => {
+        const { next } = signed({
+          signature: Buffer.from("not an image", "utf8").toString("base64"),
+        });
+
+        assert.match(next.refusal().message, /PNG or JPEG/);
+      });
+    });
+
+    for (const env of ["development", "test"]) {
+      test(`lets a signature-less submission through in ${env}`, () => {
+        withNodeEnv(env, () => {
+          assert.ok(signed({}).next.passed());
+        });
+      });
+    }
+  });
 });

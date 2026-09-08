@@ -148,21 +148,36 @@ export const validateEnrollment = (req, res, next) => {
       return next(new AppError(`Beneficiary ${i + 1}: ${lengthError}`, 400));
   }
 
-  // The signature, if one was sent. Optional here on purpose — the branch that
-  // makes it required in production is its own, merged when the frontend
-  // confirms it is sending one.
+  // The signature. Required in production, optional everywhere else.
   //
   // Note what is NOT happening: `signature` is not in CLIENT_FIELD_LENGTHS and
   // never will be. Putting an image in a map of string caps is exactly what
   // truncated every signature submitted between 2026-08-10 and 2026-08-13 to
   // 500 characters.
-  if (req.body.signature !== undefined && req.body.signature !== "") {
+  const signatureSent =
+    req.body.signature !== undefined && req.body.signature !== "";
+
+  if (signatureSent) {
     const signatureError = attachSignature(req);
     if (signatureError) return next(new AppError(signatureError, 400));
+  } else if (isProduction()) {
+    return next(new AppError("A signature is required", 400));
   }
 
   next();
 };
+
+// Read at call time rather than at import, which is what makes it testable: a
+// test can set NODE_ENV, run the middleware, and put it back. `rateLimiter.js`
+// reads it once at load because it builds its limiters there and has no
+// choice; this is a per-request decision and has one.
+//
+// The gate exists so development and the test suite can submit without
+// building a signature every time. **It is not a rollout mechanism** — it is
+// production that breaks if the frontend is not sending one, which is exactly
+// backwards from what a safe rollout would want. That is why this arrived as
+// its own branch: the merge is the decision, not the code.
+const isProduction = () => process.env.NODE_ENV === "production";
 
 // Strips the data URL prefix if there is one and decodes. The prefix is
 // accepted and then ignored — `readSignature` resolves the type from the
