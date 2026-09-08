@@ -15,7 +15,12 @@
 // what was asked. An unscripted procedure throws by name rather than returning
 // an empty set: a service that quietly reads a procedure the test never
 // considered is exactly what this should surface.
-export const fakePool = (answers) => {
+// `queryAnswers` scripts the raw-query calls, as [pattern, recordset] pairs
+// matched against the SQL text. A few model functions read `recordset.length`
+// from a query rather than a procedure — barangayExists and checkUsernameExists
+// both decide a guard that way — so answering every query with nothing would
+// pin one branch and make the other unreachable.
+export const fakePool = (answers, queryAnswers = []) => {
   const calls = [];
 
   const request = () => {
@@ -48,9 +53,15 @@ export const fakePool = (answers) => {
       // they answer empty rather than needing a script: none of them is read
       // for its rows by the code that calls it.
       async query(text) {
-        calls.push({ query: String(text).trim(), inputs });
+        const sqlText = String(text).trim();
+        calls.push({ query: sqlText, inputs });
 
-        return { recordset: [], rowsAffected: [1] };
+        const scripted = queryAnswers.find(([pattern]) => pattern.test(sqlText));
+
+        return {
+          recordset: scripted ? scripted[1] : [],
+          rowsAffected: [1],
+        };
       },
     };
 

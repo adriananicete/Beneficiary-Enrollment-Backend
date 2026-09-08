@@ -1,4 +1,4 @@
-import { getPool, sql } from "../config/db.js";
+import { sql } from "../config/db.js";
 import ClientModel from "../models/clientModel.js";
 import AddressModel from "../models/addressModel.js";
 import EmployerModel from "../models/employerModel.js";
@@ -15,9 +15,17 @@ import { AppError } from "../utils/AppError.js";
 import crypto from "crypto";
 import config from "../config/env.js";
 
-const createEnrollment = async (enrollmentData) => {
-  const pool = await getPool();
-
+// Takes the pool, like every other service since PR #102. The controller
+// fetches it; this decides.
+//
+// Everything down to `new sql.Transaction(pool)` is a refusal, and all seven of
+// them are tested. The transaction body is not, deliberately — its correctness
+// is about whether the database agrees with us on insert order and procedure
+// contracts, and a fake transaction would agree with whatever we told it. Two
+// defects on 2026-09-08 were exactly that failure. The rollback itself was
+// proven end to end on 2026-09-04, when a duplicate beneficiary name answered
+// 409 and left nothing behind.
+const createEnrollment = async (pool, enrollmentData) => {
   const invitation = await InvitationModel.getInvitationByToken(pool, enrollmentData.token)
   if(!invitation) throw new AppError("Invitation not found", 404);
   // Truthiness rather than === 0 and === 1. Both columns are computed in the
