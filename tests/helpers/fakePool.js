@@ -25,18 +25,25 @@ export const fakePool = (answers, queryAnswers = []) => {
 
   const request = () => {
     const inputs = {};
+    // The mssql type alongside the value. Most tests only care what was sent;
+    // the binding tests care what it was sent AS, because barangay_id bound as
+    // BigInt strips a leading zero and a bare Decimal rounds 5.8 to 6.
+    const bindings = {};
+    const outputs = {};
 
     const chain = {
       input(name, type, value) {
         inputs[name] = value;
+        bindings[name] = { type, value };
         return chain;
       },
       output(name, type, value) {
         inputs[name] = value;
+        outputs[name] = { type, value };
         return chain;
       },
       async execute(procedure) {
-        calls.push({ procedure, inputs });
+        calls.push({ procedure, inputs, bindings, outputs });
 
         const answer = answers[procedure];
         if (answer === undefined)
@@ -80,4 +87,13 @@ export const inputsFor = (calls, procedure) =>
 export const queryMatching = (calls, pattern) =>
   calls.find((call) => call.query && pattern.test(call.query));
 
-export default { fakePool, inputsFor, queryMatching };
+export const callTo = (calls, procedure) =>
+  calls.find((call) => call.procedure === procedure);
+
+// mssql types come in two shapes: a bare `sql.BigInt` is a function carrying a
+// `declaration`, while `sql.Decimal(5, 2)` and `sql.VarChar(9)` are objects
+// wrapping that function alongside their precision or length.
+export const declarationOf = (type) =>
+  typeof type === "function" ? type.declaration : type?.type?.declaration;
+
+export default { fakePool, inputsFor, queryMatching, callTo, declarationOf };
