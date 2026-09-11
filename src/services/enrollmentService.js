@@ -12,6 +12,7 @@ import SignatureModel from "../models/signatureModel.js";
 import bcrypt from "bcrypt";
 import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
+import { tryBuildCertificate } from "./certificateService.js";
 import { AppError } from "../utils/AppError.js";
 import crypto from "crypto";
 import config from "../config/env.js";
@@ -178,6 +179,12 @@ const createEnrollment = async (pool, enrollmentData) => {
 
     await transaction.commit();
 
+    // Built after the commit and read back from the database, so it certifies
+    // what was stored. tryBuildCertificate never rejects: a certificate that
+    // cannot be built costs the employee the attachment, never the email with
+    // their temporary password in it.
+    const certificate = await tryBuildCertificate(pool, clientId);
+
     try {
       await sendConfirmationEmail({
         to: enrollmentData.email_address,
@@ -187,6 +194,7 @@ const createEnrollment = async (pool, enrollmentData) => {
         username: enrollmentData.employee_id_number,
         password: tempPassword,
         loginUrl: `${config.appUrl}/employee-login`,
+        attachments: certificate ? [certificate] : [],
       });
     } catch (error) {
       console.error("Confirmation email failed:", {

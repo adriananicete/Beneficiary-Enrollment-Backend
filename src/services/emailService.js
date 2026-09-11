@@ -83,6 +83,24 @@ const graphSendError = (response, errorText) => {
   return error;
 };
 
+// Graph takes attachments inline on the message, base64-encoded, up to 3MB for
+// the whole request. A certificate is about 45KB.
+//
+// Added to the message only when there is something to attach, so a send
+// without one is byte-for-byte the request it was before attachments existed.
+const withAttachments = (message, attachments = []) =>
+  attachments.length === 0
+    ? message
+    : {
+        ...message,
+        attachments: attachments.map(({ name, contentType, content }) => ({
+          "@odata.type": "#microsoft.graph.fileAttachment",
+          name,
+          contentType,
+          contentBytes: Buffer.from(content).toString("base64"),
+        })),
+      };
+
 export const sendConfirmationEmail = async ({
   to,
   policyNo,
@@ -91,22 +109,26 @@ export const sendConfirmationEmail = async ({
   lastName,
   password,
   loginUrl,
+  attachments = [],
 }) => {
   const accessToken = await getAccessToken();
   const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${config.smtp.user}/sendMail`;
 
   const mailPayload = {
-    message: {
-      subject: "This is your account credentials",
-      body: emailTemplate({policyNo, username, firstName, lastName, password, loginUrl}),
-      toRecipients: [
-        {
-          emailAddress: {
-            address: to,
+    message: withAttachments(
+      {
+        subject: "This is your account credentials",
+        body: emailTemplate({policyNo, username, firstName, lastName, password, loginUrl}),
+        toRecipients: [
+          {
+            emailAddress: {
+              address: to,
+            },
           },
-        },
-      ],
-    },
+        ],
+      },
+      attachments,
+    ),
     saveToSentItems: "false",
   };
 
