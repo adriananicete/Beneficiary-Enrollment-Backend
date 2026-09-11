@@ -8,12 +8,21 @@ export const changeRequestEmailTemplate = ({
   approved,
   reviewRemarks,
   loginUrl,
+  certificateAttached = false,
 }) => {
   const heading = approved ? "Your changes were approved" : "Your changes need another look";
 
   const lead = approved
     ? `Your HR has approved the update you requested to your enrollment details. The changes are now on your record — you can sign in to see them.`
     : `Your HR has reviewed the update you requested to your enrollment details and has not applied it. You can sign in and submit a new request once the note below has been addressed.`;
+
+  // Said only when the certificate is really attached. It is built separately
+  // and can fail, and the email goes out regardless — a line promising an
+  // attachment that is not there would send the employee looking for it.
+  const certificateLine =
+    approved && certificateAttached
+      ? `<p style="margin: 0 0 14px 0">Your updated Certificate of Coverage is attached to this email.</p>`
+      : "";
 
   const accent = approved ? "#409965" : "#b3541e";
 
@@ -105,6 +114,7 @@ export const changeRequestEmailTemplate = ({
           </p>
 
           <p style="margin: 0 0 14px 0">${lead}</p>
+          ${certificateLine}
           ${remarksBlock}
 
           <table

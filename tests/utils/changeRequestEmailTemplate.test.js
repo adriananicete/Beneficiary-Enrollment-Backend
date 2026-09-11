@@ -34,6 +34,14 @@ describe("changeRequestEmailTemplate", () => {
     assert.ok(!content.includes("border-left"));
   });
 
+  // The line is a promise that a file is attached. It is made only when the
+  // sender says one is, and never on a rejection, which changed nothing.
+  test("mentions the certificate only on an approval that carries one", () => {
+    assert.match(build({ approved: true, certificateAttached: true }).content, /Certificate of Coverage is attached/);
+    assert.doesNotMatch(build({ approved: true, certificateAttached: false }).content, /Certificate of Coverage/);
+    assert.doesNotMatch(build({ approved: false, certificateAttached: true }).content, /Certificate of Coverage/);
+  });
+
   test("the remarks are shown when they exist", () => {
     const content = build({
       approved: false,

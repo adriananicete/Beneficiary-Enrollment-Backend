@@ -216,6 +216,41 @@ describe("emailService — the Certificate of Coverage attachment", () => {
   // A certificate that could not be built must not change the email that
   // carries the temporary password. No attachment means no `attachments` key
   // at all — the same request as before attachments existed.
+  // An approval carries the refreshed certificate. The body says so only when
+  // it is really there — the certificate is built separately and can fail.
+  test("the approval email carries the certificate and says it is attached", async () => {
+    const calls = stubFetch();
+    const content = Buffer.from("%PDF-1.3 not really a certificate");
+
+    await sendChangeRequestDecisionEmail({
+      to: "lorenz@coforge.com",
+      firstName: "Lorenz",
+      approved: true,
+      reviewRemarks: null,
+      attachments: [{ name: "Certificate-of-Coverage-74.pdf", contentType: "application/pdf", content }],
+    });
+
+    const message = sentMessage(calls);
+    assert.equal(message.attachments[0].name, "Certificate-of-Coverage-74.pdf");
+    assert.equal(message.attachments[0].contentBytes, content.toString("base64"));
+    assert.match(message.body.content, /Certificate of Coverage is attached/);
+  });
+
+  test("an approval without a certificate neither attaches nor mentions one", async () => {
+    const calls = stubFetch();
+
+    await sendChangeRequestDecisionEmail({
+      to: "lorenz@coforge.com",
+      firstName: "Lorenz",
+      approved: true,
+      reviewRemarks: null,
+    });
+
+    const message = sentMessage(calls);
+    assert.equal("attachments" in message, false);
+    assert.doesNotMatch(message.body.content, /Certificate of Coverage/);
+  });
+
   test("sends the credentials unchanged when there is nothing to attach", async () => {
     const calls = stubFetch();
 

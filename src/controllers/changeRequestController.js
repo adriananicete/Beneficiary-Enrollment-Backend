@@ -7,6 +7,7 @@ import ReferenceModel from "../models/referenceModel.js";
 import { getPool } from "../config/db.js";
 import { AppError } from "../utils/AppError.js";
 import { sendChangeRequestDecisionEmail } from "../services/emailService.js";
+import { certificateForDecision } from "../services/certificateService.js";
 import { buildPage, parsePaging } from "../utils/parsePaging.js";
 import {
   assertAddressBelongs,
@@ -216,7 +217,7 @@ export const reviewChangeRequest = async (req, res, next) => {
 
     if (approved) await syncUserRecord(pool, details, reviewData.reviewed_by);
 
-    await notifyDecision(details, approved, reviewData.review_remarks);
+    await notifyDecision(pool, details, approved, reviewData.review_remarks);
 
     return res.status(200).json({
       success: true,
@@ -294,7 +295,12 @@ const syncUserRecord = async (pool, { request, changedFields }, modifiedBy) => {
 // same rule as recordSendStatus in invitationService: HR decided, and the record
 // must reflect that whether or not Microsoft was reachable. A failed email is a
 // person not told; a failed decision is a record that disagrees with what HR did.
-const notifyDecision = async (details, approved, reviewRemarks) => {
+//
+// An approval carries a fresh Certificate of Coverage, built here because this
+// runs after the approval has committed. It goes to the same pre-change
+// address as the notice. A certificate that cannot be built costs the
+// attachment, never the notice.
+const notifyDecision = async (pool, details, approved, reviewRemarks) => {
   try {
     const to = currentEmailAddress(details);
     if (!to) {
@@ -302,11 +308,18 @@ const notifyDecision = async (details, approved, reviewRemarks) => {
       return;
     }
 
+    const certificate = await certificateForDecision(
+      pool,
+      details.request.client_id,
+      approved,
+    );
+
     await sendChangeRequestDecisionEmail({
       to,
       firstName: details.request.first_name,
       approved,
       reviewRemarks,
+      attachments: certificate ? [certificate] : [],
     });
   } catch (error) {
     console.error("Change request decision email failed:", error);

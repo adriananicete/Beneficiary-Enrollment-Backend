@@ -12,6 +12,7 @@ const { default: config } = await import("../../src/config/env.js");
 const {
   buildCertificateData,
   buildCertificate,
+  certificateForDecision,
   resendCertificate,
   tryBuildCertificate,
   formatCoverageDate,
@@ -387,6 +388,42 @@ describe("certificateService — resendCertificate, HR's button", () => {
       (error) => error.statusCode === 404,
     );
     assert.equal(sends.length, 0);
+  });
+});
+
+describe("certificateService — certificateForDecision, after a change request", () => {
+  // An approval can change the name, address and beneficiaries, all of which
+  // the certificate prints. The employee's copy is stale the moment it commits.
+  test("an approval carries a fresh certificate", async () => {
+    const { pool, calls } = poolFor();
+
+    const attachment = await certificateForDecision(pool, 96, true);
+
+    assert.equal(attachment.name, "Certificate-of-Coverage-74.pdf");
+    assert.equal(inputsFor(calls, DETAILS).client_id, 96);
+  });
+
+  // Nothing changed, so nothing is attached — and nothing is read. A rejection
+  // should not cost three procedure calls and a PDF nobody receives.
+  test("a rejection carries none, and reads nothing to decide that", async () => {
+    const { pool, calls } = poolFor();
+
+    assert.equal(await certificateForDecision(pool, 96, false), null);
+    assert.equal(calls.length, 0);
+  });
+
+  // The decision email is the only thing that tells the employee what HR
+  // decided. A certificate that cannot be built must not take it down.
+  test("an approval whose certificate cannot be built resolves to null, not a rejection", async () => {
+    const { pool } = poolFor({ benefits: [] });
+    const restore = console.error;
+    console.error = () => {};
+
+    try {
+      assert.equal(await certificateForDecision(pool, 96, true), null);
+    } finally {
+      console.error = restore;
+    }
   });
 });
 
