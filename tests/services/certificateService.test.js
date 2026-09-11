@@ -12,6 +12,7 @@ const { default: config } = await import("../../src/config/env.js");
 const {
   buildCertificateData,
   buildCertificate,
+  resendCertificate,
   tryBuildCertificate,
   formatCoverageDate,
 } = await import("../../src/services/certificateService.js");
@@ -43,6 +44,7 @@ const enrollmentRow = (overrides = {}) => ({
   region_name: "Region IV-A (CALABARZON)",
   zip_code: "4026",
   company_name: "Coforge BPS Philippines, Inc.",
+  email_address: "lorenz@coforge.com",
   enrollment_date: new Date("2026-09-11T13:18:06.510Z"),
   ...overrides,
 });
@@ -267,6 +269,124 @@ describe("certificateService — the attachment", () => {
     const attachment = await buildCertificate(pool, 96);
 
     assert.match(attachment.content.toString("latin1"), /\/Subtype \/Image/);
+  });
+});
+
+describe("certificateService — resendCertificate, HR's button", () => {
+  // Graph is reached through the global fetch, as in emailService.test.js. A
+  // token that expires at once keeps the module's token cache from carrying
+  // anything between tests.
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  const stubGraph = ({ sendOk = true } = {}) => {
+    const sends = [];
+
+    globalThis.fetch = async (url, options) => {
+      if (/login\.microsoftonline\.com/.test(String(url)))
+        return { ok: true, status: 200, json: async () => ({ access_token: "tok", expires_in: 0 }) };
+
+      sends.push(JSON.parse(options.body));
+      return sendOk
+        ? { ok: true, status: 202, text: async () => "" }
+        : { ok: false, status: 503, text: async () => "unavailable", headers: { get: () => null } };
+    };
+
+    return sends;
+  };
+
+  const quietly = async (fn) => {
+    const restore = console.error;
+    console.error = () => {};
+    try {
+      return await fn();
+    } finally {
+      console.error = restore;
+    }
+  };
+
+  test("mails the certificate to the address on the enrollment record", async () => {
+    const sends = stubGraph();
+    const { pool } = poolFor();
+
+    const result = await resendCertificate(pool, 96);
+
+    assert.deepEqual(result, { to: "lorenz@coforge.com" });
+    assert.equal(sends.length, 1);
+
+    const { message } = sends[0];
+    assert.equal(message.toRecipients[0].emailAddress.address, "lorenz@coforge.com");
+    assert.equal(message.attachments[0].name, "Certificate-of-Coverage-74.pdf");
+    assert.equal(
+      Buffer.from(message.attachments[0].contentBytes, "base64").subarray(0, 5).toString(),
+      "%PDF-",
+    );
+  });
+
+  // A certificate resent months later must not read as a second set of
+  // credentials — no password, no username, its own subject.
+  test("sends the certificate on its own, with nothing about credentials", async () => {
+    const sends = stubGraph();
+    const { pool } = poolFor();
+
+    await resendCertificate(pool, 96);
+
+    const { message } = sends[0];
+    assert.equal(message.subject, "Your Certificate of Coverage");
+    assert.match(message.body.content, /G-TLI-26-136-2600030/);
+    assert.doesNotMatch(message.body.content, /Username|Password:/);
+  });
+
+  // HR pressed the button and has to know. A plain Graph error would reach
+  // errorHandler as "Server Error", which says nothing about what the employee
+  // received.
+  test("answers 502, saying nothing was sent, when the email fails", async () => {
+    stubGraph({ sendOk: false });
+    const { pool } = poolFor();
+
+    await quietly(() =>
+      assert.rejects(
+        () => resendCertificate(pool, 96),
+        (error) => error.statusCode === 502 && /nothing was sent/.test(error.message),
+      ),
+    );
+  });
+
+  test("refuses before building anything when there is no address to send to", async () => {
+    const sends = stubGraph();
+    const { pool } = poolFor({ details: [enrollmentRow({ email_address: null })] });
+
+    await assert.rejects(
+      () => resendCertificate(pool, 96),
+      (error) => error.statusCode === 409 && /no email address/.test(error.message),
+    );
+    assert.equal(sends.length, 0);
+  });
+
+  // The refusals from buildCertificateData reach HR as they are — a
+  // certificate that cannot be issued is not mailed half-made.
+  test("mails nothing for an enrollment that cannot be certified", async () => {
+    const sends = stubGraph();
+    const { pool } = poolFor({ benefits: [] });
+
+    await assert.rejects(
+      () => resendCertificate(pool, 96),
+      (error) => error.statusCode === 409,
+    );
+    assert.equal(sends.length, 0);
+  });
+
+  test("mails nothing for a client with no enrollment", async () => {
+    const sends = stubGraph();
+    const { pool } = poolFor({ details: [] });
+
+    await assert.rejects(
+      () => resendCertificate(pool, 96),
+      (error) => error.statusCode === 404,
+    );
+    assert.equal(sends.length, 0);
   });
 });
 

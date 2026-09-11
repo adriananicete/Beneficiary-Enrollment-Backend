@@ -1,12 +1,12 @@
 import express from 'express';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
-import { exportEnrollments, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCredentials } from '../controllers/adminController.js';
+import { exportEnrollments, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials } from '../controllers/adminController.js';
 import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { cancelInvitationJob, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
 import { validateInvitations } from '../middlewares/validateInvitations.js';
-import { bulkInvitationLimiter, credentialsResendLimiter, jobStatusLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
+import { bulkInvitationLimiter, certificateResendLimiter, credentialsResendLimiter, jobStatusLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
 import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
 
@@ -36,6 +36,10 @@ router.get('/enrollments/:client_id/agreements',verifyToken, allowedRoles(ADMIN,
 // it. Answers image bytes rather than JSON.
 router.get('/enrollments/:client_id/signature', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, getEnrollmentSignature);
 router.post('/enrollments/:client_id/resend-credentials', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, credentialsResendLimiter, resendCredentials);
+// The same chain as resend-credentials. verifyClientAccess is the whole of the
+// company scoping: usp_get_insurance_enrollment_by_id takes a client_id and
+// trusts it, so without it an HR could mail any company's certificate out.
+router.post('/enrollments/:client_id/resend-certificate', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, certificateResendLimiter, resendCertificate);
 // /pending-count is declared before /:request_id on purpose. Express matches in
 // order, so the param route would otherwise swallow it and try to read
 // "pending-count" as an id.
