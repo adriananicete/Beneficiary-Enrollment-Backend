@@ -4,6 +4,7 @@ import ClientModel from "../models/clientModel.js";
 import UserModel from "../models/userModel.js";
 import ExportService from "../services/exportService.js";
 import DashboardService from "../services/dashboardService.js";
+import CertificateService from "../services/certificateService.js";
 import SignatureModel from "../models/signatureModel.js";
 import { sendSignature } from "../utils/signatureResponse.js";
 import { getPool } from "../config/db.js";
@@ -137,6 +138,28 @@ export const resendCredentials = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: `New sign-in details sent to ${user.us01_email_address}`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// HR resends the Certificate of Coverage — for when it did not go out with the
+// confirmation email, or the employee has lost it. certificateService decides
+// everything; the refusals it raises are AppErrors and reach the caller as they
+// are: 404 no enrollment, 409 nothing to certify or nowhere to send it, 502
+// the email failed and nothing was sent.
+export const resendCertificate = async (req, res, next) => {
+  try {
+    const { client_id } = req.params;
+
+    const pool = await getPool();
+
+    const { to } = await CertificateService.resendCertificate(pool, client_id);
+
+    return res.status(200).json({
+      success: true,
+      message: `Certificate of Coverage sent to ${to}`,
     });
   } catch (error) {
     next(error);

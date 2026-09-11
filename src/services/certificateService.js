@@ -5,6 +5,7 @@ import { renderCertificate } from "../utils/certificatePdf.js";
 import { fullName } from "../utils/fullName.js";
 import { AppError } from "../utils/AppError.js";
 import config from "../config/env.js";
+import { sendCertificateEmail } from "./emailService.js";
 
 // Builds the Certificate of Coverage for one enrollment, from what the database
 // holds — never from the request that created it. The benefit amounts are
@@ -118,6 +119,9 @@ export const buildCertificateData = async (pool, clientId) => {
 
   return {
     enrollmentId: record.enrollment_id,
+    // Who the certificate goes to when HR resends it. Not printed.
+    email: record.email_address,
+    firstName: record.first_name,
     policyNo: record.policy_no,
     groupPolicyNo: record.group_policy_no,
     companyName: record.company_name,
@@ -160,10 +164,8 @@ const loadSignature = async () => {
 
 // The email attachment: a name, a type, and the bytes. The filename carries the
 // enrollment id, matching the example the format was copied from.
-export const buildCertificate = async (pool, clientId) => {
-  const data = await buildCertificateData(pool, clientId);
+const toAttachment = async (data) => {
   const signatureImage = await loadSignature();
-
   const content = await renderCertificate({ ...data, signatureImage });
 
   return {
@@ -171,6 +173,51 @@ export const buildCertificate = async (pool, clientId) => {
     contentType: "application/pdf",
     content,
   };
+};
+
+export const buildCertificate = async (pool, clientId) =>
+  toAttachment(await buildCertificateData(pool, clientId));
+
+// HR's resend button. Unlike tryBuildCertificate below, nothing here is
+// swallowed: HR asked for it and has to be told whether the employee got it.
+//
+// It goes to the address on the enrollment record — dbo.clients — which is the
+// record the certificate describes. An approved email change writes it there
+// first and syncUserRecord carries it to the user account, so the two agree in
+// every case that has worked as designed.
+//
+// It never touches the password. The certificate is sent on its own, with its
+// own subject and body, so it cannot be mistaken for new credentials.
+export const resendCertificate = async (pool, clientId) => {
+  const data = await buildCertificateData(pool, clientId);
+
+  if (!data.email)
+    throw new AppError(
+      "This employee has no email address on file. Correct it before resending.",
+      409,
+    );
+
+  const attachment = await toAttachment(data);
+
+  try {
+    await sendCertificateEmail({
+      to: data.email,
+      firstName: data.firstName,
+      policyNo: data.policyNo,
+      attachments: [attachment],
+    });
+  } catch (error) {
+    // Caught only to say what is true. graphSendError is a plain Error, which
+    // errorHandler would render as "Server Error" — and HR could not tell
+    // whether the employee received it.
+    console.error(`Certificate email failed for client ${clientId}. Nothing was sent.`, error);
+    throw new AppError(
+      "The certificate could not be emailed, so nothing was sent. Please try again.",
+      502,
+    );
+  }
+
+  return { to: data.email };
 };
 
 // For the senders that must go out whether or not the certificate could be
@@ -193,4 +240,9 @@ export const tryBuildCertificate = async (pool, clientId) => {
   }
 };
 
-export default { buildCertificateData, buildCertificate, tryBuildCertificate };
+export default {
+  buildCertificateData,
+  buildCertificate,
+  resendCertificate,
+  tryBuildCertificate,
+};

@@ -3,6 +3,7 @@ import { emailTemplate } from "../utils/emailTemplate.js";
 import { invitationEmailTemplate } from "../utils/invitationEmailTemplate.js";
 import { changeRequestEmailTemplate } from "../utils/changeRequestEmailTemplate.js";
 import { credentialsEmailTemplate } from "../utils/credentialsEmailTemplate.js";
+import { certificateEmailTemplate } from "../utils/certificateEmailTemplate.js";
 
 // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
@@ -214,6 +215,51 @@ export const sendCredentialsEmail = async ({
         },
       ],
     },
+    saveToSentItems: "false",
+  };
+
+  const response = await fetch(sendMailUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(mailPayload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw graphSendError(response, errorText);
+  }
+};
+
+// The certificate on its own, when HR resends it. Like sendCredentialsEmail, a
+// failure here is thrown rather than swallowed: HR pressed a button and has to
+// know whether the employee received anything.
+export const sendCertificateEmail = async ({
+  to,
+  firstName,
+  policyNo,
+  attachments,
+}) => {
+  const accessToken = await getAccessToken();
+  const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${config.smtp.user}/sendMail`;
+
+  const mailPayload = {
+    message: withAttachments(
+      {
+        subject: "Your Certificate of Coverage",
+        body: certificateEmailTemplate({ firstName, policyNo }),
+        toRecipients: [
+          {
+            emailAddress: {
+              address: to,
+            },
+          },
+        ],
+      },
+      attachments,
+    ),
     saveToSentItems: "false",
   };
 

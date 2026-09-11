@@ -139,6 +139,24 @@ export const credentialsResendLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Resending a Certificate of Coverage: the same shape as the one above, keyed
+// on the HR user for the same reasons, but its own budget rather than a share
+// of it. An HR who has resent a handful of certificates should not find they
+// can no longer reissue a locked-out employee's password, which is the more
+// urgent of the two.
+export const certificateResendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? 100 : 20,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many certificate resends, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // The HR screen polls the pending count every ~30s to drive a badge, so a
 // 15-minute window holds about 30 requests from one correctly behaving client.
 // Several HR users on one shared account, and a tab left open in more than one
