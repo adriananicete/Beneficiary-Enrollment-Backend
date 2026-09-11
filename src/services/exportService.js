@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import ClientModel from "../models/clientModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import { AppError } from "../utils/AppError.js";
+import { fullName } from "../utils/fullName.js";
 
 // Taken from the email templates so a printed report and an email from the same
 // system look like they came from the same place.
@@ -80,12 +81,6 @@ const withinRange = (employees, { start, end }) => {
     return true;
   });
 };
-
-const fullName = ({ first_name, middle_name, last_name, suffix }) =>
-  [first_name, middle_name, last_name, suffix]
-    .map((part) => (part ?? "").trim())
-    .filter(Boolean)
-    .join(" ");
 
 // The column answers one question: has this person enrolled?
 //

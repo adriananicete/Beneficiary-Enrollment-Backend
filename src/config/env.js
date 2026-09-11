@@ -116,6 +116,15 @@ const config = {
   // concurrent sends per mailbox, so this is deliberately small. Optional, and
   // kept out of the required list above so existing .env files keep working.
   invitationConcurrency: Number(process.env.INVITATION_CONCURRENCY) || 4,
+  // A PNG or JPEG of the signatory's signature, printed above their name on the
+  // Certificate of Coverage. Optional: unset, the certificate carries the name
+  // alone, which is what the business has asked for until the image exists.
+  //
+  // A path on the server rather than a file in the repository, on purpose. It
+  // is a real executive's signature, and a copy in git is a clean specimen for
+  // anybody with read access, forever — deleting it later does not remove it
+  // from history.
+  certificateSignaturePath: process.env.CERTIFICATE_SIGNATURE_PATH || null,
   db: {
     server: process.env.DB_SERVER,
     port: Number(process.env.DB_PORT),

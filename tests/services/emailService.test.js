@@ -6,6 +6,7 @@ import "../helpers/env.js";
 const {
   sendInvitationEmail,
   sendChangeRequestDecisionEmail,
+  sendConfirmationEmail,
 } = await import("../../src/services/emailService.js");
 
 // This file was written off as untestable — "Graph over fetch, not reachable by
@@ -176,6 +177,58 @@ describe("emailService — what is actually sent", () => {
     assert.match(subjects[0], /have been updated/);
     assert.match(subjects[1], /were not applied/);
     assert.notEqual(subjects[0], subjects[1]);
+  });
+});
+
+describe("emailService — the Certificate of Coverage attachment", () => {
+  const confirmation = {
+    to: "lorenz@coforge.com",
+    policyNo: "G-TLI-26-136-2600030",
+    username: "EMP-096",
+    firstName: "Lorenz",
+    lastName: "Artillagas",
+    password: "Temp-Pass-123",
+    loginUrl: "https://example.test/employee-login",
+  };
+
+  const sentMessage = (calls) =>
+    JSON.parse(calls.find((call) => SEND_URL.test(call.url)).options.body).message;
+
+  test("carries the certificate as a Graph file attachment, base64-encoded", async () => {
+    const calls = stubFetch();
+    const content = Buffer.from("%PDF-1.3 not really a certificate");
+
+    await sendConfirmationEmail({
+      ...confirmation,
+      attachments: [{ name: "Certificate-of-Coverage-74.pdf", contentType: "application/pdf", content }],
+    });
+
+    assert.deepEqual(sentMessage(calls).attachments, [
+      {
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        name: "Certificate-of-Coverage-74.pdf",
+        contentType: "application/pdf",
+        contentBytes: content.toString("base64"),
+      },
+    ]);
+  });
+
+  // A certificate that could not be built must not change the email that
+  // carries the temporary password. No attachment means no `attachments` key
+  // at all — the same request as before attachments existed.
+  test("sends the credentials unchanged when there is nothing to attach", async () => {
+    const calls = stubFetch();
+
+    await sendConfirmationEmail({ ...confirmation, attachments: [] });
+    await sendConfirmationEmail(confirmation);
+
+    const [withEmpty, withNone] = calls
+      .filter((call) => SEND_URL.test(call.url))
+      .map((call) => JSON.parse(call.options.body).message);
+
+    assert.equal("attachments" in withEmpty, false);
+    assert.equal("attachments" in withNone, false);
+    assert.match(withNone.body.content, /Temp-Pass-123/);
   });
 });
 
