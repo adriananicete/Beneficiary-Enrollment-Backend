@@ -285,30 +285,35 @@ export const sendChangeRequestDecisionEmail = async ({
   firstName,
   approved,
   reviewRemarks,
+  attachments = [],
 }) => {
   const accessToken = await getAccessToken();
   const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${config.smtp.user}/sendMail`;
   const loginUrl = config.appUrl;
 
   const mailPayload = {
-    message: {
-      subject: approved
-        ? "Your enrollment details have been updated"
-        : "Your requested changes were not applied",
-      body: changeRequestEmailTemplate({
-        firstName,
-        approved,
-        reviewRemarks,
-        loginUrl,
-      }),
-      toRecipients: [
-        {
-          emailAddress: {
-            address: to,
+    message: withAttachments(
+      {
+        subject: approved
+          ? "Your enrollment details have been updated"
+          : "Your requested changes were not applied",
+        body: changeRequestEmailTemplate({
+          firstName,
+          approved,
+          reviewRemarks,
+          loginUrl,
+          certificateAttached: attachments.length > 0,
+        }),
+        toRecipients: [
+          {
+            emailAddress: {
+              address: to,
+            },
           },
-        },
-      ],
-    },
+        ],
+      },
+      attachments,
+    ),
     saveToSentItems: "false",
   };
 

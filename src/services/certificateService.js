@@ -240,9 +240,27 @@ export const tryBuildCertificate = async (pool, clientId) => {
   }
 };
 
+// The attachment for a decided change request, or null.
+//
+// An approval can change the name, the address and the beneficiaries, and all
+// three are on the certificate — so the one the employee holds is out of date
+// the moment it commits, and the approval email carries a fresh one. Every
+// approval, not only those that touched a beneficiary: working out which
+// fields a certificate depends on is a second list that would drift from the
+// first.
+//
+// A rejection changed nothing, so it carries nothing and reads nothing.
+//
+// Called after the approval has committed, so the certificate describes the
+// record as it now stands. Never rejects, for the same reason as below: the
+// decision email is the only thing that tells the employee what HR decided.
+export const certificateForDecision = async (pool, clientId, approved) =>
+  approved ? tryBuildCertificate(pool, clientId) : null;
+
 export default {
   buildCertificateData,
   buildCertificate,
+  certificateForDecision,
   resendCertificate,
   tryBuildCertificate,
 };
