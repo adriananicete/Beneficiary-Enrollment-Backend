@@ -112,6 +112,19 @@ export const pdfRuns = (buffer) => {
 // (justification) or for nothing (kerning, as in "T|agapo"), and the two cannot
 // be told apart — so both sides of a comparison drop them. Pass the needle
 // through `compact` too.
+// The page's decoded drawing commands, for the things pdfRuns does not read —
+// images, which carry no text and are neither a rectangle nor a line.
+export const contentStream = (buffer) => {
+  const text = buffer.toString("latin1");
+
+  return streamOf(
+    buffer,
+    text,
+    objectsOf(text),
+    Number(text.match(/\/Contents (\d+) 0 R/)[1]),
+  );
+};
+
 export const compact = (value) => String(value).replace(/[\s|]/g, "");
 
 export const pdfText = (buffer) =>
@@ -125,4 +138,4 @@ export const pdfText = (buffer) =>
 export const pageCount = (buffer) =>
   (buffer.toString("latin1").match(/\/Type \/Page\b/g) ?? []).length;
 
-export default { pdfRuns, pdfText, compact, pageCount };
+export default { pdfRuns, pdfText, compact, pageCount, contentStream };
