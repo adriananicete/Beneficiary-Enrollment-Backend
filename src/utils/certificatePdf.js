@@ -20,8 +20,10 @@ import { fileURLToPath } from "url";
 // exception for documents that embed it (assets/fonts/, licence alongside), and
 // 1.07.x is the last line that ships the Narrow cut — 2.x dropped it.
 
-const font = (file) =>
-  fileURLToPath(new URL(`../../assets/fonts/${file}`, import.meta.url));
+const asset = (path) =>
+  fileURLToPath(new URL(`../../assets/${path}`, import.meta.url));
+
+const font = (file) => asset(`fonts/${file}`);
 
 const FONTS = {
   regular: font("LiberationSansNarrow-Regular.ttf"),
@@ -29,6 +31,43 @@ const FONTS = {
   italic: font("LiberationSansNarrow-Italic.ttf"),
   boldItalic: font("LiberationSansNarrow-BoldItalic.ttf"),
 };
+
+// The letterhead mark, committed rather than fetched. The same image is in the
+// email templates as a Cloudinary URL, which is right for a browser and wrong
+// here: a network read at render time would fail the certificate, and
+// tryBuildCertificate turns a failed certificate into an email that goes out
+// without its attachment and a line in the log. An asset on disk cannot do that.
+//
+// Cropped to its own ink and downscaled, both for measured reasons. The
+// supplied file is 5000px wide and a quarter of a megabyte, which at this size
+// is around 2,300 DPI — paid on every email, visible to nobody. And a quarter
+// of its width was transparent padding: drawn as supplied, the mark sat 23pt
+// in from x 48 rather than flush with the text block, and only 19 of its 30
+// points were ink, which left the "A Member of PFI Group" line at 3.6pt.
+//
+// Cropped at full resolution and then resized, so the 600px that remain are
+// all mark — about 610 DPI at the size below.
+const LOGO = asset("logo/phillife.png");
+
+// Only the height is given to PDFKit, so the asset's own proportions decide the
+// width and replacing the file cannot stretch it. At 30 and the asset's 2.344:1
+// that is 70.3 wide, running x 48 to 118.3.
+//
+// NOTHING ELSE ON THE PAGE MOVED, and that is worth stating because it looks
+// wrong at first. The mark occupies y 40 to 70, which is the band the title
+// sits in — but the title is centred and its text starts at x 202, and the
+// policy number is right-aligned from x 460. The mark ends at 118.3, so it
+// shares a band with both and touches neither. The next thing down the page,
+// the insurer paragraph at y 84, starts 14 below the mark's foot.
+//
+// This was built the other way first — everything below shifted down 18 to
+// clear the title — and that was a mistake made by reasoning about the title
+// instead of reading where it starts. It also broke the page: the tallest
+// certificate this system can produce has 12.05 points of slack above the
+// bottom margin, so an 18-point shift overflowed it onto a second and third
+// page. The test below that fixes ten dependents to one page is what caught it.
+const LOGO_TOP = 40;
+const LOGO_HEIGHT = 30;
 
 const LEFT = 48;
 const RIGHT = 564;
@@ -143,6 +182,11 @@ const centered = (doc, text, left, right, y) =>
   doc.text(text, left, y, { width: right - left, align: "center" });
 
 const drawHeader = (doc, { policyNo, companyName, groupPolicyNo }) => {
+  // Before the text, so a mark with any transparency sits over the page rather
+  // than under whatever is drawn next. Nothing shares its band, so the order
+  // only matters if the asset is ever replaced with a wider one.
+  doc.image(LOGO, LEFT, LOGO_TOP, { height: LOGO_HEIGHT });
+
   doc.fillColor("black").font("regular").fontSize(10);
   doc.text(`No.   ${policyNo}`, LEFT, 40, { width: WIDTH, align: "right" });
 
