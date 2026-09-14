@@ -107,7 +107,6 @@ export const sendConfirmationEmail = async ({
   policyNo,
   username,
   firstName,
-  lastName,
   password,
   loginUrl,
   attachments = [],
@@ -119,7 +118,18 @@ export const sendConfirmationEmail = async ({
     message: withAttachments(
       {
         subject: "This is your account credentials",
-        body: emailTemplate({policyNo, username, firstName, lastName, password, loginUrl}),
+        // certificateAttached is read from the attachments rather than passed
+        // separately, the same way the change request decision email does it.
+        // The certificate is built before this is called and can fail, so the
+        // list is the only thing that knows whether a PDF is really going.
+        body: emailTemplate({
+          policyNo,
+          username,
+          firstName,
+          password,
+          loginUrl,
+          certificateAttached: attachments.length > 0,
+        }),
         toRecipients: [
           {
             emailAddress: {

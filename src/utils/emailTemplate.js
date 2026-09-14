@@ -1,153 +1,66 @@
 import { escapeHtml } from "./escapeHtml.js";
+import {
+  emailButton,
+  emailCallout,
+  emailLayout,
+  emailNote,
+} from "./emailLayout.js";
 
+// The enrollment confirmation — the first email an employee ever receives from
+// this system, and the only copy of their temporary password.
+//
+// Rebuilt on the shared layout 2026-09-14. It was the one template not in the
+// house style: a gradient header bar instead of the logo, a card with a drop
+// shadow, a footer, and **no logo at all** — the only one of the five without
+// one. Nothing suggests that was a decision; it predates the other four.
+//
 // `username` is the employee id straight off the enrollment form. It is
 // required and capped at 50 characters and its shape is not validated, so it
-// can carry markup. It goes only to the person who typed it, which is why this
-// is consistency rather than a fix — but the same two values are escaped in
-// credentialsEmailTemplate, and one of the two had to be wrong.
+// can carry markup. It goes only to the person who typed it, which is why
+// escaping it is consistency rather than a fix — but the same two values are
+// escaped in credentialsEmailTemplate, and one of the two had to be wrong.
 export const emailTemplate = ({
   policyNo,
   username,
   firstName,
-  lastName,
   password,
   loginUrl,
+  certificateAttached = false,
 }) => {
-  return {
-    contentType: "HTML",
-    content: `
-   <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Employee Account</title>
-  </head>
-  <body
-    style="
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: &quot;Segoe UI&quot;, Tahoma, Geneva, Verdana, sans-serif;
-      color: #333;
-    "
-  >
-    <table
-      role="presentation"
-      style="
-        width: 100%;
-        max-width: 400px;
-        margin: 20px auto;
-        background: #fff;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        overflow: hidden;
-        border-collapse: collapse;
-      "
-    >
-      <!-- Header -->
-      <tr>
-        <td
-          bgcolor="#4caf50"
-          style="
-            background-color: #4caf50;
-            background: linear-gradient(90deg, #2c3b7d 0%, #409965 100%);
-            text-align: center;
-            padding: 20px;
-            color: white;
-          "
-        >
-          <h1 style="margin: 0; font-size: 20px; font-weight: 300">
-            Your account has been created
-          </h1>
-        </td>
-      </tr>
+  // Said only when the certificate is really attached, the same rule as the
+  // change request decision email. It is built separately and can fail while
+  // this email goes out regardless, so a line promising an attachment that is
+  // not there would send the employee looking for a file nobody sent.
+  const certificateLine = certificateAttached
+    ? `
+                <p style="margin: 0 0 14px 0">
+                  Your Certificate of Coverage is attached to this email as a
+                  PDF.
+                </p>`
+    : "";
 
-      <!-- Content -->
-      <tr>
-        <td style="padding:25px">
+  return emailLayout({
+    title: "Your enrollment is complete",
+    heading: "Your account has been created",
+    body: `
+                <p style="margin: 0 0 14px 0">Hi ${escapeHtml(firstName)},</p>
 
-          <!-- Password Highlight -->
-          <div
-            style="
-              text-align: left;
-              border-radius: 10px;
-              background-color: #daf2e6;
-              padding: 10px;
-            "
-          >
-            <h2
-              style="
-                margin: 0;
-                font-size: 16px;
-                font-weight: bold;
-              "
-            >
-              Policy Number: ${escapeHtml(policyNo)}
-            </h2>
-          </div>
-          
-          <p style="font-size: 16px;">
-            Hi ${escapeHtml(firstName)} this is your temporary account:
-          </p>
-
-          <p style="text-align: center; border-radius: 5px; border: 1px solid #4caf50; padding: 20px 0; font-size: 16px">
-            Username: ${escapeHtml(username)} <br/> Password: ${escapeHtml(password)}
-          </p>
-
-          <p style="margin: 20px 0; font-size: 16px">
-            Please
-            <a
-              href="${loginUrl}"
-              target="_blank"
-              style="color: #3498db; text-decoration: none; font-style: oblique;"
-              >login</a
-            >
-            and reset your password immediately for security.
-          </p>
-
-          <p
-            style="
-              margin: 25px 0 0;
-              font-size: 12px;
-              color: #555;
-              text-align: center;
-              font-style: italic;
-            "
-          >
-            Thank you for trusting! Stay secure.
-          </p>
-        </td>
-      </tr>
-
-      <!-- Footer -->
-      <tr>
-        <td
-          style="
-            text-align: center;
-            padding: 20px;
-            border-top: 1px solid #e9ecef;
-          "
-        >
-          <p style="margin: 0; font-size: 10px; color: #6c757d">
-            © 2026 Phillife System. All rights reserved.
-          </p>
-
-          <p
-            style="
-              font-size: 10px;
-              color: #c62828;
-              margin-top: 10px;
-              font-style: italic;
-            "
-          >
-            <strong>Notice:</strong> Please do not reply directly to this email.
-          </p>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>
-    `,
-  };
+                <p style="margin: 0 0 14px 0">
+                  Your enrollment has been received and your policy number is
+                  <strong>${escapeHtml(policyNo)}</strong>.
+                </p>
+${certificateLine}
+                <p style="margin: 0 0 14px 0">
+                  These are your temporary sign-in details:
+                </p>
+${emailCallout(`
+                      Username: <strong>${escapeHtml(username)}</strong><br />
+                      Password: <strong>${escapeHtml(password)}</strong>`)}
+${emailButton({ href: loginUrl, label: "Sign in" })}
+${emailNote(`
+                  You'll be asked to choose your own password as soon as you
+                  sign in, so this temporary one stops working after that.
+                  Please don't reply to this email &mdash; nobody reads this
+                  address.`)}`,
+  });
 };

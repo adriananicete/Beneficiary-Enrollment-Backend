@@ -190,7 +190,6 @@ const createEnrollment = async (pool, enrollmentData) => {
         to: enrollmentData.email_address,
         policyNo: policyNo,
         firstName: enrollmentData.first_name,
-        lastName: enrollmentData.last_name,
         username: enrollmentData.employee_id_number,
         password: tempPassword,
         loginUrl: `${config.appUrl}/employee-login`,
