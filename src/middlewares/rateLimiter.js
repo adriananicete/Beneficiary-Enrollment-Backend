@@ -175,6 +175,22 @@ export const pendingCountLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// GET /auth/me runs on every page load and every reload, in every tab, for all
+// three roles. The same ceiling as the pending count, counted separately so
+// that one never uses up the other.
+export const sessionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 1000 : 300,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many requests, please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Polling runs every ~2s while a job is in flight, so a 15-minute window can
 // legitimately hold around 450 requests. The ceiling sits above that rather
 // than throttling a client that is behaving correctly.
