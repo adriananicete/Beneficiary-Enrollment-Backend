@@ -27,8 +27,19 @@ import {
   CLIENT_FIELD_LENGTHS,
   validateFieldLengths,
 } from "../utils/validateFieldLengths.js";
+import {
+  BENEFICIARY_TEXT_RULES,
+  CLIENT_TEXT_RULES,
+  validateTextFields,
+} from "../utils/validateTextFields.js";
+import { trimBeneficiaries, trimStrings } from "../utils/trimStrings.js";
 
 export const validateEnrollment = (req, res, next) => {
+  // Before anything reads a value: a name of spaces is otherwise present to the
+  // required check below, and counted by the length caps.
+  trimStrings(req.body);
+  trimBeneficiaries(req.body.beneficiaries);
+
   const { beneficiaries } = req.body;
 
   // Normalised first, validated further down. The order is load-bearing:
@@ -124,6 +135,11 @@ export const validateEnrollment = (req, res, next) => {
   );
   if (addressLengthError) return next(new AppError(addressLengthError, 400));
 
+  // After the length caps, so an overlong name is reported as too long rather
+  // than as containing something it should not.
+  const textError = validateTextFields(req.body, CLIENT_TEXT_RULES);
+  if (textError) return next(new AppError(textError, 400));
+
   const coverageError = validateCoverage(beneficiaries);
   if (coverageError) return next(new AppError(coverageError, 400));
 
@@ -146,6 +162,10 @@ export const validateEnrollment = (req, res, next) => {
     );
     if (lengthError)
       return next(new AppError(`Beneficiary ${i + 1}: ${lengthError}`, 400));
+
+    const textError = validateTextFields(beneficiaries[i], BENEFICIARY_TEXT_RULES);
+    if (textError)
+      return next(new AppError(`Beneficiary ${i + 1}: ${textError}`, 400));
   }
 
   // The signature. Required in production, optional everywhere else.

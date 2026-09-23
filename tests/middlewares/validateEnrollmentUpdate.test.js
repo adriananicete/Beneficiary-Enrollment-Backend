@@ -255,3 +255,65 @@ describe("validateEnrollmentUpdate — birthdate and age are applied here too", 
     assert.match(run(body).refusal().message, /whole number/);
   });
 });
+
+// Added 2026-09-23, the same rules as the submit path, plus the email address,
+// which only this path takes from the person typing it.
+describe("validateEnrollmentUpdate — what text may contain", () => {
+  const refusalFor = (overrides) => run({ ...validBody(), ...overrides }).refusal();
+
+  // The live data on 2026-09-23 held two clients with a last name of "2", both
+  // test records. A change request carries the whole pre-filled record, so
+  // theirs is refused until the name is corrected in the same request.
+  test("refuses the last name the live test rows carry", () => {
+    const refusal = refusalFor({ last_name: "2" });
+
+    assert.equal(refusal.statusCode, 400);
+    assert.match(refusal.message, /^last_name may only contain/);
+  });
+
+  test("a missing name is still reported as missing, not as malformed", () => {
+    assert.equal(refusalFor({ first_name: "   " }).message, "first_name is required");
+  });
+
+  test("checks every beneficiary in the payload, edited or not", () => {
+    const body = {
+      ...validBody(),
+      beneficiaries: [
+        { full_name: "TEST USER2", relationship: "Son", age: 12, coverage_percent: 100 },
+      ],
+    };
+
+    assert.match(run(body).refusal().message, /^Beneficiary 1: full_name may only contain/);
+  });
+
+  test("trims before comparing, so a pre-filled trailing space is not an error", () => {
+    const body = { ...validBody(), first_name: "Angela ", email_address: " angela@example.com " };
+
+    assert.ok(run(body).passed());
+    assert.equal(body.first_name, "Angela");
+    assert.equal(body.email_address, "angela@example.com");
+  });
+});
+
+describe("validateEnrollmentUpdate — the email address", () => {
+  const refusalFor = (email_address) => run({ ...validBody(), email_address }).refusal();
+
+  // Synced to sec.us01_users on approval, which is where resend-credentials and
+  // the Certificate of Coverage are sent. "abc" used to be accepted.
+  test("refuses an address that is not one", () => {
+    for (const email of ["abc", "angela@", "angela@example", "angela @example.com"]) {
+      const refusal = refusalFor(email);
+
+      assert.equal(refusal?.statusCode, 400, email);
+      assert.match(refusal.message, /valid email address/, email);
+    }
+  });
+
+  test("an empty address is reported as missing", () => {
+    assert.equal(refusalFor("  ").message, "email_address is required");
+  });
+
+  test("accepts an ordinary address", () => {
+    assert.equal(refusalFor("angela.bautista@coforge.com"), null);
+  });
+});

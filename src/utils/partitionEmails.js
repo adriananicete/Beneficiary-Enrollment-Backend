@@ -1,7 +1,8 @@
+import { EMAIL_PATTERN } from "./validateEmailAddress.js";
+
 export const MAX_INVITATION_EMAILS = 1000;
 
 const MAX_EMAIL_LENGTH = 150;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // HR uploads a file, so a bad row is expected rather than exceptional. Splitting
 // the batch lets the good addresses go out while the rejected ones are reported
