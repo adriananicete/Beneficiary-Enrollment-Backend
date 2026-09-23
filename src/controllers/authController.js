@@ -44,8 +44,31 @@ export const login = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: "Login successfully",
+      data: { user: result.user },
     });
   } catch (error) {
+    next(error);
+  }
+};
+
+// GET /auth/me — who is signed in, for all three roles. The session cookie is
+// httpOnly, so the frontend cannot read the token and has no other way to know
+// after a page reload.
+//
+// A 401 from the lookup clears the cookie as well as answering. The token may
+// still verify for days; the account behind it no longer does, and a cookie
+// left in place would be sent, and refused, on every request after this one.
+export const getMe = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const user = await AuthService.currentUser(pool, req.user);
+
+    return res.status(200).json({
+      success: true,
+      data: { user },
+    });
+  } catch (error) {
+    if (error.statusCode === 401) res.clearCookie("token", cookieOptions);
     next(error);
   }
 };

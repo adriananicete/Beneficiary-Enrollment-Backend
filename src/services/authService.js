@@ -1,9 +1,11 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import UserModel from "../models/userModel.js";
+import InvitationModel from "../models/invitationModel.js";
 import config from "../config/env.js";
 import { AppError } from "../utils/AppError.js";
 import {
+  EMPLOYEE,
   REMEMBER_ME_EXPIRY,
   RESET_TOKEN_EXPIRY,
   SESSION_EXPIRY,
@@ -30,6 +32,89 @@ import {
 // token kept access. One source now, both derived.
 const asSeconds = (ms) => Math.floor(ms / 1000);
 
+const ACCOUNT_CLOSED = "This account is no longer active. Please contact your HR.";
+const SESSION_ENDED = "Your session has ended. Please sign in again.";
+
+// What the frontend is told about the person signed in. Named field by field
+// rather than spread from the row, because the row carries `us01_password`:
+// sec.us01_usp_sel_user_by_id returns the hash with everything else, and a
+// spread would send it to the browser the day nobody was looking. A column the
+// procedure gains later stays out until somebody adds it here on purpose.
+//
+// `employers` is the company scope from sec.us08_user_employer. For HR that is
+// their company. For an Administrator it is whatever mappings exist, normally
+// none — their scope is every company whatever this says. The employee's own
+// company is in GET /employee/enrollment and is not repeated here.
+const profileOf = (user, employers) => ({
+  user_id: user.us01_user_id,
+  username: user.us01_username,
+  role_id: user.us02_role_id,
+  role_name: user.us02_role_name,
+  first_name: user.us01_first_name,
+  middle_name: user.us01_middle_name,
+  last_name: user.us01_last_name,
+  email_address: user.us01_email_address,
+  client_id: user.client_id ?? null,
+  employers: employers.map(({ employer_id, company_code, company_name }) => ({
+    employer_id,
+    company_code,
+    company_name,
+  })),
+});
+
+// Who a session belongs to, read from the database rather than from the token.
+//
+// That is the reason this exists alongside the JWT and not instead of reading
+// it. The token is signed at login and nothing re-checks it: an account closed,
+// locked or moved to another role afterwards keeps its token until it expires,
+// up to thirty days with rememberMe. Every endpoint still trusts it — that is
+// PARK.md §3 and is not changed here — but the screen that decides what the
+// person sees now asks the database, so a closed account stops being shown a
+// working dashboard.
+//
+// Every refusal is 401, never 403. For this endpoint 401 means "this session is
+// over, go and sign in", which is the only thing the frontend can usefully do
+// with any of them; the login itself then says why.
+//
+// sec.us01_usp_sel_user_by_id, read 2026-09-23:
+// - THROWs 50038 for a user who is inactive or does not exist. Mapped
+//   globally to 403 for the endpoints that reach it; answered 401 here.
+// - INNER JOINs an active role, so a user whose role was withdrawn comes back
+//   as no row at all rather than as a row with a NULL role.
+// - Does not check us01_is_locked. The login does, so this does too.
+const currentUser = async (pool, session) => {
+  let user;
+
+  try {
+    user = await UserModel.findUserById(pool, session.user_id);
+  } catch (error) {
+    if ((error.number ?? error.originalError?.number) === 50038)
+      throw new AppError(ACCOUNT_CLOSED, 401);
+    throw error;
+  }
+
+  if (!user) throw new AppError(SESSION_ENDED, 401);
+
+  if (!user.us01_is_active || user.us01_is_locked)
+    throw new AppError(ACCOUNT_CLOSED, 401);
+
+  // The token says what the rest of the API will enforce. If the role has
+  // changed since it was signed, showing the new role's screens would promise
+  // access the API still refuses, or hide access it still grants — so the
+  // session ends, and the next login signs a token that agrees.
+  if (user.us02_role_name !== session.role_name)
+    throw new AppError(SESSION_ENDED, 401);
+
+  // An employee is never mapped to an employer in sec.us08_user_employer, so
+  // the question is not asked for one.
+  const employers =
+    user.us02_role_name === EMPLOYEE
+      ? []
+      : await InvitationModel.getEmployersByUser(pool, user.us01_user_id);
+
+  return profileOf(user, employers);
+};
+
 const login = async (
   pool,
   { username, password, rememberMe = false, allowedRoles, wrongDoorMessage },
@@ -48,10 +133,7 @@ const login = async (
   // know the password learns the account exists but is closed, so this tells an
   // attacker nothing they did not already have.
   if (!user.us01_is_active || user.us01_is_locked)
-    throw new AppError(
-      "This account is no longer active. Please contact your HR.",
-      403,
-    );
+    throw new AppError(ACCOUNT_CLOSED, 403);
 
   // An allowlist, where both controllers previously refused one role by name.
   // With three roles the two are equivalent; they stop being equivalent the day
@@ -88,6 +170,15 @@ const login = async (
 
   const maxAge = rememberMe ? REMEMBER_ME_EXPIRY : SESSION_EXPIRY;
 
+  // The same answer GET /auth/me gives, so the frontend has one shape to read
+  // and does not need a second request straight after signing in. Built before
+  // the token is signed or the login recorded, so a failure here leaves no
+  // trace of a login that did not complete.
+  const profile = await currentUser(pool, {
+    user_id: user.us01_user_id,
+    role_name: user.us02_role_name,
+  });
+
   const token = jwt.sign(
     {
       user_id: user.us01_user_id,
@@ -101,7 +192,7 @@ const login = async (
 
   await UserModel.updateLastLogin(pool, username);
 
-  return { mustChangePassword: false, token, maxAge };
+  return { mustChangePassword: false, token, maxAge, user: profile };
 };
 
-export default { login };
+export default { login, currentUser };
