@@ -107,6 +107,60 @@ if(process.env.NODE_ENV === 'production') {
     }
 }
 
+// APP_URL is glued in front of "?token=…" or "/employee-login" to build the
+// link in every email, so it has to be a complete base address and nothing
+// more.
+//
+// Found on UAT on 2026-09-23: it was set to `192.5.5.122:82`, with no scheme.
+// Every email went out. Outlook added the missing `http://` when the button
+// was clicked, and Gmail removed the link from the button altogether. Nothing
+// failed, so nothing said so.
+//
+// Checked in every environment, not only production. UAT runs as development,
+// which is how that value got past the production-only guard above.
+//
+// `new URL()` alone is not the check. It refuses `192.5.5.122:82`, but it
+// accepts `localhost:5173` as a URL whose protocol is `localhost:` — hence the
+// protocol test. And `?` and `#` are tested on the raw text, because a bare `?`
+// or `#` parses to an empty `search` and `hash`.
+//
+// A trailing slash is removed rather than refused. `http://x/` and `http://x`
+// mean the same thing, and kept it would build `http://x//employee-login`.
+const parseAppUrl = (raw, nodeEnv) => {
+    let url;
+
+    try {
+        url = new URL(raw);
+    } catch {
+        throw new Error(
+            `APP_URL must be a complete address starting with http:// or https://. Received "${raw}" — ` +
+            `did you mean "http://${raw}"? Without the scheme, Gmail removes the link from every email button.`,
+        );
+    }
+
+    if (url.protocol !== 'http:' && url.protocol !== 'https:')
+        throw new Error(
+            `APP_URL must start with http:// or https://. Received "${raw}", which reads as the protocol ` +
+            `"${url.protocol}". Without the scheme, Gmail removes the link from every email button.`,
+        );
+
+    if (nodeEnv === 'production' && url.protocol !== 'https:')
+        throw new Error(
+            `APP_URL must use https:// in production. Received "${raw}". The login cookie is marked secure ` +
+            'in production, and the invitation link carries the token that opens somebody\'s enrollment form.',
+        );
+
+    if (/[?#]/.test(raw))
+        throw new Error(
+            `APP_URL must not contain ? or #. Received "${raw}". Every email link is built by appending ` +
+            '"?token=…" or "/employee-login" to it, so anything after ? or # breaks all of them.',
+        );
+
+    return url.href.replace(/\/+$/, '');
+};
+
+const appUrl = parseAppUrl(process.env.APP_URL, process.env.NODE_ENV);
+
 const config = {
   PORT: process.env.PORT || 7000,
   // false when unset, which is the old hardcoded behaviour — but production
@@ -136,7 +190,7 @@ const config = {
   },
   jwtSecret: process.env.JWT_SECRET,
   corsOrigin: process.env.CORS_ORIGIN,
-  appUrl: process.env.APP_URL,
+  appUrl,
   nodeEnv: process.env.NODE_ENV,
   smtp: {
     host: process.env.SMTP_HOST,
