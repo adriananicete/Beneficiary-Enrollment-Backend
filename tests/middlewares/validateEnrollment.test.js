@@ -600,6 +600,17 @@ describe("validateEnrollment — what text may contain", () => {
     assert.ok(run(body).passed());
   });
 
+  // Titles carry digits ("Engineer II", "Level 3"), so only the length and a
+  // blank are checked.
+  test("a position title is capped at the column, and may hold digits", () => {
+    assert.match(
+      refusalFor({ position_title: "T".repeat(151) }).message,
+      /^position_title must not exceed 150/,
+    );
+    assert.ok(run({ ...validBody(), position_title: "Level 3 Engineer" }).passed());
+    assert.equal(refusalFor({ position_title: "  " }).message, "position_title is required");
+  });
+
   test("a beneficiary name of only spaces is missing", () => {
     const body = validBody();
     body.beneficiaries[0].full_name = "   ";
