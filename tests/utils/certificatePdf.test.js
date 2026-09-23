@@ -3,7 +3,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "fs";
 
 import { renderCertificate, SIGNATORY } from "../../src/utils/certificatePdf.js";
-import { pdfRuns, pdfText, compact, pageCount, contentStream } from "../helpers/pdfRuns.js";
+import {
+  pdfRuns,
+  pdfText,
+  compact,
+  pageCount,
+  contentStream,
+  imagePaints,
+  textBlocks,
+} from "../helpers/pdfRuns.js";
 
 // The layout, tested without a database. certificateService does the reading
 // and formatting; this file only proves that what it is handed lands on the
@@ -29,30 +37,29 @@ const policyNumberRun = EXAMPLE_RUNS.find(
   (run) => run.text !== undefined && run.text.startsWith("No.   "),
 );
 
-// pdfRuns reads text, rectangles and lines and not images, so the mark is
-// asserted from the content stream. PDFKit places an image as a matrix —
-// `width 0 0 -height x y cm` — followed by the paint, under the page's own
-// flip, so y is the mark's bottom edge measured from the top of the page.
+// pdfRuns reads text, rectangles and lines and not images, so images are read
+// by imagePaints, which follows the transformation in force at each paint.
 //
-// Matched as the pair rather than the matrix alone. `1 0 0 -1 0 792 cm` is the
-// page flip and PDFKit writes one before every text block, so a pattern for
-// the matrix by itself reports the flips as images — it did, and reported three
-// where there is one.
-const IMAGE_PAINT = /^([\d.]+) 0 0 (-?[\d.]+) ([\d.]+) ([\d.]+) cm\r?\n\/I\d+ Do$/gm;
+// That is needed since the watermark. It paints the same image as the mark,
+// thirty-six times, each under a rotation written in `cm` operators before the
+// image's own matrix. This file used to match only that own matrix, and it
+// would have gone on passing by accident: a tile's own matrix carries a
+// negative x, which the pattern here happened not to match.
+//
+// Upright paints are the mark and the signature. Tilted ones are the watermark.
+const uprightImages = (pdf) => imagePaints(pdf).filter((paint) => paint.angle === 0);
+const watermarkTiles = (pdf) => imagePaints(pdf).filter((paint) => paint.angle !== 0);
 
 const imagePlacements = (pdf) =>
-  [...contentStream(pdf).matchAll(IMAGE_PAINT)].map(([, width, height, x, bottom]) => ({
-    x: round(Number(x)),
-    top: round(Number(bottom) - Math.abs(Number(height))),
-    width: round(Number(width)),
-    height: round(Math.abs(Number(height))),
-  }));
+  uprightImages(pdf).map(({ x, top, width, height }) => ({ x, top, width, height }));
 
 // Counted from the paints, not from `/Subtype /Image`. A PNG carrying an alpha
 // channel is embedded as two image objects — the picture and an SMask for the
 // transparency — so counting the objects reports two per image and four for a
 // certificate with a mark and a signature.
 const imageCount = (pdf) => imagePlacements(pdf).length;
+
+const PAGE = { width: 612, height: 792 };
 
 // Enrollment 74 as the example prints it — including two things this system
 // deliberately does differently, so the layout can be compared like with like:
@@ -195,8 +202,9 @@ describe("renderCertificate — what the example does not show", () => {
   // Counted rather than matched, because the mark in the header is an image
   // too. `doesNotMatch(/\/Subtype \/Image/)` was the assertion here until the
   // logo landed, and it would now pass for a certificate carrying the mark and
-  // no signature, or the mark and two.
-  test("draws the mark and nothing else when there is no signature", async () => {
+  // no signature, or the mark and two. Upright images only: the watermark
+  // tiles are tilted, and are counted in their own tests below.
+  test("draws one upright image, the mark, when there is no signature", async () => {
     assert.equal(imageCount(await renderCertificate(EXAMPLE)), 1);
   });
 
@@ -213,5 +221,88 @@ describe("renderCertificate — what the example does not show", () => {
     await assert.rejects(() =>
       renderCertificate({ ...EXAMPLE, signatureImage: Buffer.from("GIF89a not really") }),
     );
+  });
+});
+
+// The faint, tilted mark repeated over the whole page, asked for 2026-09-23.
+//
+// What these cannot say is how it looks — whether 7% is too faint or too loud
+// on a real screen and a real printer. That was judged by rendering the page
+// and looking at it, and it is the business's call, not a test's.
+//
+// What they do pin is everything that would be expensive to get wrong quietly.
+// The worst of those is the opacity leaking past the watermark: every word on
+// the certificate would print at 7% and still pass every text assertion above.
+describe("renderCertificate — the watermark", () => {
+  test("tiles the mark over the page, tilted as Ant Design tilts it, and faint", async () => {
+    const pdf = await renderCertificate(EXAMPLE);
+    const [mark] = uprightImages(pdf);
+    const tiles = watermarkTiles(pdf);
+
+    assert.equal(tiles.length, 36);
+
+    for (const tile of tiles) {
+      assert.equal(tile.image, mark.image, "a tile paints something other than the mark");
+      assert.equal(tile.angle, -22);
+      assert.equal(tile.width, 90);
+      assert.equal(tile.height, 38.4);
+      assert.equal(tile.opacity, 0.07);
+    }
+  });
+
+  test("embeds the mark once, however many tiles paint it", async () => {
+    // Two objects, not thirty-seven: the picture and the SMask carrying its
+    // transparency. Each tile is a few bytes of drawing commands.
+    const pdf = await renderCertificate(EXAMPLE);
+
+    assert.equal((pdf.toString("latin1").match(/\/Subtype \/Image/g) ?? []).length, 2);
+  });
+
+  test("leaves every word, and the mark, at full strength", async () => {
+    const pdf = await renderCertificate(EXAMPLE);
+
+    assert.deepEqual(new Set(textBlocks(pdf).map((block) => block.opacity)), new Set([1]));
+    assert.equal(uprightImages(pdf)[0].opacity, 1);
+  });
+
+  test("is drawn first, so the whole certificate sits on top of it", async () => {
+    // A PDF paints in order. Anything drawn before the watermark would be
+    // underneath it.
+    const pdf = await renderCertificate(EXAMPLE);
+    const lastTile = Math.max(...watermarkTiles(pdf).map((tile) => tile.at));
+
+    assert.ok(lastTile < uprightImages(pdf)[0].at, "the mark is drawn under the watermark");
+    assert.ok(lastTile < textBlocks(pdf)[0].at, "text is drawn under the watermark");
+    assert.ok(lastTile < contentStream(pdf).search(/ re\r?\n/), "a table is drawn under the watermark");
+  });
+
+  test("draws nothing off the page, and leaves no edge bare", async () => {
+    const tiles = watermarkTiles(await renderCertificate(EXAMPLE));
+
+    for (const tile of tiles)
+      assert.ok(
+        tile.right > 0 && tile.x < PAGE.width && tile.bottom > 0 && tile.top < PAGE.height,
+        `a tile at ${tile.x}, ${tile.top} lies wholly off the page`,
+      );
+
+    // The pattern leaves 29.08 points between one row and the next, so a bare
+    // strip at the top or bottom no wider than that reads as part of it. The
+    // sides are covered past the edge.
+    assert.ok(Math.min(...tiles.map((tile) => tile.top)) < 29.08);
+    assert.ok(Math.max(...tiles.map((tile) => tile.bottom)) > PAGE.height - 29.08);
+    assert.ok(Math.min(...tiles.map((tile) => tile.x)) <= 0);
+    assert.ok(Math.max(...tiles.map((tile) => tile.right)) >= PAGE.width);
+  });
+
+  test("is on the tallest certificate too, which still fits one page", async () => {
+    // The ten-dependent test above guards the page count. This guards that the
+    // watermark is not what got dropped to make it fit.
+    const pdf = await renderCertificate({
+      ...EXAMPLE,
+      dependents: Array.from({ length: 10 }, (_, i) => dependent(i + 1)),
+    });
+
+    assert.equal(pageCount(pdf), 1);
+    assert.equal(watermarkTiles(pdf).length, 36);
   });
 });
