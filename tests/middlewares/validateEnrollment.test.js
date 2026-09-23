@@ -522,3 +522,99 @@ describe("validateEnrollment — the signature", () => {
     }
   });
 });
+
+// Added 2026-09-23. Until then a name was checked for length and nothing else.
+describe("validateEnrollment — what text may contain", () => {
+  const refusalFor = (overrides) => run({ ...validBody(), ...overrides }).refusal();
+
+  test("refuses a name with a digit in it", () => {
+    // Four characters, because suffix is capped at five and a longer value
+    // would be refused for its length first — which is the ordering below.
+    for (const field of ["first_name", "middle_name", "last_name", "suffix"]) {
+      const refusal = refusalFor({ [field]: "Ana2" });
+
+      assert.equal(refusal.statusCode, 400, field);
+      assert.match(refusal.message, new RegExp(`^${field} may only contain`), field);
+    }
+  });
+
+  test("refuses a nationality with a digit in it", () => {
+    assert.match(refusalFor({ nationality: "Filipino1" }).message, /^nationality may only contain/);
+  });
+
+  test("accepts the names Filipino forms actually carry", () => {
+    assert.ok(
+      run({
+        ...validBody(),
+        first_name: "Ma. Niña",
+        middle_name: "D'Souza",
+        last_name: "Dela Cruz-Santos",
+        suffix: "Jr.",
+      }).passed(),
+    );
+  });
+
+  test("a name of only spaces is missing, not present", () => {
+    assert.equal(refusalFor({ first_name: "   " }).message, "first_name is required");
+  });
+
+  test("an optional name may still be empty, or only spaces", () => {
+    assert.ok(run({ ...validBody(), middle_name: "", suffix: "   " }).passed());
+  });
+
+  test("trims what it lets through, so what is stored is what was meant", () => {
+    const body = { ...validBody(), first_name: "  Angela  ", last_name: "Bautista " };
+
+    assert.ok(run(body).passed());
+    assert.equal(body.first_name, "Angela");
+    assert.equal(body.last_name, "Bautista");
+  });
+
+  test("a name that is a number is refused, not stored as its digits", () => {
+    assert.equal(refusalFor({ first_name: 123 }).message, "first_name must be text");
+  });
+
+  // Order: too long is reported as too long, whatever else is wrong with it.
+  test("an overlong name with a digit is reported for its length", () => {
+    assert.match(refusalFor({ first_name: `${"A".repeat(101)}1` }).message, /must not exceed/);
+  });
+
+  test("refuses a beneficiary name with a digit, and says which beneficiary", () => {
+    const body = validBody();
+    body.beneficiaries[1].full_name = "Test Bene 1";
+
+    assert.match(run(body).refusal().message, /^Beneficiary 2: full_name may only contain/);
+  });
+
+  test("refuses a beneficiary relationship with a digit", () => {
+    const body = validBody();
+    body.beneficiaries[0].relationship = "Child 2";
+
+    assert.match(run(body).refusal().message, /^Beneficiary 1: relationship may only contain/);
+  });
+
+  test("accepts an in-law, which is why a relationship may carry a hyphen", () => {
+    const body = validBody();
+    body.beneficiaries[0].relationship = "Mother-in-law";
+
+    assert.ok(run(body).passed());
+  });
+
+  // Titles carry digits ("Engineer II", "Level 3"), so only the length and a
+  // blank are checked.
+  test("a position title is capped at the column, and may hold digits", () => {
+    assert.match(
+      refusalFor({ position_title: "T".repeat(151) }).message,
+      /^position_title must not exceed 150/,
+    );
+    assert.ok(run({ ...validBody(), position_title: "Level 3 Engineer" }).passed());
+    assert.equal(refusalFor({ position_title: "  " }).message, "position_title is required");
+  });
+
+  test("a beneficiary name of only spaces is missing", () => {
+    const body = validBody();
+    body.beneficiaries[0].full_name = "   ";
+
+    assert.equal(run(body).refusal().message, "Beneficiary name is required");
+  });
+});

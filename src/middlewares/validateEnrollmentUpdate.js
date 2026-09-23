@@ -25,8 +25,21 @@ import {
   CLIENT_FIELD_LENGTHS,
   validateFieldLengths,
 } from "../utils/validateFieldLengths.js";
+import {
+  BENEFICIARY_TEXT_RULES,
+  CLIENT_TEXT_RULES,
+  validateTextFields,
+} from "../utils/validateTextFields.js";
+import { trimBeneficiaries, trimStrings } from "../utils/trimStrings.js";
+import { validateEmailAddress } from "../utils/validateEmailAddress.js";
 
 export const validateEnrollmentUpdate = (req, res, next) => {
+  // First, as on the submit path. A change request carries the whole pre-filled
+  // record, so this also trims values that were stored untrimmed before this
+  // check existed — which is a correction, not a change the employee made.
+  trimStrings(req.body);
+  trimBeneficiaries(req.body.beneficiaries);
+
   const { client_address_id, beneficiaries } = req.body;
 
   // Before the length check below, not after. gender is capped at 1 to match
@@ -108,12 +121,31 @@ export const validateEnrollmentUpdate = (req, res, next) => {
       );
       if (lengthError)
         return next(new AppError(`Beneficiary ${i + 1}: ${lengthError}`, 400));
+
+      // Every beneficiary in the payload, not only the edited ones — the
+      // payload is the whole intended list. So a beneficiary stored with a
+      // digit in their name before this check existed has to be corrected in
+      // the same request. On 2026-09-23 the only two were test records.
+      const textError = validateTextFields(beneficiaries[i], BENEFICIARY_TEXT_RULES);
+      if (textError)
+        return next(new AppError(`Beneficiary ${i + 1}: ${textError}`, 400));
     }
   }
 
   for (let field of requiredFields) {
     if (!req.body[field]) return next(new AppError(`${field} is required`, 400));
   }
+
+  // After the required loop, so a missing name reports itself as missing.
+  const textError = validateTextFields(req.body, CLIENT_TEXT_RULES);
+  if (textError) return next(new AppError(textError, 400));
+
+  // Only here, not on submit: at enrollment the address comes from the
+  // invitation, which was checked when HR uploaded it, and anything in the body
+  // is ignored. Here it is typed by the employee, and on approval it is synced
+  // to sec.us01_users, which is where every later email to them is sent.
+  const emailError = validateEmailAddress(req.body.email_address);
+  if (emailError) return next(new AppError(emailError, 400));
 
   // After the required-field loop, so a missing height or weight reports itself
   // as missing rather than as out of range.

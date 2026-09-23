@@ -67,6 +67,21 @@ describe("the caps themselves", () => {
     );
   });
 
+  test("position_title is capped at 150, matching client_employers", () => {
+    // No cap until 2026-09-23, so a longer title reached SQL Server and came
+    // back as an unmapped truncation error — a 500 for a typing mistake.
+    assert.equal(CLIENT_FIELD_LENGTHS.position_title, 150);
+
+    assert.equal(
+      validateFieldLengths({ position_title: "T".repeat(150) }, CLIENT_FIELD_LENGTHS),
+      null,
+    );
+    assert.equal(
+      validateFieldLengths({ position_title: "T".repeat(151) }, CLIENT_FIELD_LENGTHS),
+      "position_title must not exceed 150 characters",
+    );
+  });
+
   test("barangay_id allows exactly nine characters", () => {
     // Barangay codes carry a leading zero — "012801001". Anything narrower
     // would refuse a real code; anything wider would admit a malformed one.

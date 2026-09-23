@@ -22,6 +22,12 @@ export const CLIENT_FIELD_LENGTHS = {
   // Until that lands, this cap stops the id growing past the column but not past
   // that procedure.
   employee_id_number: 50,
+  // Stored in dbo.client_employers, not dbo.clients, and here because this map
+  // is the personal payload rather than one table. It had no cap until
+  // 2026-09-23, so a title past the column reached SQL Server, whose truncation
+  // error is unmapped and answered 500. 150 is the column width, read from
+  // INFORMATION_SCHEMA that day. Only the submit path sends it.
+  position_title: 150,
   first_name: 100,
   middle_name: 100,
   last_name: 100,
