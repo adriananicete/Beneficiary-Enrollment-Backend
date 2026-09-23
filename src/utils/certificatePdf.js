@@ -69,6 +69,20 @@ const LOGO = asset("logo/phillife.png");
 const LOGO_TOP = 40;
 const LOGO_HEIGHT = 30;
 
+// The watermark: the same mark, faint and tilted, repeated over the whole page,
+// the way Ant Design's <Watermark> tiles a web page. It cannot be that
+// component — this is a PDF built on the server, with no browser — so it is
+// drawn here, and it is on every certificate on all three paths because they
+// share this renderer. Asked for 2026-09-23; always on, not per environment.
+//
+// Alternate rows are shifted half a step, as Ant Design staggers them, so the
+// marks form diagonals rather than a grid. The angle is Ant Design's default.
+const WATERMARK_WIDTH = 90;
+const WATERMARK_GAP_X = 60;
+const WATERMARK_GAP_Y = 60;
+const WATERMARK_ANGLE = -22;
+const WATERMARK_OPACITY = 0.07;
+
 const LEFT = 48;
 const RIGHT = 564;
 const WIDTH = RIGHT - LEFT;
@@ -180,6 +194,65 @@ const line = (doc, x1, y1, x2, y2) =>
 
 const centered = (doc, text, left, right, y) =>
   doc.text(text, left, y, { width: right - left, align: "center" });
+
+// Drawn first, because a PDF paints in order: whatever comes later sits on top,
+// so every word and line of the certificate stays over the watermark.
+//
+// It changes nothing else on the page, and that is what the ten-dependent test
+// guards. Only text can push PDFKit onto a new page, and this draws images. The
+// cursor is put back anyway, because PDFKit moves doc.y past an image drawn at
+// the cursor's own height, and the text below is positioned from explicit
+// coordinates that should not depend on where a tile happened to land.
+//
+// One image, painted many times. The header mark opens the same file, and
+// PDFKit keys its images by path, so the PDF embeds the mark once however many
+// tiles there are, and each tile costs a few bytes of drawing commands.
+const drawWatermark = (doc) => {
+  const { x, y } = doc;
+  const mark = doc.openImage(LOGO);
+  const height = (WATERMARK_WIDTH * mark.height) / mark.width;
+
+  const stepX = WATERMARK_WIDTH + WATERMARK_GAP_X;
+  const stepY = height + WATERMARK_GAP_Y;
+
+  // A tile is placed by its centre, so starting and ending half a diagonal
+  // beyond the page is what lets the tilted corners reach every edge.
+  const reach = Math.hypot(WATERMARK_WIDTH, height) / 2;
+
+  // Half the upright box around one tilted tile. Smaller than `reach`, so the
+  // loop's outermost tiles can fall wholly outside the page — 14 of 50 did —
+  // and those are skipped rather than drawn where nobody can see them.
+  const tilt = (Math.abs(WATERMARK_ANGLE) * Math.PI) / 180;
+  const halfWidth = (WATERMARK_WIDTH * Math.cos(tilt) + height * Math.sin(tilt)) / 2;
+  const halfHeight = (WATERMARK_WIDTH * Math.sin(tilt) + height * Math.cos(tilt)) / 2;
+
+  const onPage = (centreX, centreY) =>
+    centreX + halfWidth > 0 &&
+    centreX - halfWidth < doc.page.width &&
+    centreY + halfHeight > 0 &&
+    centreY - halfHeight < doc.page.height;
+
+  doc.save().opacity(WATERMARK_OPACITY);
+
+  for (let row = 0, centreY = -reach; centreY < doc.page.height + reach; row++, centreY += stepY) {
+    const shift = row % 2 === 1 ? stepX / 2 : 0;
+
+    for (let centreX = -reach + shift; centreX < doc.page.width + reach; centreX += stepX) {
+      if (!onPage(centreX, centreY)) continue;
+
+      doc
+        .save()
+        .translate(centreX, centreY)
+        .rotate(WATERMARK_ANGLE)
+        .image(mark, -WATERMARK_WIDTH / 2, -height / 2, { width: WATERMARK_WIDTH })
+        .restore();
+    }
+  }
+
+  doc.restore();
+  doc.x = x;
+  doc.y = y;
+};
 
 const drawHeader = (doc, { policyNo, companyName, groupPolicyNo }) => {
   // Before the text, so a mark with any transparency sits over the page rather
@@ -418,6 +491,8 @@ export const renderCertificate = (data) =>
 
     try {
       for (const [name, path] of Object.entries(FONTS)) doc.registerFont(name, path);
+
+      drawWatermark(doc);
 
       const infoTop = drawHeader(doc, data);
       const coverageTop = drawInfoTable(doc, infoTop, data);

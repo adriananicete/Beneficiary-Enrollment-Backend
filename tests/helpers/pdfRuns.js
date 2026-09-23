@@ -125,6 +125,97 @@ export const contentStream = (buffer) => {
   );
 };
 
+// A PDF transformation matrix [a b c d e f] applied after another: `cm`
+// concatenates onto whatever is already in force.
+const concat = ([a, b, c, d, e, f], [A, B, C, D, E, F]) => [
+  a * A + b * C,
+  a * B + b * D,
+  c * A + d * C,
+  c * B + d * D,
+  e * A + f * C + E,
+  e * B + f * D + F,
+];
+
+// The fill opacity an ExtGState name stands for, read from the object it
+// points at. 1 when the page never set one.
+const opacityOf = (text, objects, name) => {
+  const ref = text.match(new RegExp(`/${name} (\\d+) 0 R`));
+  const ca = ref && objects.get(Number(ref[1])).body.match(/\/ca ([\d.]+)/);
+  return ca ? Number(ca[1]) : 1;
+};
+
+// Walks the page's drawing commands keeping the graphics state, so every image
+// and every text block can be reported with the transformation and opacity in
+// force when it was drawn. pdfRuns cannot do this and does not need to: it
+// reads text by its own matrix, which PDFKit always writes in full.
+//
+// An image cannot be read that way. Its own matrix is only its size and offset;
+// the rotation and translation that place a watermark tile are written before
+// it, in `cm` operators that `q` and `Q` save and restore. The mark and every
+// tile paint the same image object, so without this they are indistinguishable.
+//
+// Positions are points from the top-left corner, as in pdfRuns. `x` and `top`
+// are the corner of the smallest upright box around the image, `right` and
+// `bottom` the opposite corner, `angle` its tilt in degrees (negative rises to
+// the right), and `at` where in the content stream it was drawn.
+const walk = (buffer) => {
+  const text = buffer.toString("latin1");
+  const objects = objectsOf(text);
+  const pageHeight = Number(text.match(/\/MediaBox \[0 0 [\d.]+ ([\d.]+)\]/)[1]);
+  const content = contentStream(buffer);
+
+  const images = [];
+  const textBlocks = [];
+  const saved = [];
+  let state = { matrix: [1, 0, 0, 1, 0, 0], opacity: 1 };
+  let at = 0;
+
+  for (const line of content.split("\n")) {
+    const op = line.trim();
+    let m;
+
+    if (op === "q") saved.push(state);
+    else if (op === "Q") state = saved.pop();
+    else if ((m = op.match(/^(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) cm$/)))
+      state = { ...state, matrix: concat(m.slice(1).map(Number), state.matrix) };
+    else if ((m = op.match(/^\/(\w+) gs$/)))
+      state = { ...state, opacity: opacityOf(text, objects, m[1]) };
+    else if (op === "BT") textBlocks.push({ at, opacity: state.opacity });
+    else if ((m = op.match(/^\/(I\d+) Do$/))) {
+      const [a, b, c, d, e, f] = state.matrix;
+      const corners = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => [
+        a * u + c * v + e,
+        pageHeight - (b * u + d * v + f),
+      ]);
+      const xs = corners.map(([x]) => x);
+      const ys = corners.map(([, y]) => y);
+
+      images.push({
+        image: m[1],
+        x: round(Math.min(...xs)),
+        top: round(Math.min(...ys)),
+        right: round(Math.max(...xs)),
+        bottom: round(Math.max(...ys)),
+        width: round(Math.hypot(a, b)),
+        height: round(Math.hypot(c, d)),
+        // `|| 0` because an upright image computes -0, which strict equality
+        // tells apart from 0.
+        angle: round((Math.atan2(-b, a) * 180) / Math.PI) || 0,
+        opacity: state.opacity,
+        at,
+      });
+    }
+
+    at += line.length + 1;
+  }
+
+  return { images, textBlocks, content };
+};
+
+export const imagePaints = (buffer) => walk(buffer).images;
+
+export const textBlocks = (buffer) => walk(buffer).textBlocks;
+
 export const compact = (value) => String(value).replace(/[\s|]/g, "");
 
 export const pdfText = (buffer) =>
@@ -138,4 +229,4 @@ export const pdfText = (buffer) =>
 export const pageCount = (buffer) =>
   (buffer.toString("latin1").match(/\/Type \/Page\b/g) ?? []).length;
 
-export default { pdfRuns, pdfText, compact, pageCount, contentStream };
+export default { pdfRuns, pdfText, compact, pageCount, contentStream, imagePaints, textBlocks };
