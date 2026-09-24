@@ -122,6 +122,8 @@ export const buildCertificateData = async (pool, clientId) => {
     // Who the certificate goes to when HR resends it. Not printed.
     email: record.email_address,
     firstName: record.first_name,
+    // Only for the filename. The certificate prints insuredName.
+    lastName: record.last_name,
     policyNo: record.policy_no,
     groupPolicyNo: record.group_policy_no,
     companyName: record.company_name,
@@ -162,14 +164,37 @@ const loadSignature = async () => {
   }
 };
 
-// The email attachment: a name, a type, and the bytes. The filename carries the
-// enrollment id, matching the example the format was copied from.
+// One piece of the filename, reduced to ASCII letters, digits and single
+// hyphens. The name rule allows accented letters, periods and apostrophes, and
+// a filename has to survive every email client and file system it lands in.
+// The certificate inside still prints the name as stored.
+//
+//   "Peña" → "Pena", "Ma. Luisa" → "Ma-Luisa", "O'Neil" → "ONeil"
+//
+// A letter with no ASCII base, such as one from a non-Latin script, drops out.
+const fileNamePart = (value) =>
+  (value ?? "")
+    .toString()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/['’.]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+// The business's format: the policy number, then the first and last name.
+// G-TLI-26-137-2600016-Juan-Dela-Cruz.pdf. No middle name and no suffix. The
+// case is left as stored. The policy number alone keeps the file unique, so a
+// name that reduces to nothing leaves just the number.
+export const certificateFileName = ({ policyNo, firstName, lastName }) =>
+  `${[policyNo, firstName, lastName].map(fileNamePart).filter(Boolean).join("-")}.pdf`;
+
+// The email attachment: a name, a type, and the bytes.
 const toAttachment = async (data) => {
   const signatureImage = await loadSignature();
   const content = await renderCertificate({ ...data, signatureImage });
 
   return {
-    name: `Certificate-of-Coverage-${data.enrollmentId}.pdf`,
+    name: certificateFileName(data),
     contentType: "application/pdf",
     content,
   };
