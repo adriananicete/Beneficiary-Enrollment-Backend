@@ -16,6 +16,7 @@ const {
   resendCertificate,
   tryBuildCertificate,
   formatCoverageDate,
+  certificateFileName,
 } = await import("../../src/services/certificateService.js");
 
 // What the certificate says, as opposed to where it says it — the layout is
@@ -231,12 +232,13 @@ describe("certificateService — the attachment", () => {
     config.certificateSignaturePath = originalPath;
   });
 
-  test("is a PDF named after the enrollment, carrying its numbers", async () => {
+  // The middle name, "Adrian", is on the record and stays out of the name.
+  test("is a PDF named after the policy and the employee, carrying its numbers", async () => {
     const { pool } = poolFor();
 
     const attachment = await buildCertificate(pool, 96);
 
-    assert.equal(attachment.name, "Certificate-of-Coverage-74.pdf");
+    assert.equal(attachment.name, "G-TLI-26-136-2600030-Lorenz-Artillagas.pdf");
     assert.equal(attachment.contentType, "application/pdf");
     assert.equal(attachment.content.subarray(0, 5).toString(), "%PDF-");
 
@@ -319,7 +321,7 @@ describe("certificateService — resendCertificate, HR's button", () => {
 
     const { message } = sends[0];
     assert.equal(message.toRecipients[0].emailAddress.address, "lorenz@coforge.com");
-    assert.equal(message.attachments[0].name, "Certificate-of-Coverage-74.pdf");
+    assert.equal(message.attachments[0].name, "G-TLI-26-136-2600030-Lorenz-Artillagas.pdf");
     assert.equal(
       Buffer.from(message.attachments[0].contentBytes, "base64").subarray(0, 5).toString(),
       "%PDF-",
@@ -399,7 +401,7 @@ describe("certificateService — certificateForDecision, after a change request"
 
     const attachment = await certificateForDecision(pool, 96, true);
 
-    assert.equal(attachment.name, "Certificate-of-Coverage-74.pdf");
+    assert.equal(attachment.name, "G-TLI-26-136-2600030-Lorenz-Artillagas.pdf");
     assert.equal(inputsFor(calls, DETAILS).client_id, 96);
   });
 
@@ -463,6 +465,50 @@ describe("certificateService — tryBuildCertificate, for the senders that must 
 
     const attachment = await tryBuildCertificate(pool, 96);
 
-    assert.equal(attachment.name, "Certificate-of-Coverage-74.pdf");
+    assert.equal(attachment.name, "G-TLI-26-136-2600030-Lorenz-Artillagas.pdf");
+  });
+});
+
+describe("certificateService — the filename", () => {
+  const name = (firstName, lastName, policyNo = "G-TLI-26-137-2600016") =>
+    certificateFileName({ policyNo, firstName, lastName });
+
+  test("is the business's example exactly", () => {
+    assert.equal(name("Juan", "Dela Cruz"), "G-TLI-26-137-2600016-Juan-Dela-Cruz.pdf");
+  });
+
+  test("leaves the suffix out, like the middle name", async () => {
+    const { pool } = poolFor({ details: [enrollmentRow({ suffix: "Jr." })] });
+
+    const attachment = await buildCertificate(pool, 96);
+
+    assert.equal(attachment.name, "G-TLI-26-136-2600030-Lorenz-Artillagas.pdf");
+  });
+
+  test("takes accents off, and drops periods and apostrophes", () => {
+    assert.equal(name("Ma. Luisa", "Peña"), "G-TLI-26-137-2600016-Ma-Luisa-Pena.pdf");
+    assert.equal(name("José", "O'Neil"), "G-TLI-26-137-2600016-Jose-ONeil.pdf");
+    assert.equal(name("Jose", "O’Neil"), "G-TLI-26-137-2600016-Jose-ONeil.pdf");
+  });
+
+  // The same ñ can arrive as one character or as n plus a combining tilde.
+  test("treats a decomposed ñ the same as a composed one", () => {
+    assert.equal(name("Juan", "Pen\u0303a"), "G-TLI-26-137-2600016-Juan-Pena.pdf");
+  });
+
+  test("keeps the case as stored", () => {
+    assert.equal(name("JUAN", "DELA CRUZ"), "G-TLI-26-137-2600016-JUAN-DELA-CRUZ.pdf");
+  });
+
+  test("collapses runs of spaces and hyphens, and trims the ends", () => {
+    assert.equal(name(" Anne-Marie ", "Dela  Cruz"), "G-TLI-26-137-2600016-Anne-Marie-Dela-Cruz.pdf");
+    assert.equal(name("Anne - Marie", "Cruz"), "G-TLI-26-137-2600016-Anne-Marie-Cruz.pdf");
+  });
+
+  // The policy number alone keeps the file unique, so a name with nothing
+  // ASCII in it leaves no dangling hyphens behind.
+  test("is the policy number alone when the name reduces to nothing", () => {
+    assert.equal(name("李", "王"), "G-TLI-26-137-2600016.pdf");
+    assert.equal(name(null, undefined), "G-TLI-26-137-2600016.pdf");
   });
 });

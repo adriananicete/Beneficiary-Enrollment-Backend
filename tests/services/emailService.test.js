@@ -200,13 +200,13 @@ describe("emailService — the Certificate of Coverage attachment", () => {
 
     await sendConfirmationEmail({
       ...confirmation,
-      attachments: [{ name: "Certificate-of-Coverage-74.pdf", contentType: "application/pdf", content }],
+      attachments: [{ name: "G-TLI-26-136-2600030-Lorenz-Artillagas.pdf", contentType: "application/pdf", content }],
     });
 
     assert.deepEqual(sentMessage(calls).attachments, [
       {
         "@odata.type": "#microsoft.graph.fileAttachment",
-        name: "Certificate-of-Coverage-74.pdf",
+        name: "G-TLI-26-136-2600030-Lorenz-Artillagas.pdf",
         contentType: "application/pdf",
         contentBytes: content.toString("base64"),
       },
@@ -227,11 +227,11 @@ describe("emailService — the Certificate of Coverage attachment", () => {
       firstName: "Lorenz",
       approved: true,
       reviewRemarks: null,
-      attachments: [{ name: "Certificate-of-Coverage-74.pdf", contentType: "application/pdf", content }],
+      attachments: [{ name: "G-TLI-26-136-2600030-Lorenz-Artillagas.pdf", contentType: "application/pdf", content }],
     });
 
     const message = sentMessage(calls);
-    assert.equal(message.attachments[0].name, "Certificate-of-Coverage-74.pdf");
+    assert.equal(message.attachments[0].name, "G-TLI-26-136-2600030-Lorenz-Artillagas.pdf");
     assert.equal(message.attachments[0].contentBytes, content.toString("base64"));
     assert.match(message.body.content, /Certificate of Coverage is attached/);
   });
