@@ -85,4 +85,88 @@ describe("errorHandler", () => {
       assert.equal(handle(err).body.success, false);
     }
   });
+
+  // Only AppError speaks for itself. Anything else carrying a status keeps the
+  // status, never the message.
+  test("a 4xx that is not an AppError keeps its status and loses its message", () => {
+    const res = handle({ status: 400, type: "something.unknown", message: "internal detail 12345" });
+
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.message, "The request could not be read.");
+  });
+
+  test("a 5xx from a library is the plain 500", () => {
+    const res = handle({ status: 503, message: "stream not readable" });
+
+    assert.equal(res.statusCode, 500);
+    assert.equal(res.body.message, "Server Error");
+  });
+});
+
+// The real libraries, through a real app. A fake error object would only prove
+// the shape that was assumed, which is how a test passed today while the real
+// procedure threw something else. These are the errors express.json() and the
+// router actually raise.
+describe("errorHandler — what the libraries raise", () => {
+  let server;
+  let base;
+
+  before(async () => {
+    const { default: express } = await import("express");
+
+    const app = express();
+    app.use(express.json({ limit: "1kb" }));
+    app.post("/body", (req, res) => res.status(200).json({ reached: true }));
+    app.get("/enrollments/:client_id", (req, res) => res.status(200).json({ reached: true }));
+    app.use(errorHandler);
+
+    server = app.listen(0);
+    base = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  after(() => server.close());
+
+  const post = (body, type = "application/json") =>
+    fetch(`${base}/body`, { method: "POST", headers: { "Content-Type": type }, body });
+
+  // It used to answer with the parser's message, which quoted the body back.
+  test("malformed JSON is 400, in our words, without the body quoted back", async () => {
+    const response = await post('{"username": EMP-SECRET-020}');
+    const text = await response.text();
+
+    assert.equal(response.status, 400);
+    assert.equal(JSON.parse(text).message, "The request body is not valid JSON.");
+    assert.ok(!text.includes("EMP-SECRET-020"), text);
+  });
+
+  test("a body over the limit is 413", async () => {
+    const response = await post(JSON.stringify({ a: "x".repeat(2000) }));
+
+    assert.equal(response.status, 413);
+    assert.equal((await response.json()).message, "The request body is too large.");
+  });
+
+  test("an unsupported charset is 415, without repeating it", async () => {
+    const response = await post('{"a":1}', "application/json; charset=klingon");
+    const text = await response.text();
+
+    assert.equal(response.status, 415);
+    assert.equal(JSON.parse(text).message, "The request body's encoding is not supported.");
+    assert.ok(!/klingon/i.test(text), text);
+  });
+
+  // The router sets `status` and not `statusCode`, so this was a 500 for
+  // anybody who sent one bad character.
+  test("a URL param that does not decode is 400, not 500", async () => {
+    const response = await fetch(`${base}/enrollments/%E0%A4%A`);
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).message, "The request could not be read.");
+  });
+
+  test("an ordinary request is untouched", async () => {
+    const response = await post('{"a":1}');
+
+    assert.equal(response.status, 200);
+  });
 });
