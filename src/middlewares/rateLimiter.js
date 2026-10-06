@@ -47,10 +47,42 @@ const asKeyText = (value) =>
 export const loginAttemptKey = (req) =>
   `${ipKeyGenerator(req.ip)}:${asKeyText(req.body?.username) ?? "unknown"}`;
 
+// The two logins. Not the change-password routes: their body carries no
+// username, which is the defect passwordChangeLimiter below exists to fix.
 export const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: isDev ? 100 : 10, // 100 sa dev, 10 sa prod
   keyGenerator: loginAttemptKey,
+  message: {
+    success: false,
+    message: "Too many attempts, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// The two change-password routes used strictLimiter until 2026-10-06. It keys
+// on req.body.username, and a change-password body is { oldPassword,
+// newPassword }: the username comes from the reset token. So every change from
+// one address keyed as "<ip>:unknown", ten per fifteen minutes for a whole
+// office. On the first morning the eleventh new employee changing a temporary
+// password would have been refused, with a fifteen-minute reset token running
+// out while they waited. Not visible on UAT, where the limit is 100.
+//
+// Keyed on the username inside the reset token, so verifyResetToken has to
+// run first. The username alone, without the address: the token is signed, so
+// nobody can spend another person's budget, and the bound holds however many
+// addresses the token's holder uses.
+export const passwordChangeKey = (req) => {
+  const username = asKeyText(req.resetUser?.username);
+
+  return username ? `reset:${username}` : ipKeyGenerator(req.ip);
+};
+
+export const passwordChangeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 100 : 10,
+  keyGenerator: passwordChangeKey,
   message: {
     success: false,
     message: "Too many attempts, please try again later.",
