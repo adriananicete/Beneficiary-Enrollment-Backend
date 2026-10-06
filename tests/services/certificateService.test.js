@@ -10,6 +10,7 @@ import { pdfText, compact } from "../helpers/pdfRuns.js";
 
 const { default: config } = await import("../../src/config/env.js");
 const {
+  autoCertificateFor,
   buildCertificateData,
   buildCertificate,
   certificateForDecision,
@@ -27,6 +28,10 @@ const {
 const DETAILS = "usp_get_insurance_enrollment_by_id";
 const BENEFITS = "usp_get_enrollment_benefits_by_id";
 const BENEFICIARIES = "usp_sel_beneficiaries";
+// The company's automatic-certificate setting, DBA request 19.
+const SETTING = "usp_sel_coc_email_by_client";
+const COC_ON = [{ employer_id: "1", send_coc_email: true }];
+const COC_OFF = [{ employer_id: "1", send_coc_email: false }];
 
 // mssql hands a datetime back as a Date labelled UTC, holding the wall-clock
 // time the database wrote with getdate(): 13:18 local arrives as 13:18Z.
@@ -64,11 +69,12 @@ const beneficiary = (full_name, relationship, coverage_percent) => ({
   coverage_percent,
 });
 
-const poolFor = ({ details = [enrollmentRow()], benefits = BENEFIT_ROWS, beneficiaries = [beneficiary("Christine Fadul", "Spouse", 100)] } = {}) =>
+const poolFor = ({ details = [enrollmentRow()], benefits = BENEFIT_ROWS, beneficiaries = [beneficiary("Christine Fadul", "Spouse", 100)], setting = COC_ON } = {}) =>
   fakePool({
     [DETAILS]: details,
     [BENEFITS]: benefits,
     [BENEFICIARIES]: beneficiaries,
+    [SETTING]: setting,
   });
 
 describe("certificateService — what the certificate says", () => {
@@ -410,7 +416,7 @@ describe("certificateService — certificateForDecision, after a change request"
   test("a rejection carries none, and reads nothing to decide that", async () => {
     const { pool, calls } = poolFor();
 
-    assert.equal(await certificateForDecision(pool, 96, false), null);
+    assert.ok(isNothing(await certificateForDecision(pool, 96, false)), "a rejection attached a certificate");
     assert.equal(calls.length, 0);
   });
 
@@ -422,9 +428,109 @@ describe("certificateService — certificateForDecision, after a change request"
     console.error = () => {};
 
     try {
-      assert.equal(await certificateForDecision(pool, 96, true), null);
+      assert.ok(isNothing(await certificateForDecision(pool, 96, true)), "a certificate that cannot be built was attached anyway");
     } finally {
       console.error = restore;
+    }
+  });
+});
+
+// DBA request 19, decided 2026-10-06: a company can turn off the certificate
+// on the emails sent automatically. The emails still go, without the PDF.
+//
+// "Nothing attached" is asserted as a boolean, never as assert.equal(x, null).
+// When that fails, x is a whole PDF attachment, and the assertion's diff of it
+// ran the test process out of memory. The file crashed instead of reporting a
+// failure. Found by mutation testing on 2026-10-06.
+const isNothing = (attachment) => attachment === null;
+
+describe("certificateService — autoCertificateFor, the company's setting", () => {
+  const quietly = async (run) => {
+    const logged = [];
+    const restore = console.error;
+    console.error = (...args) => logged.push(args.join(" "));
+
+    try {
+      return { result: await run(), logged };
+    } finally {
+      console.error = restore;
+    }
+  };
+
+  test("with the setting on, the certificate is attached", async () => {
+    const { pool, calls } = poolFor({ setting: COC_ON });
+
+    const attachment = await autoCertificateFor(pool, 96);
+
+    assert.equal(attachment.name, "G-TLI-26-136-2600030-Lorenz-Artillagas.pdf");
+    assert.equal(inputsFor(calls, SETTING).client_id, 96);
+  });
+
+  // Not built at all, so a company that said no costs nothing either.
+  test("with the setting off, nothing is attached and nothing is built", async () => {
+    const { pool, calls } = poolFor({ setting: COC_OFF });
+
+    assert.ok(isNothing(await autoCertificateFor(pool, 96)), "a certificate was attached for a company that turned it off");
+    assert.deepEqual(
+      calls.map((call) => call.procedure),
+      [SETTING],
+      "the certificate was read or built for a company that turned it off",
+    );
+  });
+
+  test("a client with no current company gets nothing", async () => {
+    const { pool } = poolFor({ setting: [] });
+
+    assert.ok(isNothing(await autoCertificateFor(pool, 96)), "a certificate was attached with no current company");
+  });
+
+  // A company that said no is respected even when the answer cannot be read.
+  // HR can still resend.
+  test("a setting that cannot be read attaches nothing, never rejects, and says which client", async () => {
+    const { pool } = poolFor({
+      setting: () => {
+        throw Object.assign(new Error("deadlock"), { number: 1205 });
+      },
+    });
+
+    const { result, logged } = await quietly(() => autoCertificateFor(pool, 96));
+
+    assert.ok(isNothing(result), "a certificate was attached though the setting could not be read");
+    assert.match(logged[0], /client 96/);
+  });
+
+  test("an approval follows the company's setting", async () => {
+    const { pool, calls } = poolFor({ setting: COC_OFF });
+
+    assert.ok(isNothing(await certificateForDecision(pool, 96, true)), "an approval attached a certificate the company turned off");
+    assert.equal(calls.some((call) => call.procedure === DETAILS), false);
+  });
+
+  // The manual resend is HR asking for it. The setting is about the emails
+  // nobody asked for.
+  test("HR's resend ignores the setting and never reads it", async () => {
+    // Graph stubbed as the resend tests above stub it.
+    const realFetch = globalThis.fetch;
+    const sends = [];
+
+    globalThis.fetch = async (url, options) => {
+      if (/login\.microsoftonline\.com/.test(String(url)))
+        return { ok: true, status: 200, json: async () => ({ access_token: "tok", expires_in: 0 }) };
+
+      sends.push(JSON.parse(options.body));
+      return { ok: true, status: 202, text: async () => "" };
+    };
+
+    try {
+      const { pool, calls } = poolFor({ setting: COC_OFF });
+
+      await resendCertificate(pool, 96);
+
+      assert.equal(sends.length, 1);
+      assert.equal(sends[0].message.attachments.length, 1, "the resend went without the certificate");
+      assert.equal(calls.some((call) => call.procedure === SETTING), false);
+    } finally {
+      globalThis.fetch = realFetch;
     }
   });
 });
@@ -439,7 +545,7 @@ describe("certificateService — tryBuildCertificate, for the senders that must 
     console.error = () => {};
 
     try {
-      assert.equal(await tryBuildCertificate(pool, 96), null);
+      assert.ok(isNothing(await tryBuildCertificate(pool, 96)), "a certificate that cannot be built was attached anyway");
     } finally {
       console.error = restore;
     }

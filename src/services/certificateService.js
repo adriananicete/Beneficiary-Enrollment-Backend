@@ -1,6 +1,7 @@
 import { readFile } from "fs/promises";
 import ClientModel from "../models/clientModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
+import EmployerModel from "../models/employerModel.js";
 import { renderCertificate } from "../utils/certificatePdf.js";
 import { fullName } from "../utils/fullName.js";
 import { AppError } from "../utils/AppError.js";
@@ -265,6 +266,36 @@ export const tryBuildCertificate = async (pool, clientId) => {
   }
 };
 
+// The certificate for an email nobody asked for: the enrollment confirmation
+// and a change-request approval. A company can turn these off (DBA request
+// 19, decided 2026-10-06). The emails still go, without the PDF. HR's manual
+// resend is not one of these and is not affected.
+//
+// Resolves to the attachment, or to null. When the company has turned it off,
+// the PDF is not built at all. When the setting cannot be read, nothing is
+// attached either: a company that said no is respected, and HR can still
+// resend. That is logged, with the client, because it is otherwise invisible.
+// Never rejects, for the reason tryBuildCertificate gives.
+export const autoCertificateFor = async (pool, clientId) => {
+  let setting;
+
+  try {
+    setting = await EmployerModel.getCocEmailSetting(pool, clientId);
+  } catch (error) {
+    console.error(
+      `The certificate email setting could not be read for client ${clientId}; ` +
+        `the email is being sent without the certificate.`,
+      error,
+    );
+    return null;
+  }
+
+  // No row means no current company; false means the company said no.
+  if (!setting?.send_coc_email) return null;
+
+  return tryBuildCertificate(pool, clientId);
+};
+
 // The attachment for a decided change request, or null.
 //
 // An approval can change the name, the address and the beneficiaries, and all
@@ -279,10 +310,14 @@ export const tryBuildCertificate = async (pool, clientId) => {
 // Called after the approval has committed, so the certificate describes the
 // record as it now stands. Never rejects, for the same reason as below: the
 // decision email is the only thing that tells the employee what HR decided.
+//
+// Subject to the company's setting, like the confirmation: an approval email
+// is sent automatically too.
 export const certificateForDecision = async (pool, clientId, approved) =>
-  approved ? tryBuildCertificate(pool, clientId) : null;
+  approved ? autoCertificateFor(pool, clientId) : null;
 
 export default {
+  autoCertificateFor,
   buildCertificateData,
   buildCertificate,
   certificateForDecision,

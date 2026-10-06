@@ -27,6 +27,12 @@ export const sqlErrorMap = {
     // 50110/50111/50112 collision.
     50133: { statusCode: 403, message: 'You are not authorized to view employee information' },
 
+    // usp_upd_employer_settings, DBA request 19, read back 2026-10-06.
+    // 50140: the company does not exist or is inactive. 50141: an HR user
+    // changing a company they are not mapped to.
+    50140: { statusCode: 404, message: 'Company not found' },
+    50141: { statusCode: 403, message: 'You can only change the settings of your own company' },
+
     // Thrown by usp_ins_beneficiary, on the public enrollment submit path. Its
     // only caller is enrollmentService.js:107, once per beneficiary, inside the
     // backend's transaction.
