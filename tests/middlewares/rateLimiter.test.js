@@ -6,6 +6,7 @@ import {
   ENROLLMENT_BURST,
   enrollmentTokenKey,
   loginAttemptKey,
+  passwordChangeKey,
   REFERENCE_BURST,
   REFERENCE_CALLS_PER_FORM,
 } from "../../src/middlewares/rateLimiter.js";
@@ -102,6 +103,47 @@ describe("enrollmentTokenKey", () => {
     );
 
     assert.equal(key, `token:${TOKEN}`);
+  });
+});
+
+describe("passwordChangeKey", () => {
+  // What verifyResetToken leaves on the request.
+  const changeReq = (username, ip, body = { oldPassword: "Temp1x", newPassword: "Pa$$w0rd" }) =>
+    makeReq({ resetUser: { username, purpose: "password_reset" }, body, ip });
+
+  // The defect. Under strictLimiter both of these keyed as "<ip>:unknown", so
+  // one office shared ten changes per fifteen minutes.
+  test("two employees changing passwords from one office are counted separately", () => {
+    const first = passwordChangeKey(changeReq("EMP-020", "203.0.113.7"));
+    const second = passwordChangeKey(changeReq("EMP-021", "203.0.113.7"));
+
+    assert.notEqual(first, second);
+    assert.equal(first, "reset:EMP-020");
+  });
+
+  test("one employee from two addresses is counted together", () => {
+    assert.equal(
+      passwordChangeKey(changeReq("EMP-020", "203.0.113.7")),
+      passwordChangeKey(changeReq("EMP-020", "198.51.100.4")),
+    );
+  });
+
+  // The username comes from the signed token, never from the body, so a
+  // caller cannot move their attempts onto somebody else's budget.
+  test("ignores a username in the body", () => {
+    const key = passwordChangeKey(
+      changeReq("EMP-020", "203.0.113.7", { username: "EMP-999", oldPassword: "x" }),
+    );
+
+    assert.equal(key, "reset:EMP-020");
+  });
+
+  // Unreachable on the routes, where verifyResetToken refuses first. Still
+  // bounded rather than thrown if the order is ever changed.
+  test("falls back to the address without a reset token", () => {
+    const key = passwordChangeKey(makeReq({ ip: "203.0.113.7" }));
+
+    assert.equal(key, "203.0.113.7");
   });
 });
 

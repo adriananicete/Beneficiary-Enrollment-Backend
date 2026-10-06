@@ -4,7 +4,7 @@ import { verifyToken } from '../middlewares/verifyToken.js';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { EMPLOYEE } from '../utils/constants.js';
 import { verifyResetToken } from '../middlewares/verifyResetToken.js';
-import { authIpLimiter, strictLimiter } from '../middlewares/rateLimiter.js';
+import { authIpLimiter, passwordChangeLimiter, strictLimiter } from '../middlewares/rateLimiter.js';
 import { getMyAgreements, getMySignature } from '../controllers/enrollmentController.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
@@ -14,7 +14,9 @@ const router = express.Router();
 
 router.post('/login', authIpLimiter, strictLimiter, login);
 router.post('/logout', logout);
-router.post('/change-password', authIpLimiter, strictLimiter, verifyResetToken, changePassword);
+// The limiter counts per username from the reset token, so it runs after
+// verifyResetToken. See passwordChangeLimiter.
+router.post('/change-password', authIpLimiter, verifyResetToken, passwordChangeLimiter, changePassword);
 router.get('/enrollment', verifyToken, allowedRoles(EMPLOYEE), getMyEnrollment);
 router.get('/agreements', verifyToken, allowedRoles(EMPLOYEE), getMyAgreements);
 // No id in the path and nothing to scope: the client_id comes from the
