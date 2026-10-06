@@ -30,6 +30,7 @@ const STORED_HASH = bcrypt.hashSync(OLD_PASSWORD, 4);
 const LOGIN = "sec.us01_usp_login";
 const CHANGE = "sec.us01_usp_first_login";
 const SUCCEEDED = "sec.us01_usp_login_succeeded";
+const END_SESSIONS = "sec.us01_usp_end_sessions";
 
 const userRow = (overrides = {}) => ({
   us01_user_id: 12,
@@ -47,6 +48,7 @@ const change = (row, fields = {}, allowedRoles = [EMPLOYEE]) => {
     [LOGIN]: row ? [row] : [],
     [CHANGE]: [],
     [SUCCEEDED]: [],
+    [END_SESSIONS]: [],
   });
 
   return {
@@ -302,6 +304,29 @@ describe("passwordService — what reaches the database", () => {
     const order = calls.map((call) => call.procedure);
 
     assert.ok(order.indexOf(CHANGE) < order.indexOf(SUCCEEDED), order.join(" → "));
+  });
+
+  // Session revocation, DBA request 18: every session signed with the old
+  // password ends, on every device.
+  test("ends every session the user had, once the change has gone through", async () => {
+    const { calls, result } = change(userRow());
+    await result;
+
+    const ended = callTo(calls, END_SESSIONS);
+    const order = calls.map((call) => call.procedure);
+
+    assert.ok(ended, "the old sessions were left running");
+    assert.equal(ended.inputs.us01_user_id, 12);
+    assert.ok(order.indexOf(CHANGE) < order.indexOf(END_SESSIONS), order.join(" → "));
+  });
+
+  test("a refused change ends nothing", async () => {
+    for (const fields of [{ oldPassword: "NotTheOne@1" }, { newPassword: "Password1" }]) {
+      const { calls, result } = change(userRow(), fields);
+      await result.catch(() => {});
+
+      assert.equal(callTo(calls, END_SESSIONS), undefined, JSON.stringify(fields));
+    }
   });
 
   // The role is read from the user row rather than carried in the reset token.

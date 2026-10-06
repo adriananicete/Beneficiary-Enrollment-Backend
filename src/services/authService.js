@@ -91,25 +91,25 @@ const profileOf = (user, employers) => ({
 
 // Who a session belongs to, read from the database rather than from the token.
 //
-// That is the reason this exists alongside the JWT and not instead of reading
-// it. The token is signed at login and nothing re-checks it: an account closed,
-// locked or moved to another role afterwards keeps its token until it expires,
-// up to thirty days with rememberMe. Every endpoint still trusts it — that is
-// PARK.md §3 and is not changed here — but the screen that decides what the
-// person sees now asks the database, so a closed account stops being shown a
-// working dashboard.
+// A JWT is signed at login and, on its own, is never re-checked: an account
+// closed, locked or moved to another role afterwards would keep working until
+// its token expired, up to thirty days with rememberMe. This is the check that
+// stops it. GET /auth/me has asked it since 2026-09-23; since 2026-10-06
+// verifyToken asks it on every authenticated request too, through
+// verifySession below.
 //
-// Every refusal is 401, never 403. For this endpoint 401 means "this session is
-// over, go and sign in", which is the only thing the frontend can usefully do
-// with any of them; the login itself then says why.
+// Every refusal is 401, never 403. 401 means "this session is over, go and
+// sign in", which is the only thing the frontend can usefully do with any of
+// them; the login itself then says why.
 //
-// sec.us01_usp_sel_user_by_id, read 2026-09-23:
+// sec.us01_usp_sel_user_by_id, read 2026-09-23 and again 2026-10-06:
 // - THROWs 50038 for a user who is inactive or does not exist. Mapped
 //   globally to 403 for the endpoints that reach it; answered 401 here.
 // - INNER JOINs an active role, so a user whose role was withdrawn comes back
 //   as no row at all rather than as a row with a NULL role.
 // - Does not check us01_is_locked. The login does, so this does too.
-const currentUser = async (pool, session) => {
+// - Returns us01_token_version since DBA request 18.
+const activeUser = async (pool, session) => {
   let user;
 
   try {
@@ -132,6 +132,13 @@ const currentUser = async (pool, session) => {
   if (user.us02_role_name !== session.role_name)
     throw new AppError(SESSION_ENDED, 401);
 
+  return user;
+};
+
+// GET /auth/me: the account checks, then the profile.
+const currentUser = async (pool, session) => {
+  const user = await activeUser(pool, session);
+
   // An employee is never mapped to an employer in sec.us08_user_employer, so
   // the question is not asked for one.
   const employers =
@@ -140,6 +147,52 @@ const currentUser = async (pool, session) => {
       : await InvitationModel.getEmployersByUser(pool, user.us01_user_id);
 
   return profileOf(user, employers);
+};
+
+// Every authenticated request, from verifyToken: the account checks, and the
+// token version. Session revocation, DBA request 18.
+//
+// The version goes up on logout, on a password change and when HR reissues
+// credentials, and every token signed before that stops here. A token with no
+// version at all was signed before this existed, and is refused the same way,
+// so every session in place on deploy day ends once. So is a reset token, which
+// never carries one.
+//
+// The temporary lockout does not raise it, deliberately. Anybody can trigger
+// that lock with eight wrong passwords, and if it ended sessions, anybody could
+// sign out any employee at will.
+const verifySession = async (pool, session) => {
+  const user = await activeUser(pool, session);
+
+  if (session.token_version !== user.us01_token_version)
+    throw new AppError(SESSION_ENDED, 401);
+
+  return user;
+};
+
+// Signs the caller out on every device, by raising the version their tokens
+// were signed with. Only a session that is still live can do that. A stale
+// token, one already revoked, verifies as a JWT for up to thirty days; if it
+// could raise the version, whoever held it could sign its owner out of every
+// new session, again and again. So it is checked first, and a 401 from that
+// check ends nothing.
+const logout = async (pool, token) => {
+  let session;
+
+  try {
+    session = jwt.verify(token, config.jwtSecret);
+  } catch {
+    return;
+  }
+
+  try {
+    await verifySession(pool, session);
+  } catch (error) {
+    if (error.statusCode === 401) return;
+    throw error;
+  }
+
+  await UserModel.endSessions(pool, session.user_id);
 };
 
 const login = async (
@@ -273,6 +326,9 @@ const login = async (
       username: user.us01_username,
       role_id: user.us02_role_id,
       role_name: user.us02_role_name,
+      // Checked by verifySession on every request. From sec.us01_usp_login,
+      // the same row the password was checked against.
+      token_version: user.us01_token_version,
     },
     config.jwtSecret,
     { expiresIn: asSeconds(maxAge) },
@@ -284,4 +340,4 @@ const login = async (
   return { mustChangePassword: false, token, maxAge, user: profile };
 };
 
-export default { login, currentUser };
+export default { login, currentUser, verifySession, logout };

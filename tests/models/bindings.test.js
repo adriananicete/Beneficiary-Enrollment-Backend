@@ -221,6 +221,7 @@ describe("model bindings — the schema prefix", () => {
     ["changePassword", (pool) => UserModel.changePassword(pool, {})],
     ["recordFailedLogin", (pool) => UserModel.recordFailedLogin(pool, 12, {})],
     ["recordSuccessfulLogin", (pool) => UserModel.recordSuccessfulLogin(pool, 12)],
+    ["endSessions", (pool) => UserModel.endSessions(pool, 12)],
     ["getEmployersByUser", (pool) => InvitationModel.getEmployersByUser(pool, 7)],
   ];
 
@@ -315,6 +316,7 @@ describe("model bindings — output parameters", () => {
   for (const [name, call] of [
     ["recordFailedLogin", (pool) => UserModel.recordFailedLogin(pool, 12, { maxAttempts: 8, lockMinutes: 15 })],
     ["recordSuccessfulLogin", (pool) => UserModel.recordSuccessfulLogin(pool, 12)],
+    ["endSessions", (pool) => UserModel.endSessions(pool, 12)],
   ])
     test(`${name} declares no output at all`, async () => {
       const { pool, calls } = anyProcedure();
@@ -339,6 +341,15 @@ describe("model bindings — output parameters", () => {
     assert.match(query, /us01_is_locked\s*=\s*0/);
     assert.match(query, /us01_failed_login_attempts\s*=\s*0/);
     assert.match(query, /us01_locked_until\s*=\s*NULL/);
+  });
+
+  // And ends the sessions the old password had, in the same statement.
+  test("resetPassword raises the token version", async () => {
+    const { pool, calls } = fakePool({});
+
+    await UserModel.resetPassword(pool, { us01_user_id: 12 });
+
+    assert.match(calls[0].query, /us01_token_version\s*=\s*us01_token_version\s*\+\s*1/);
   });
 
   // The thresholds are ints, and the id is a BigInt like every user id.

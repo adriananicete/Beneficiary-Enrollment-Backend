@@ -53,9 +53,14 @@ export const login = async (req, res, next) => {
   }
 };
 
+// The same as the admin logout: every device, cookie cleared first, and no
+// database for a request with no cookie.
 export const logout = async (req, res, next) => {
+  res.clearCookie("token", cookieOptions);
+
   try {
-    res.clearCookie("token", cookieOptions);
+    const { token } = req.cookies;
+    if (token) await AuthService.logout(await getPool(), token);
 
     return res.status(200).json({
       success: true,
