@@ -58,6 +58,9 @@ const employeeRow = (overrides = {}) => ({
   us01_is_locked: false,
   // Computed by sec.us01_usp_login since DBA request 18. 0 means not locked.
   lock_seconds_remaining: 0,
+  // Returned by both login procedures since DBA request 18. Not 0, so a token
+  // missing the claim cannot pass by matching a default.
+  us01_token_version: 4,
   us01_must_change_password: false,
   us02_role_id: 3,
   us02_role_name: EMPLOYEE,
@@ -383,6 +386,9 @@ describe("authService — the session", () => {
     assert.equal(claims.username, "EMP-020");
     assert.equal(claims.role_id, 3);
     assert.equal(claims.role_name, EMPLOYEE);
+    // The version verifySession checks on every request, from the row the
+    // password was checked against.
+    assert.equal(claims.token_version, 4);
     // Not a reset token. verifyResetToken checks this claim, and a session
     // token carrying it would be spendable on the change-password endpoint.
     assert.equal(claims.purpose, undefined);
@@ -631,6 +637,149 @@ describe("authService — the login answers with the same profile", () => {
       (error) => error.statusCode === 401,
     );
     assert.equal(callTo(calls, SUCCEEDED), undefined);
+  });
+});
+
+// Session revocation, DBA request 18. verifyToken calls this on every
+// authenticated request.
+describe("authService — verifySession", () => {
+  const live = { user_id: 12, role_name: EMPLOYEE, token_version: 4 };
+
+  // `byId` is the row sec.us01_usp_sel_user_by_id returns, or a function
+  // standing in for the procedure (sqlThrow).
+  const check = (session, byId = employeeRow()) => {
+    const answer = typeof byId === "function" ? byId : [byIdRow(byId)];
+    const { pool } = fakePool({ [BY_ID]: answer });
+
+    return AuthService.verifySession(pool, session);
+  };
+
+  test("a token signed with the current version passes", async () => {
+    const user = await check(live);
+
+    assert.equal(user.us01_user_id, 12);
+  });
+
+  // The whole point: logout, a password change or a credential reset raised
+  // the version, and the token signed before it stops here.
+  test("a token signed with an older version is refused with 401", async () => {
+    await assert.rejects(
+      () => check({ ...live, token_version: 3 }),
+      (error) => error.statusCode === 401 && /session has ended/.test(error.message),
+    );
+  });
+
+  // Signed before this branch. Every session in place on deploy day ends once.
+  test("a token with no version at all is refused", async () => {
+    const { token_version, ...unversioned } = live;
+
+    await assert.rejects(() => check(unversioned), (error) => error.statusCode === 401);
+  });
+
+  // A reset token in the session cookie: no role, no version.
+  test("a reset token is not a session", async () => {
+    await assert.rejects(
+      () => check({ user_id: 12, username: "EMP-020", purpose: "password_reset" }),
+      (error) => error.statusCode === 401,
+    );
+  });
+
+  // The account checks GET /auth/me already made now apply to every request.
+  test("a closed, locked or re-roled account is refused even with the right version", async () => {
+    for (const row of [
+      employeeRow({ us01_is_active: false }),
+      employeeRow({ us01_is_locked: true }),
+      employeeRow({ us02_role_name: ADMIN, us02_role_id: 2 }),
+    ])
+      await assert.rejects(() => check(live, row), (error) => error.statusCode === 401);
+  });
+
+  // The temporary lockout does not end sessions, or anybody could sign out any
+  // employee with eight wrong passwords. lock_seconds_remaining is not even
+  // read here.
+  test("the temporary lockout does not end a live session", async () => {
+    const user = await check(live, employeeRow({ lock_seconds_remaining: 900 }));
+
+    assert.equal(user.us01_user_id, 12);
+  });
+
+  test("a database failure is passed on, not turned into a 401", async () => {
+    await assert.rejects(
+      () => check(live, sqlThrow(1205, false)),
+      (error) => error.statusCode === undefined && error.number === 1205,
+    );
+  });
+});
+
+describe("authService — logout", () => {
+  const END_SESSIONS = "sec.us01_usp_end_sessions";
+
+  const signed = (claims, options = { expiresIn: 3600 }) =>
+    jwt.sign(
+      { user_id: 12, username: "EMP-020", role_id: 3, role_name: EMPLOYEE, ...claims },
+      config.jwtSecret,
+      options,
+    );
+
+  const logout = (token, byId = [byIdRow(employeeRow())]) => {
+    const { pool, calls } = fakePool({ [BY_ID]: byId, [END_SESSIONS]: [] });
+    return { calls, result: AuthService.logout(pool, token) };
+  };
+
+  test("a live session ends every session its user has", async () => {
+    const { calls, result } = logout(signed({ token_version: 4 }));
+    await result;
+
+    assert.equal(inputsFor(calls, END_SESSIONS)?.us01_user_id, 12);
+  });
+
+  // A revoked token still verifies as a JWT for up to thirty days. If it could
+  // raise the version, whoever held it could sign its owner out of every new
+  // session, again and again.
+  test("a stale token ends nothing", async () => {
+    const { calls, result } = logout(signed({ token_version: 3 }));
+    await result;
+
+    assert.equal(callTo(calls, END_SESSIONS), undefined);
+  });
+
+  test("a token from before versions, or a reset token, ends nothing", async () => {
+    for (const token of [
+      signed({}),
+      jwt.sign({ user_id: 12, username: "EMP-020", purpose: "password_reset" }, config.jwtSecret),
+    ]) {
+      const { calls, result } = logout(token);
+      await result;
+
+      assert.equal(callTo(calls, END_SESSIONS), undefined);
+    }
+  });
+
+  test("a closed account ends nothing, and the logout still succeeds", async () => {
+    const { calls, result } = logout(signed({ token_version: 4 }), sqlThrow(50038, false));
+
+    await assert.doesNotReject(() => result);
+    assert.equal(callTo(calls, END_SESSIONS), undefined);
+  });
+
+  // Nothing worth asking the database about.
+  test("a forged or expired token never reaches the database", async () => {
+    for (const token of [
+      jwt.sign({ user_id: 12, token_version: 4 }, "not-the-secret-not-the-secret-not"),
+      signed({ token_version: 4 }, { expiresIn: -10 }),
+      "not-a-jwt",
+    ]) {
+      const { calls, result } = logout(token);
+      await result;
+
+      assert.deepEqual(calls, [], token.slice(0, 20));
+    }
+  });
+
+  test("a database failure is passed on", async () => {
+    const { result } = logout(signed({ token_version: 4 }), sqlThrow(1205, false));
+
+    await assert.rejects(result, (error) => error.number === 1205);
   });
 });
 

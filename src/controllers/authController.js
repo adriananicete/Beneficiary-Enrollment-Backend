@@ -98,9 +98,15 @@ export const changePassword = async (req, res, next) => {
   }
 };
 
-export const logout = (req, res, next) => {
+// Signs the caller out on every device, not only this one. Agreed 2026-10-06.
+// The cookie is cleared first, so this device is signed out whatever happens
+// after. A request with no cookie never reaches the database.
+export const logout = async (req, res, next) => {
+  res.clearCookie("token", cookieOptions);
+
   try {
-    res.clearCookie("token", cookieOptions);
+    const { token } = req.cookies;
+    if (token) await AuthService.logout(await getPool(), token);
 
     return res.status(200).json({
       success: true,

@@ -63,6 +63,13 @@ export const makeRes = () => {
     return res;
   };
 
+  // For verifyToken, which clears the session cookie when the session is over.
+  res.clearedCookies = [];
+  res.clearCookie = (name) => {
+    res.clearedCookies.push(name);
+    return res;
+  };
+
   return res;
 };
 

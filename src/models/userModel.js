@@ -101,6 +101,16 @@ const recordSuccessfulLogin = async (pool, userId) => {
     .execute('sec.us01_usp_login_succeeded');
 };
 
+// Every token issued to this user before the call stops working: it raises
+// us01_token_version, which verifySession checks on every request.
+// sec.us01_usp_end_sessions, DBA request 18, read back 2026-10-06. One plain
+// input, no output.
+const endSessions = async (pool, userId) => {
+    await pool.request()
+    .input('us01_user_id', sql.BigInt, userId)
+    .execute('sec.us01_usp_end_sessions');
+};
+
 // Raw query, following checkUsernameExists below. There is no procedure that
 // reaches a user by client_id.
 const findUserByClientId = async (pool, clientId) => {
@@ -126,6 +136,11 @@ const findUserByClientId = async (pool, clientId) => {
 // everything appearing to have worked. The temporary lock from DBA request 18
 // is cleared for the same reason, which also makes this HR's way to unlock
 // somebody at once rather than in fifteen minutes.
+//
+// The token version goes up in the same statement, so every session the
+// employee had ends with the old password. Whoever was using those
+// credentials is signed out. In the raw UPDATE rather than a call to
+// endSessions, so the two cannot come apart.
 const resetPassword = async (pool, resetData) => {
   const result = await pool
     .request()
@@ -138,6 +153,7 @@ const resetPassword = async (pool, resetData) => {
                 us01_is_locked = 0,
                 us01_failed_login_attempts = 0,
                 us01_locked_until = NULL,
+                us01_token_version = us01_token_version + 1,
                 us01_modified_by = @us01_modified_by,
                 us01_modified_date = GETDATE()
             WHERE us01_user_id = @us01_user_id AND us01_is_active = 1`);
@@ -180,6 +196,7 @@ export default {
     changePassword,
     recordFailedLogin,
     recordSuccessfulLogin,
+    endSessions,
     checkUsernameExists,
     findUserByClientId,
     updateUserRecord,

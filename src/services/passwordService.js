@@ -75,6 +75,11 @@ const changePassword = async (
   // them afterwards. That is the note DBA request 10 left for whoever built
   // lockout.
   await UserModel.recordSuccessfulLogin(pool, user.us01_user_id);
+
+  // And every session signed with the old password ends, on every device. The
+  // forced change is the only way a password changes here, so this is also the
+  // path an employee takes after HR reissues their credentials.
+  await UserModel.endSessions(pool, user.us01_user_id);
 };
 
 export default {
