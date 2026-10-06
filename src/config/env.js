@@ -23,6 +23,29 @@ for (let i of envVar) {
     throw new Error(`Missing required environment variable: ${i}`);
 }
 
+// JWT_SECRET signs every session token and every reset token. Anyone who knows
+// it can sign a token for any user in any role, Administrator included, and
+// every check in this API would accept it. A short one can be guessed offline
+// from a single token, with no request ever reaching this server.
+//
+// HS256 wants a key of at least 256 bits, so 32 characters is the floor. It is
+// a length, not a proof of randomness: it refuses "secret" and "changeme", but
+// it cannot tell a long tutorial placeholder from a real key. Generate one;
+// the error says how.
+//
+// Checked in every environment, like APP_URL below, because UAT runs as
+// development and UAT is what a pentest will be pointed at. Added 2026-10-06.
+// The message gives the length but never the value, since it lands in a log.
+const MIN_JWT_SECRET_LENGTH = 32;
+
+if (process.env.JWT_SECRET.length < MIN_JWT_SECRET_LENGTH)
+  throw new Error(
+    `JWT_SECRET must be at least ${MIN_JWT_SECRET_LENGTH} characters; it is ${process.env.JWT_SECRET.length}. ` +
+    'It signs every session, and a short one can be guessed offline from any token, which lets the guesser sign in as anybody. ' +
+    `Generate one: node -e "console.log(require('crypto').randomBytes(48).toString('base64'))". ` +
+    'Changing it signs everybody out once.',
+  );
+
  if(process.env.NODE_ENV === 'production' && process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0')
     throw new Error('NODE_TLS_REJECT_UNAUTHORIZED must not be 0 in production. It disables TLS certificate verification for the entire process, including the database connection and the credential email.')
 
