@@ -170,28 +170,47 @@ describe("passwordService — refusing", () => {
 });
 
 describe("passwordService — the password policy", () => {
-  // Eight characters, at least one letter and at least one digit. Pinned as
-  // literals rather than against the regex, so changing the rule has to change
-  // these too.
+  // 8 to 64 characters, with an uppercase letter, a lowercase letter, a number
+  // and a special character. The rule itself is tested case by case in
+  // validatePassword.test.js; these prove the service applies it. Pinned as
+  // literals, so changing the rule has to change these too.
   for (const [label, password] of [
-    ["too short", "Ab1"],
-    ["seven characters", "Abcdef1"],
-    ["no digit at all", "Abcdefghi"],
-    ["no letter at all", "12345678"],
+    ["seven characters", "Pa$$w0r"],
+    ["missing a special character", "Password1"],
+    ["missing an uppercase letter", "pa$$w0rd"],
+    ["letters and digits only, which the old rule accepted", "abcd1234"],
+    ["not text", 12345678],
   ]) {
     test(`refuses a new password that is ${label}`, async () => {
       await assert.rejects(
         () => change(userRow(), { newPassword: password }).result,
         (error) =>
-          error.statusCode === 400 && /at least 8 characters/.test(error.message),
+          error.statusCode === 400 &&
+          /8 to 64 characters/.test(error.message),
       );
     });
   }
 
+  test("refuses a password bcrypt would cut short", async () => {
+    await assert.rejects(
+      () => change(userRow(), { newPassword: "Aa1$" + "ñ".repeat(36) }).result,
+      (error) => error.statusCode === 400 && /too long/.test(error.message),
+    );
+  });
+
+  test("writes nothing for a password the rule refuses", async () => {
+    const { calls, result } = change(userRow(), { newPassword: "Password1" });
+    await result.catch(() => {});
+
+    assert.ok(
+      !calls.some((call) => call.procedure === CHANGE),
+      "the change procedure ran for a refused password",
+    );
+  });
+
   for (const [label, password] of [
-    ["exactly eight with both", "Abcdefg1"],
+    ["the example agreed on 2026-10-06", "Pa$$w0rd"],
     ["long with symbols", "NewPass@456"],
-    ["digits and letters only", "abcd1234"],
   ]) {
     test(`accepts a new password that is ${label}`, async () => {
       const { result } = change(userRow(), { newPassword: password });

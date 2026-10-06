@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 import UserModel from "../models/userModel.js";
 import { AppError } from "../utils/AppError.js";
+import { validatePassword } from "../utils/validatePassword.js";
 
 // The forced password change is one flow reached from two logins, so it is one
 // implementation. It was employee-only until now, which is why an HR or admin
@@ -52,12 +53,8 @@ const changePassword = async (
       400,
     );
 
-  const passwordPolicy = /^(?=.*[A-Za-z])(?=.*\d).{8,}$/;
-  if (!passwordPolicy.test(newPassword))
-    throw new AppError(
-      "Password must be at least 8 characters and include a letter and a number",
-      400,
-    );
+  const passwordProblem = validatePassword(newPassword);
+  if (passwordProblem) throw new AppError(passwordProblem, 400);
 
   const newHashPassword = await bcrypt.hash(newPassword, 10);
 
