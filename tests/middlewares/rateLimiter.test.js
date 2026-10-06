@@ -6,6 +6,8 @@ import {
   ENROLLMENT_BURST,
   enrollmentTokenKey,
   loginAttemptKey,
+  REFERENCE_BURST,
+  REFERENCE_CALLS_PER_FORM,
 } from "../../src/middlewares/rateLimiter.js";
 import { MAX_INVITATION_EMAILS } from "../../src/utils/partitionEmails.js";
 import { makeReq } from "../helpers/http.js";
@@ -145,6 +147,19 @@ describe("the IP ceilings are sized from the largest burst the system can create
   // refresh or any submission refused by validation.
   test("and leaves room for the lookup as well as the submit", () => {
     assert.ok(ENROLLMENT_BURST >= MAX_INVITATION_EMAILS * 2);
+  });
+
+  // One form makes about six reference calls, one per dropdown. Fewer than
+  // that per invited employee and the ceiling refuses an ordinary morning.
+  test("the reference ceiling clears one dropdown call per field for a full upload", () => {
+    assert.ok(
+      REFERENCE_BURST >= MAX_INVITATION_EMAILS * 6,
+      `${REFERENCE_BURST} cannot serve ${MAX_INVITATION_EMAILS} employees filling six dropdowns`,
+    );
+  });
+
+  test("the reference ceiling is derived from the invitation cap", () => {
+    assert.equal(REFERENCE_BURST, MAX_INVITATION_EMAILS * REFERENCE_CALLS_PER_FORM);
   });
 
   // Fifteen-minute window, so four of them to the hour.
