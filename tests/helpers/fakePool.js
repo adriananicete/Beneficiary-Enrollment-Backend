@@ -55,7 +55,7 @@ export const fakePool = (answers, queryAnswers = []) => {
       },
 
       // A handful of model functions use a raw query rather than a procedure —
-      // updateLastLogin, getClientAddressId, checkUsernameExists. They are
+      // getClientAddressId, checkUsernameExists, resetPassword. They are
       // recorded by their SQL text so a test can assert one of them ran, and
       // they answer empty rather than needing a script: none of them is read
       // for its rows by the code that calls it.

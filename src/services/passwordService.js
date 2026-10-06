@@ -70,7 +70,11 @@ const changePassword = async (
     newpass: newHashPassword,
   });
 
-  await UserModel.updateLastLogin(pool, username);
+  // The person has just proved their password, so the failed count goes to 0.
+  // Without this, failures from before the change would still count against
+  // them afterwards. That is the note DBA request 10 left for whoever built
+  // lockout.
+  await UserModel.recordSuccessfulLogin(pool, user.us01_user_id);
 };
 
 export default {
