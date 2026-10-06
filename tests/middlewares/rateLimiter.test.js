@@ -5,6 +5,7 @@ import {
   AUTH_IP_BURST,
   ENROLLMENT_BURST,
   enrollmentTokenKey,
+  loginAttemptKey,
 } from "../../src/middlewares/rateLimiter.js";
 import { MAX_INVITATION_EMAILS } from "../../src/utils/partitionEmails.js";
 import { makeReq } from "../helpers/http.js";
@@ -20,6 +21,10 @@ import { makeReq } from "../helpers/http.js";
 // something they had done once.
 
 const TOKEN = "a".repeat(64);
+
+// What express.json() hands over for {"toString": 1}. `${value}` throws on it:
+// toString is not a function, and valueOf returns the object itself.
+const CANNOT_BE_TEXT = JSON.parse('{"toString": 1}');
 
 describe("enrollmentTokenKey", () => {
   // The token is the per-employee identity on a public route, the same role
@@ -75,6 +80,48 @@ describe("enrollmentTokenKey", () => {
     const key = enrollmentTokenKey(makeReq({ body: { token: "" }, ip: "203.0.113.7" }));
 
     assert.doesNotMatch(key, /^token:/);
+  });
+
+  // Not text, so not a token. A template literal throws on this one, and the
+  // limiter answered 500 before the route ran.
+  test("a token that is not text is treated as no token, without throwing", () => {
+    for (const token of [CANNOT_BE_TEXT, 12345, ["a", "b"], { a: 1 }]) {
+      const key = enrollmentTokenKey(makeReq({ body: { token }, ip: "203.0.113.7" }));
+
+      assert.doesNotMatch(key, /^token:/, JSON.stringify(token));
+      assert.match(key, /203\.0\.113\.7/);
+    }
+  });
+
+  // A bad body token does not hide a good query token.
+  test("a body token that is not text falls through to the query", () => {
+    const key = enrollmentTokenKey(
+      makeReq({ body: { token: CANNOT_BE_TEXT }, query: { token: TOKEN }, ip: "10.0.0.1" }),
+    );
+
+    assert.equal(key, `token:${TOKEN}`);
+  });
+});
+
+describe("loginAttemptKey", () => {
+  test("counts an attempt against the address and the username together", () => {
+    const key = loginAttemptKey(makeReq({ body: { username: "EMP-020" }, ip: "203.0.113.7" }));
+
+    assert.equal(key, "203.0.113.7:EMP-020");
+  });
+
+  test("a missing username counts as unknown", () => {
+    assert.equal(loginAttemptKey(makeReq({ ip: "203.0.113.7" })), "203.0.113.7:unknown");
+  });
+
+  // The login body is whatever JSON the caller sent.
+  test("a username that is not text counts as unknown, without throwing", () => {
+    for (const username of [CANNOT_BE_TEXT, 12345, ["a", "b"], { a: 1 }, ""])
+      assert.equal(
+        loginAttemptKey(makeReq({ body: { username }, ip: "203.0.113.7" })),
+        "203.0.113.7:unknown",
+        JSON.stringify(username),
+      );
   });
 });
 

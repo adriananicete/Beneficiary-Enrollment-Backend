@@ -125,6 +125,24 @@ describe("authService — refusing", () => {
     );
   });
 
+  // Neither login route has a body validator, so the JSON arrives as sent.
+  // bcrypt.compare throws on anything that is not a string, which answered 500.
+  const NOT_TEXT = [12345678, ["SecurePass@123"], { a: 1 }, true];
+
+  for (const field of ["password", "username"])
+    test(`a ${field} that is not text is 400, and nothing is looked up`, async () => {
+      for (const value of NOT_TEXT) {
+        const { calls, result } = login(employeeRow(), { ...good, [field]: value });
+
+        await assert.rejects(
+          () => result,
+          (error) => error.statusCode === 400 && /All fields required/.test(error.message),
+          JSON.stringify(value),
+        );
+        assert.equal(callTo(calls, LOGIN), undefined, JSON.stringify(value));
+      }
+    });
+
   test("an unknown username is 401", async () => {
     await assert.rejects(
       () => login(null, good).result,

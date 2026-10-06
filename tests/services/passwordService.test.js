@@ -69,6 +69,24 @@ describe("passwordService — refusing", () => {
     });
   }
 
+  // oldPassword goes to bcrypt.compare, which throws on anything that is not a
+  // string. That answered 500.
+  test("an oldPassword that is not text is 400, and nothing is looked up", async () => {
+    for (const value of [12345678, [OLD_PASSWORD], { a: 1 }, true]) {
+      const { calls, result } = change(userRow(), { oldPassword: value });
+
+      await assert.rejects(
+        () => result,
+        (error) => error.statusCode === 400 && /All fields required/.test(error.message),
+        JSON.stringify(value),
+      );
+      assert.ok(
+        !calls.some((call) => call.procedure === LOGIN),
+        `the user was looked up for ${JSON.stringify(value)}`,
+      );
+    }
+  });
+
   test("an unknown username is refused", async () => {
     await assert.rejects(
       () => change(null).result,

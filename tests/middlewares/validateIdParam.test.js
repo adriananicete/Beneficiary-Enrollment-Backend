@@ -69,6 +69,19 @@ describe("isInvitationToken", () => {
       );
     }
   });
+
+  // On the submit path the token comes from the JSON body. String() threw on
+  // the first of these, which answered 500. The second used to PASS, because
+  // String([token]) is the token itself, and an array then reached the binding.
+  test("refuses an object or an array from a JSON body, without throwing", () => {
+    for (const value of [JSON.parse('{"toString": 1}'), [token], { token }]) {
+      assert.equal(
+        isInvitationToken(value),
+        false,
+        `value=${JSON.stringify(value)}`,
+      );
+    }
+  });
 });
 
 describe("validateIdParam", () => {

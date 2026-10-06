@@ -20,7 +20,10 @@ const changePassword = async (
   pool,
   { username, oldPassword, newPassword, allowedRoles },
 ) => {
-  if (!oldPassword || !newPassword)
+  // oldPassword goes to bcrypt.compare, which throws on anything that is not a
+  // string, and that answered 500. newPassword is not type-checked here:
+  // validatePassword refuses it below with the rule, which says more.
+  if (typeof oldPassword !== "string" || !oldPassword || !newPassword)
     throw new AppError("All fields required", 400);
 
   const user = await UserModel.findUserByUsername(pool, username);
