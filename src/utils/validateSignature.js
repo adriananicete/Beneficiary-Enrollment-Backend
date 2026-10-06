@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { JPEG, PNG, matchFormat } from "./fileFormats.js";
 
 // The enrollment signature, either drawn on a canvas or photographed from a
 // signed page. The two arrive as the same thing — image bytes — and nothing
@@ -24,26 +25,10 @@ export const MAX_SIGNATURE_BYTES = 500 * 1024;
 // leaving room for something that was never downscaled at all.
 const MAX_SIGNATURE_KB = MAX_SIGNATURE_BYTES / 1024;
 
-// **The type is read from the bytes, never from the filename or the
-// Content-Type the caller declared.** Both of those are things the caller
-// writes, and a public endpoint takes them from a stranger holding an
-// invitation link. The first bytes of a file are the only part of it that the
-// format itself decides.
-//
-// PNG carries an eight-byte header whose first four spell "PNG" — the trailing
-// CRLF and EOF bytes exist to catch a transfer that mangled line endings, and
-// are worth checking for the same reason.
-//
-// JPEG has no single fixed header. Every variant starts SOI + the first marker,
-// `FF D8 FF`, and the fourth byte varies by encoder — so three is the honest
-// length to match rather than a fourth byte that would refuse some cameras.
-const FORMATS = [
-  { mimeType: "image/png", magic: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
-  { mimeType: "image/jpeg", magic: [0xff, 0xd8, 0xff] },
-];
-
-const startsWith = (buffer, magic) =>
-  buffer.length >= magic.length && magic.every((byte, index) => buffer[index] === byte);
+// The type is read from the bytes, never from what the caller declared. The
+// byte signatures, and why each is the length it is, are in fileFormats.js,
+// shared with the claim documents. A signature is an image: PNG or JPEG.
+const FORMATS = [PNG, JPEG];
 
 // Returns either `{ error }` or the description to store — never both, and
 // never a description for a buffer that failed. Two functions, one to judge and
@@ -63,7 +48,7 @@ export const readSignature = (buffer) => {
   if (buffer.length > MAX_SIGNATURE_BYTES)
     return { error: `The signature must be ${MAX_SIGNATURE_KB}KB or smaller` };
 
-  const format = FORMATS.find(({ magic }) => startsWith(buffer, magic));
+  const format = matchFormat(buffer, FORMATS);
 
   if (!format)
     return { error: "The signature must be a PNG or JPEG image" };
