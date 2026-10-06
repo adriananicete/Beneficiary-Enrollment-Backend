@@ -114,6 +114,34 @@ export const enrollmentTokenLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// The six reference routes behind the enrollment form: classifications,
+// employers, and the region → province → city → barangay cascade. Public, and
+// until 2026-10-06 they had no limit at all, which a pentest reports.
+//
+// Volumetric only, like mediumLimiter, and sized the same way: a full
+// invitation upload, every employee filling the form the same hour from one
+// office. One form makes about six of these calls, one per dropdown. Twenty
+// allows for picking the wrong province and going back, a refresh, and the
+// change request form, which uses the same cascade. That figure is an
+// estimate, not a measurement of the frontend, so it lives in one constant.
+//
+// Not keyed on anything but the address: these routes carry no token and no
+// session, so there is nothing else to key on.
+export const REFERENCE_CALLS_PER_FORM = 20;
+
+export const REFERENCE_BURST = MAX_INVITATION_EMAILS * REFERENCE_CALLS_PER_FORM;
+
+export const referenceLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? REFERENCE_BURST * 5 : REFERENCE_BURST,
+  message: {
+    success: false,
+    message: "Too many requests, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Keyed on the HR user rather than the IP. A 1,000-address upload is a rare,
 // deliberate act, and keying on the user survives a reverse proxy collapsing
 // every caller into one address.
