@@ -20,7 +20,13 @@ export const isNumericId = (value) => /^\d+$/.test(String(value));
 // before the value reaches a typed binding. It matters more than the ids do,
 // because the endpoints carrying a token are public — an unauthenticated
 // caller could otherwise produce a 500 and a stack trace with a long string.
-export const isInvitationToken = (value) => /^[a-f0-9]{64}$/i.test(String(value));
+//
+// Text only, unlike isNumericId, because on the submit path the token comes
+// from the JSON body rather than the URL. String() throws on an object such as
+// {"toString": 1}, which answered 500. A token is never anything but text, so
+// nothing real is refused by asking.
+export const isInvitationToken = (value) =>
+  typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
 
 // 404 rather than 400, and the message is the same one used for an id that
 // exists but is not the caller's. An id that cannot exist is answered exactly

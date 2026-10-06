@@ -119,7 +119,16 @@ const login = async (
   pool,
   { username, password, rememberMe = false, allowedRoles, wrongDoorMessage },
 ) => {
-  if (!username || !password) throw new AppError("All fields required", 400);
+  // Text only. Neither login route has a body validator, so the caller's JSON
+  // arrives here as sent. bcrypt.compare throws on anything that is not a
+  // string, and that throw is not an AppError, so a number or an object for a
+  // password answered 500. Refused before the procedure is called, so an
+  // object never reaches the driver as a username either.
+  if (
+    typeof username !== "string" || !username ||
+    typeof password !== "string" || !password
+  )
+    throw new AppError("All fields required", 400);
 
   const user = await UserModel.findUserByUsername(pool, username);
   // Uniform message for a missing user and a wrong password, so this cannot be

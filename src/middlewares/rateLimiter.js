@@ -35,11 +35,22 @@ export const ENROLLMENT_BURST = MAX_INVITATION_EMAILS * 3;
 // expose its own ceiling to a test.
 export const AUTH_IP_BURST = MAX_INVITATION_EMAILS / 4;
 
+// A body field goes into a key only when it is a non-empty string. The body is
+// whatever JSON the caller sent, and an object such as {"toString": 1} cannot
+// be turned into text: the template literal throws, and the limiter answered
+// 500 before the route ever ran. Found 2026-10-06, ahead of a pentest.
+const asKeyText = (value) =>
+  typeof value === "string" && value !== "" ? value : null;
+
+// Exported, like enrollmentTokenKey below, because who a request counts against
+// is the part worth testing and a limiter object does not expose it.
+export const loginAttemptKey = (req) =>
+  `${ipKeyGenerator(req.ip)}:${asKeyText(req.body?.username) ?? "unknown"}`;
+
 export const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: isDev ? 100 : 10, // 100 sa dev, 10 sa prod
-  keyGenerator: (req) =>
-    `${ipKeyGenerator(req.ip)}:${req.body?.username || "unknown"}`,
+  keyGenerator: loginAttemptKey,
   message: {
     success: false,
     message: "Too many attempts, please try again later.",
@@ -78,7 +89,7 @@ export const mediumLimiter = rateLimit({
 // Falls back to the IP when there is no token, which is the only case this
 // endpoint should ever see without one: a malformed request.
 export const enrollmentTokenKey = (req) => {
-  const token = req.body?.token || req.query?.token;
+  const token = asKeyText(req.body?.token) ?? asKeyText(req.query?.token);
 
   return token ? `token:${token}` : ipKeyGenerator(req.ip);
 };

@@ -110,6 +110,18 @@ describe("validateEnrollment", () => {
     }
   });
 
+  // The whole payload, not just the token check, so every validator ahead of
+  // it is shown to let a token that is not text through to the 404 rather than
+  // throwing. {"toString": 1} made String() throw, which answered 500.
+  test("a token that is not text answers 404, not a crash", () => {
+    for (const token of [JSON.parse('{"toString": 1}'), [TOKEN], 12345]) {
+      const refusal = run({ ...validBody(), token }).refusal();
+
+      assert.equal(refusal.statusCode, 404, JSON.stringify(token));
+      assert.match(refusal.message, /Invitation not found/);
+    }
+  });
+
   test("refuses an over-length field", () => {
     const refusal = run({
       ...validBody(),
