@@ -146,7 +146,10 @@ export const sqlErrorMap = {
     50025: {statusCode: 409, message: 'Email address already registered'},
     50035: {statusCode: 409, message: 'Employee ID number already registered'},
     50036: {statusCode: 409, message: 'Email address already registered'},
-    50037: { statusCode: 401, message: 'Invalid credentials' },
+    // Spelt exactly as authService answers a wrong password. The small c here
+    // once told anybody which usernames exist. authService now catches 50037
+    // itself; this keeps any other caller of the login procedure in step.
+    50037: { statusCode: 401, message: 'Invalid Credentials' },
     50040: { statusCode: 404, message: 'User does not exist or is inactive' },
     50041: { statusCode: 409, message: 'User could not be updated' },
     50073: { statusCode: 403, message: 'Only HR users can manage enrollment invitations' },

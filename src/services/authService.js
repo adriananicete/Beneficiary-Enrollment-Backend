@@ -36,6 +36,20 @@ const asSeconds = (ms) => Math.floor(ms / 1000);
 
 const ACCOUNT_CLOSED = "This account is no longer active. Please contact your HR.";
 const SESSION_ENDED = "Your session has ended. Please sign in again.";
+const INVALID_CREDENTIALS = "Invalid Credentials";
+
+// Compared against when the username does not exist, so an unknown username
+// costs the same bcrypt work as a wrong password. Without it the unknown one
+// answered about 70ms sooner, which is enough to tell from outside which
+// usernames exist. Cost 10, the cost every password here is hashed at
+// (enrollmentService, passwordService, adminController). The hash of a random
+// string nobody kept; it matching anything would change nothing, because the
+// caller is refused either way.
+const DUMMY_HASH = "$2b$10$kgtjjJgo.H7JuZYmn5h56OKlKbIMApILa/jjc0wBL9NLt32zGDDZ2";
+
+// sec.us01_usp_login THROWs 50037 for an unknown username rather than
+// returning no row.
+const UNKNOWN_USERNAME = 50037;
 
 // The answer while an account is locked out. Only called with time left, and
 // the minutes are rounded up, so the least it ever says is "1 minute".
@@ -143,10 +157,29 @@ const login = async (
   )
     throw new AppError("All fields required", 400);
 
-  const user = await UserModel.findUserByUsername(pool, username);
-  // Uniform message for a missing user and a wrong password, so this cannot be
-  // used to work out which usernames exist.
-  if (!user) throw new AppError("Invalid Credentials", 401);
+  // An unknown username has to be indistinguishable from a wrong password, in
+  // the message and in the time it takes, or this endpoint tells anybody which
+  // usernames exist.
+  //
+  // It was not, in two ways, found 2026-10-06. The procedure THROWs 50037 for
+  // an unknown username, and that went to errorHandler and was answered with
+  // the map's "Invalid credentials" (small c), not this file's "Invalid
+  // Credentials". And it skipped bcrypt, so it answered sooner. The test that
+  // claimed the two were indistinguishable gave the fake pool an empty result
+  // for the unknown user, which the real procedure never returns.
+  let user;
+
+  try {
+    user = await UserModel.findUserByUsername(pool, username);
+  } catch (error) {
+    if ((error.number ?? error.originalError?.number) !== UNKNOWN_USERNAME)
+      throw error;
+  }
+
+  if (!user) {
+    await bcrypt.compare(password, DUMMY_HASH);
+    throw new AppError(INVALID_CREDENTIALS, 401);
+  }
 
   // The lockout, DBA request 18. Checked BEFORE the password, and that order is
   // the whole lock: checked after, a caller would still learn which guess was
@@ -177,7 +210,7 @@ const login = async (
     if (after?.lock_seconds_remaining > 0)
       throw lockedOut(after.lock_seconds_remaining);
 
-    throw new AppError("Invalid Credentials", 401);
+    throw new AppError(INVALID_CREDENTIALS, 401);
   }
 
   // Checked after the password on purpose. Only someone who already proved they

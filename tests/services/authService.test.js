@@ -35,6 +35,17 @@ const SUCCEEDED = "sec.us01_usp_login_succeeded";
 // What sec.us01_usp_login_failed answers for an attempt that did not lock.
 const NOT_LOCKED = [{ us01_failed_login_attempts: 1, lock_seconds_remaining: 0 }];
 
+// What sec.us01_usp_login really does with an unknown username: it THROWs
+// 50037, it does not return an empty result. The number can sit on the error
+// or one level down, CLAUDE.md §5. Answering with [] instead is how a test
+// once called the two cases indistinguishable while the real ones were not.
+const unknownUsername = (nested = false) => () => {
+  const error = new Error("Invalid username or password.");
+  if (nested) error.originalError = { number: 50037 };
+  else error.number = 50037;
+  throw error;
+};
+
 const employeeRow = (overrides = {}) => ({
   us01_user_id: 12,
   us01_username: "EMP-020",
@@ -98,10 +109,14 @@ const ADMIN_DOOR = {
 
 // A successful login now also reads the profile, so the by-id and employer
 // lookups are answered for the same person the login procedure returns.
+// `row` is the user the login procedure returns, null for no row, or a
+// function standing in for the procedure itself (unknownUsername).
 const login = (row, credentials, door = EMPLOYEE_DOOR, { failed = NOT_LOCKED } = {}) => {
+  const procedureAnswers = typeof row === "function";
+
   const { pool, calls } = fakePool({
-    [LOGIN]: row ? [row] : [],
-    [BY_ID]: row ? [byIdRow(row)] : [],
+    [LOGIN]: procedureAnswers ? row : row ? [row] : [],
+    [BY_ID]: row && !procedureAnswers ? [byIdRow(row)] : [],
     [EMPLOYERS]: [COFORGE],
     [FAILED]: failed,
     [SUCCEEDED]: [],
@@ -168,14 +183,72 @@ describe("authService — refusing", () => {
 
   // Uniform on purpose. A different message for each would let anybody with the
   // login page work out which usernames exist.
-  test("an unknown user and a wrong password are indistinguishable", async () => {
-    const unknown = await login(null, good).result.catch((error) => error);
+  //
+  // This test used to answer the unknown user with an empty result, which the
+  // real procedure never returns, and passed while the real answers differed
+  // by one letter. It now uses what the procedure does.
+  for (const [shape, answer] of [
+    ["50037, as the procedure throws it", unknownUsername()],
+    ["50037 one level down", unknownUsername(true)],
+    ["no row at all", null],
+  ])
+    test(`an unknown user (${shape}) and a wrong password are indistinguishable`, async () => {
+      const unknown = await login(answer, good).result.catch((error) => error);
+      const wrong = await login(employeeRow(), { ...good, password: "WrongPass@123" }).result.catch(
+        (error) => error,
+      );
+
+      assert.equal(unknown.message, wrong.message);
+      assert.equal(unknown.statusCode, wrong.statusCode);
+    });
+
+  // The other half: the time. Without a compare, an unknown username answered
+  // about 70ms sooner than a wrong password, which can be measured from
+  // outside. Timing itself is too noisy to assert, so what is asserted is that
+  // the same work happens: one compare, against a hash of the production cost.
+  test("an unknown user costs the same bcrypt work as a wrong password", async (t) => {
+    const compare = t.mock.method(bcrypt, "compare");
+
+    await login(unknownUsername(), good).result.catch(() => {});
+
+    assert.equal(compare.mock.callCount(), 1, "no bcrypt compare for an unknown username");
+    assert.match(compare.mock.calls[0].arguments[1], /^\$2b\$10\$/, "not a cost-10 hash");
+  });
+
+  // authService catches 50037 itself now. The map entry is for any other caller
+  // of the login procedure, and its small c was the original leak.
+  test("the error map answers 50037 exactly as a wrong password is answered", async () => {
+    const { sqlErrorMap } = await import("../../src/utils/sqlErrorMap.js");
     const wrong = await login(employeeRow(), { ...good, password: "WrongPass@123" }).result.catch(
       (error) => error,
     );
 
-    assert.equal(unknown.message, wrong.message);
-    assert.equal(unknown.statusCode, wrong.statusCode);
+    assert.equal(sqlErrorMap[50037].message, wrong.message);
+    assert.equal(sqlErrorMap[50037].statusCode, wrong.statusCode);
+  });
+
+  test("an unknown user records nothing", async () => {
+    const { calls, result } = login(unknownUsername(), good);
+    await result.catch(() => {});
+
+    assert.equal(callTo(calls, FAILED), undefined);
+    assert.equal(callTo(calls, SUCCEEDED), undefined);
+  });
+
+  // Only 50037 means "no such user". Anything else, a deadlock or a dropped
+  // connection, is a real failure and must not be dressed up as a wrong
+  // password.
+  test("any other failure of the login procedure is passed on", async () => {
+    const deadlock = () => {
+      const error = new Error("deadlock");
+      error.number = 1205;
+      throw error;
+    };
+
+    await assert.rejects(
+      () => login(deadlock, good).result,
+      (error) => error.number === 1205 && error.statusCode === undefined,
+    );
   });
 
   test("a closed account is 403 once the password is right", async () => {
