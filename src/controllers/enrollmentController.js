@@ -52,6 +52,20 @@ export const getEmployeeClassifications = async (req, res, next) => {
   }
 };
 
+// What the public employer list may show, named field by field. This route
+// needs no account. It used to return the procedure's rows as they came, so a
+// column added to usp_sel_employers would have gone straight to anybody who
+// asked. dbo.employers gained send_coc_email on 2026-10-06 (DBA request 19).
+// The procedure names its columns, so it did not leak, but that was the
+// procedure's choice and not this route's. The four fields are the ones it
+// returns today, so the response is unchanged.
+export const publicEmployer = (row) => ({
+  employer_id: row.employer_id,
+  company_code: row.company_code,
+  company_name: row.company_name,
+  status: row.status,
+});
+
 export const getEmployers = async (req, res, next) => {
   try {
     const pool = await getPool();
@@ -59,7 +73,7 @@ export const getEmployers = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      data: employers
+      data: employers.map(publicEmployer)
     })
   } catch (error) {
     next(error);

@@ -13,6 +13,7 @@ import InvitationModel from "../../src/models/invitationModel.js";
 import ReferenceModel from "../../src/models/referenceModel.js";
 import ChangeRequestModel from "../../src/models/changeRequestModel.js";
 import SignatureModel from "../../src/models/signatureModel.js";
+import EmployerModel from "../../src/models/employerModel.js";
 import { sql } from "../../src/config/db.js";
 
 // One file rather than nine, and deliberately so.
@@ -325,6 +326,35 @@ describe("model bindings — output parameters", () => {
 
       assert.deepEqual(Object.keys(calls[0].outputs), []);
     });
+
+  // DBA request 19's procedures have no output parameters (sys.parameters,
+  // read 2026-10-06).
+  for (const [name, call] of [
+    ["getCocEmailSetting", (pool) => EmployerModel.getCocEmailSetting(pool, 96)],
+    ["getEmployerSettings", (pool) => EmployerModel.getEmployerSettings(pool, 3)],
+    ["updateEmployerSettings", (pool) => EmployerModel.updateEmployerSettings(pool, { employerId: 1, sendCocEmail: false, userId: 3 })],
+  ])
+    test(`${name} declares no output at all`, async () => {
+      const { pool, calls } = anyProcedure();
+
+      await call(pool);
+
+      assert.deepEqual(Object.keys(calls[0].outputs), []);
+    });
+
+  // A BIT, so false reaches the procedure as 0 rather than as a string.
+  test("updateEmployerSettings binds the setting as a bit and the ids as BigInt", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await EmployerModel.updateEmployerSettings(pool, { employerId: 1, sendCocEmail: false, userId: 3 });
+
+    const { bindings } = callTo(calls, "usp_upd_employer_settings");
+
+    assert.equal(declarationOf(bindings.send_coc_email.type), declarationOf(sql.Bit));
+    assert.equal(bindings.send_coc_email.value, false);
+    assert.equal(declarationOf(bindings.employer_id.type), declarationOf(sql.BigInt));
+    assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
+  });
 
   // Resend-credentials is HR's way to unlock somebody at once. A reissued
   // password with any of these left set is a working password and a closed

@@ -9,6 +9,7 @@ import { validateInvitations } from '../middlewares/validateInvitations.js';
 import { bulkInvitationLimiter, certificateResendLimiter, credentialsResendLimiter, jobStatusLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
 import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
+import { getEmployerSettings, updateEmployerSettings } from '../controllers/employerSettingsController.js';
 
 const router = express.Router();
 
@@ -48,6 +49,10 @@ router.get('/change-requests/pending-count', verifyToken, allowedRoles(ADMIN, SU
 router.get('/change-requests/:request_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), changeRequestId, getChangeRequestDetails);
 router.patch('/change-requests/:request_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), changeRequestId, reviewChangeRequest);
 router.delete('/invitations/:invitation_id', verifyToken, allowedRoles(ADMIN), invitationId, revokeInvitation)
+// Per-company settings: the automatic Certificate of Coverage email. HR and the
+// Administrator both; the procedures scope HR to their own company.
+router.get('/employers/settings', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getEmployerSettings);
+router.patch('/employers/:employer_id/settings', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), validateIdParam('employer_id', 'Company not found'), updateEmployerSettings);
 
 
 export default router;
