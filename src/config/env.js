@@ -1,3 +1,23 @@
+// First, before anything here or anywhere else reads a clock. See the file.
+import "./timezone.js";
+
+// timezone.js sets Philippine time. This checks it took: on two dates half a
+// year apart, so a +08:00 zone that kept daylight saving could not pass in one
+// season and fail in the other. A process on any other offset would read
+// every timestamp from the database wrong (db.js, useUTC: false).
+const PHILIPPINE_OFFSET_MINUTES = -480;
+
+if (
+  [new Date(2026, 0, 1), new Date(2026, 6, 1)].some(
+    (date) => date.getTimezoneOffset() !== PHILIPPINE_OFFSET_MINUTES,
+  )
+)
+  throw new Error(
+    "This process is not on Philippine time (UTC+8). Every timestamp read from the database " +
+      "would be wrong by the difference. src/config/timezone.js sets TZ=Asia/Manila; " +
+      "something has overridden it, or this Node build has no time zone data.",
+  );
+
 const envVar = [
   "DB_SERVER",
   "DB_USER",

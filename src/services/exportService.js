@@ -43,6 +43,12 @@ const FIRST_DATA_ROW = 5;
 // `to` covers the whole of its day. An enrollment at 14:30 on the closing date
 // belongs in a report that says it ends that date, and a caller passing a bare
 // date would otherwise silently lose the last day.
+//
+// Both ends are Philippine midnight and Philippine end of day: this process
+// runs on Philippine time (timezone.js). enrollment_date is the true instant
+// since 2026-10-06 (db.js, useUTC: false). Before that it arrived eight hours
+// late, labelled UTC, and an enrollment made after four in the afternoon on
+// the closing date fell outside its own report.
 const parseRange = ({ from, to }) => {
   const start = from ? new Date(`${from}T00:00:00`) : null;
   const end = to ? new Date(`${to}T23:59:59.999`) : null;

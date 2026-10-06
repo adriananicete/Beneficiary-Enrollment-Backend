@@ -10,6 +10,7 @@ import { sendSignature } from "../utils/signatureResponse.js";
 import { getPool } from "../config/db.js";
 import { buildPage, parsePaging, parseSearch } from "../utils/parsePaging.js";
 import { AppError } from "../utils/AppError.js";
+import { localIsoDate } from "../utils/localDate.js";
 import { sendCredentialsEmail } from "../services/emailService.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
@@ -208,10 +209,13 @@ export const exportEnrollments = async (req, res, next) => {
     // The filename carries the period when there is one, so a folder of these
     // can be told apart without opening them. Otherwise the date it was run,
     // so two downloads in the same week do not silently overwrite each other.
+    //
+    // The Philippine date, not toISOString's UTC one, which before eight in
+    // the morning still reads yesterday.
     const stamp =
       from || to
         ? `${from ?? "start"}-to-${to ?? "today"}`
-        : new Date().toISOString().slice(0, 10);
+        : localIsoDate(new Date());
 
     res.setHeader(
       "Content-Type",
