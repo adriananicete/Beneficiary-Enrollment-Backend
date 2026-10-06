@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import bcrypt from "bcrypt";
 
 import "../helpers/env.js";
-import { fakePool, inputsFor, queryMatching } from "../helpers/fakePool.js";
+import { fakePool, inputsFor, callTo } from "../helpers/fakePool.js";
 
 const { default: PasswordService } = await import(
   "../../src/services/passwordService.js"
@@ -29,6 +29,7 @@ const STORED_HASH = bcrypt.hashSync(OLD_PASSWORD, 4);
 
 const LOGIN = "sec.us01_usp_login";
 const CHANGE = "sec.us01_usp_first_login";
+const SUCCEEDED = "sec.us01_usp_login_succeeded";
 
 const userRow = (overrides = {}) => ({
   us01_user_id: 12,
@@ -45,6 +46,7 @@ const change = (row, fields = {}, allowedRoles = [EMPLOYEE]) => {
   const { pool, calls } = fakePool({
     [LOGIN]: row ? [row] : [],
     [CHANGE]: [],
+    [SUCCEEDED]: [],
   });
 
   return {
@@ -183,7 +185,7 @@ describe("passwordService — refusing", () => {
       !calls.some((call) => call.procedure === CHANGE),
       "the change procedure ran for a refused request",
     );
-    assert.equal(queryMatching(calls, /us01_last_login/), undefined);
+    assert.equal(callTo(calls, SUCCEEDED), undefined);
   });
 });
 
@@ -278,14 +280,28 @@ describe("passwordService — what reaches the database", () => {
     assert.equal(inputsFor(calls, LOGIN).us01_username, "EMP-020");
   });
 
-  test("records the last login once the change has gone through", async () => {
+  // The person has just proved their password, so failures from before the
+  // change must not count against them afterwards. DBA request 10 left this as
+  // the note for whoever built lockout.
+  test("clears the failed count, and records the login, once the change has gone through", async () => {
     const { calls, result } = change(userRow());
     await result;
 
-    const recorded = queryMatching(calls, /us01_last_login/);
+    const recorded = callTo(calls, SUCCEEDED);
 
-    assert.ok(recorded, "no last login was recorded");
-    assert.equal(recorded.inputs.us01_username, "EMP-020");
+    assert.ok(recorded, "the failed count was not cleared");
+    assert.equal(recorded.inputs.us01_user_id, 12);
+  });
+
+  // And only after the change itself went through, so a change the procedure
+  // refuses does not wipe the count.
+  test("clears the count only after the change procedure ran", async () => {
+    const { calls, result } = change(userRow());
+    await result;
+
+    const order = calls.map((call) => call.procedure);
+
+    assert.ok(order.indexOf(CHANGE) < order.indexOf(SUCCEEDED), order.join(" → "));
   });
 
   // The role is read from the user row rather than carried in the reset token.

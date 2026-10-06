@@ -73,16 +73,36 @@ const changePassword = async (pool, userData) => {
     .execute('sec.us01_usp_first_login')
 };
 
-const updateLastLogin = async (pool, username) => {
+// After a wrong password. sec.us01_usp_login_failed, DBA request 18, read back
+// 2026-10-06: it adds one to the count, locks the account for @lock_minutes
+// once the count reaches @max_attempts, and starts the count again at 1 when an
+// earlier lock has expired. It answers the new count and the seconds left on
+// the lock, worked out against the database's own clock.
+//
+// No output parameters. All three are plain inputs, read from sys.parameters
+// on the same day, so the item 14 trap is not here.
+const recordFailedLogin = async (pool, userId, { maxAttempts, lockMinutes }) => {
     const result = await pool.request()
-    .input('us01_username', sql.VarChar, username)
-    .query(`
-        UPDATE sec.us01_users SET us01_last_login = GETDATE() WHERE us01_username = @us01_username
-        `)
+    .input('us01_user_id', sql.BigInt, userId)
+    .input('max_attempts', sql.Int, maxAttempts)
+    .input('lock_minutes', sql.Int, lockMinutes)
+    .execute('sec.us01_usp_login_failed');
+
+    return result.recordset[0];
 };
 
-// Raw query, following updateLastLogin and checkUsernameExists below. There is
-// no procedure that reaches a user by client_id.
+// After a successful sign-in or password change: the count goes to 0, the lock
+// is cleared, and the login is recorded. It replaces a raw UPDATE that set
+// us01_last_login alone, which would have left a failed count standing after
+// the person had proved their password.
+const recordSuccessfulLogin = async (pool, userId) => {
+    await pool.request()
+    .input('us01_user_id', sql.BigInt, userId)
+    .execute('sec.us01_usp_login_succeeded');
+};
+
+// Raw query, following checkUsernameExists below. There is no procedure that
+// reaches a user by client_id.
 const findUserByClientId = async (pool, clientId) => {
   const result = await pool
     .request()
@@ -97,13 +117,15 @@ const findUserByClientId = async (pool, clientId) => {
 
 // Issues a new temporary password. There is no procedure for this:
 // us01_usp_first_login requires the old password, which is exactly what has been
-// lost, and us01_usp_upd_user does not touch credentials. Raw, like the two
-// queries below it.
+// lost, and us01_usp_upd_user does not touch credentials. Raw, like the
+// queries around it.
 //
 // The lock and the failed-attempt counter are cleared alongside the password.
 // Since PR #58 those two block a login, so leaving them set would hand the
 // employee a working password and still refuse them at the door — with
-// everything appearing to have worked.
+// everything appearing to have worked. The temporary lock from DBA request 18
+// is cleared for the same reason, which also makes this HR's way to unlock
+// somebody at once rather than in fifteen minutes.
 const resetPassword = async (pool, resetData) => {
   const result = await pool
     .request()
@@ -115,6 +137,7 @@ const resetPassword = async (pool, resetData) => {
                 us01_must_change_password = 1,
                 us01_is_locked = 0,
                 us01_failed_login_attempts = 0,
+                us01_locked_until = NULL,
                 us01_modified_by = @us01_modified_by,
                 us01_modified_date = GETDATE()
             WHERE us01_user_id = @us01_user_id AND us01_is_active = 1`);
@@ -155,7 +178,8 @@ export default {
     findUserByUsername,
     findUserById,
     changePassword,
-    updateLastLogin,
+    recordFailedLogin,
+    recordSuccessfulLogin,
     checkUsernameExists,
     findUserByClientId,
     updateUserRecord,

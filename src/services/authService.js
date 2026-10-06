@@ -6,6 +6,8 @@ import config from "../config/env.js";
 import { AppError } from "../utils/AppError.js";
 import {
   EMPLOYEE,
+  LOGIN_LOCK_MINUTES,
+  LOGIN_MAX_ATTEMPTS,
   REMEMBER_ME_EXPIRY,
   RESET_TOKEN_EXPIRY,
   SESSION_EXPIRY,
@@ -34,6 +36,17 @@ const asSeconds = (ms) => Math.floor(ms / 1000);
 
 const ACCOUNT_CLOSED = "This account is no longer active. Please contact your HR.";
 const SESSION_ENDED = "Your session has ended. Please sign in again.";
+
+// The answer while an account is locked out. Only called with time left, and
+// the minutes are rounded up, so the least it ever says is "1 minute".
+const lockedOut = (secondsRemaining) => {
+  const minutes = Math.ceil(secondsRemaining / 60);
+
+  return new AppError(
+    `Too many failed sign-in attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+    429,
+  );
+};
 
 // What the frontend is told about the person signed in. Named field by field
 // rather than spread from the row, because the row carries `us01_password`:
@@ -135,8 +148,37 @@ const login = async (
   // used to work out which usernames exist.
   if (!user) throw new AppError("Invalid Credentials", 401);
 
+  // The lockout, DBA request 18. Checked BEFORE the password, and that order is
+  // the whole lock: checked after, a caller would still learn which guess was
+  // right while the account was locked, and the lock would slow nothing down.
+  // The cost is that a locked account answers differently from a missing one,
+  // so it shows the account exists. Accepted 2026-10-06; usernames are
+  // guessable anyway.
+  //
+  // The procedure works out the seconds left against its own clock. GETDATE()
+  // is local time and the driver labels it UTC, so comparing us01_locked_until
+  // with Date.now() here would be eight hours off.
+  if (user.lock_seconds_remaining > 0)
+    throw lockedOut(user.lock_seconds_remaining);
+
   const isPasswordMatch = await bcrypt.compare(password, user.us01_password);
-  if (!isPasswordMatch) throw new AppError("Invalid Credentials", 401);
+
+  if (!isPasswordMatch) {
+    // Only an account that exists can be locked. sec.us01_usp_login throws
+    // 50037 for an unknown username before this line, so nothing is recorded
+    // for one.
+    const after = await UserModel.recordFailedLogin(pool, user.us01_user_id, {
+      maxAttempts: LOGIN_MAX_ATTEMPTS,
+      lockMinutes: LOGIN_LOCK_MINUTES,
+    });
+
+    // The attempt that reaches the limit says so, rather than answering
+    // "Invalid Credentials" and leaving the next attempt to explain a lock.
+    if (after?.lock_seconds_remaining > 0)
+      throw lockedOut(after.lock_seconds_remaining);
+
+    throw new AppError("Invalid Credentials", 401);
+  }
 
   // Checked after the password on purpose. Only someone who already proved they
   // know the password learns the account exists but is closed, so this tells an
@@ -159,6 +201,10 @@ const login = async (
   //
   // No `rememberMe` on this one, and no session token either. Fifteen minutes
   // whatever the caller asked for, because it is a key to one action.
+  //
+  // recordSuccessfulLogin is not called on this path. It would set
+  // us01_last_login for somebody who has not got in yet. The failed count is
+  // reset when the password change succeeds instead.
   if (user.us01_must_change_password) {
     const resetToken = jwt.sign(
       {
@@ -199,7 +245,8 @@ const login = async (
     { expiresIn: asSeconds(maxAge) },
   );
 
-  await UserModel.updateLastLogin(pool, username);
+  // Clears the failed count and any expired lock, and records the login.
+  await UserModel.recordSuccessfulLogin(pool, user.us01_user_id);
 
   return { mustChangePassword: false, token, maxAge, user: profile };
 };

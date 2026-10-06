@@ -4,7 +4,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
 import "../helpers/env.js";
-import { fakePool, inputsFor, queryMatching, callTo } from "../helpers/fakePool.js";
+import { fakePool, inputsFor, callTo } from "../helpers/fakePool.js";
 
 const { default: AuthService } = await import("../../src/services/authService.js");
 const { default: config } = await import("../../src/config/env.js");
@@ -29,6 +29,11 @@ const HASH = bcrypt.hashSync(PASSWORD, 4);
 const LOGIN = "sec.us01_usp_login";
 const BY_ID = "sec.us01_usp_sel_user_by_id";
 const EMPLOYERS = "sec.us08_usp_sel_employers_by_user";
+const FAILED = "sec.us01_usp_login_failed";
+const SUCCEEDED = "sec.us01_usp_login_succeeded";
+
+// What sec.us01_usp_login_failed answers for an attempt that did not lock.
+const NOT_LOCKED = [{ us01_failed_login_attempts: 1, lock_seconds_remaining: 0 }];
 
 const employeeRow = (overrides = {}) => ({
   us01_user_id: 12,
@@ -40,6 +45,8 @@ const employeeRow = (overrides = {}) => ({
   us01_email_address: "juan.delacruz@example.com",
   us01_is_active: true,
   us01_is_locked: false,
+  // Computed by sec.us01_usp_login since DBA request 18. 0 means not locked.
+  lock_seconds_remaining: 0,
   us01_must_change_password: false,
   us02_role_id: 3,
   us02_role_name: EMPLOYEE,
@@ -91,11 +98,13 @@ const ADMIN_DOOR = {
 
 // A successful login now also reads the profile, so the by-id and employer
 // lookups are answered for the same person the login procedure returns.
-const login = (row, credentials, door = EMPLOYEE_DOOR) => {
+const login = (row, credentials, door = EMPLOYEE_DOOR, { failed = NOT_LOCKED } = {}) => {
   const { pool, calls } = fakePool({
     [LOGIN]: row ? [row] : [],
     [BY_ID]: row ? [byIdRow(row)] : [],
     [EMPLOYERS]: [COFORGE],
+    [FAILED]: failed,
+    [SUCCEEDED]: [],
   });
 
   return {
@@ -277,13 +286,13 @@ describe("authService — the forced password change", () => {
   });
 
   // The password has not been changed yet, so nothing has happened worth
-  // recording as a sign-in.
+  // recording as a sign-in. The failed count resets when the change succeeds.
   test("does not record a last login", async () => {
     const { calls, result } = login(mustChange(), good);
     await result;
 
     assert.equal(
-      queryMatching(calls, /us01_last_login/),
+      callTo(calls, SUCCEEDED),
       undefined,
       "recorded a login for somebody who has not finished logging in",
     );
@@ -348,14 +357,18 @@ describe("authService — the session", () => {
     });
   }
 
-  test("records the last login for the account that signed in", async () => {
+  // sec.us01_usp_login_succeeded records the login and clears the failed
+  // count, so a person who got their password right is not still carrying the
+  // failures from before.
+  test("records the login, and clears the failed count, for the account that signed in", async () => {
     const { calls, result } = login(employeeRow(), good);
     await result;
 
-    const recorded = queryMatching(calls, /us01_last_login/);
+    const recorded = callTo(calls, SUCCEEDED);
 
-    assert.ok(recorded, "no last login was recorded");
-    assert.equal(recorded.inputs.us01_username, "EMP-020");
+    assert.ok(recorded, "the successful sign-in was not recorded");
+    assert.equal(recorded.inputs.us01_user_id, 12);
+    assert.equal(callTo(calls, FAILED), undefined);
   });
 
   test("looks the user up by the username it was given", async () => {
@@ -544,6 +557,115 @@ describe("authService — the login answers with the same profile", () => {
       AuthService.login(pool, { ...EMPLOYEE_DOOR, ...good }),
       (error) => error.statusCode === 401,
     );
-    assert.equal(queryMatching(calls, /us01_last_login/), undefined);
+    assert.equal(callTo(calls, SUCCEEDED), undefined);
+  });
+});
+
+// DBA request 18, agreed 2026-10-06: eight wrong passwords lock the account for
+// fifteen minutes, and the lock is checked before the password.
+describe("authService — the lockout", () => {
+  const locked = (seconds) => employeeRow({ lock_seconds_remaining: seconds });
+
+  // The test that matters most here. Checked after the password, a locked
+  // account would still tell a caller which guess was right, and the lock would
+  // slow nothing down.
+  test("a locked account is refused even with the RIGHT password", async () => {
+    const { calls, result } = login(locked(900), good);
+
+    await assert.rejects(
+      () => result,
+      (error) => error.statusCode === 429 && /Try again in 15 minutes/.test(error.message),
+    );
+    assert.equal(callTo(calls, SUCCEEDED), undefined, "a locked account was signed in");
+  });
+
+  // A wrong password while locked does not add to the count, so the lock is
+  // not extended by somebody still guessing.
+  test("a locked account records nothing, whatever the password", async () => {
+    for (const password of [PASSWORD, "WrongPass@123"]) {
+      const { calls, result } = login(locked(900), { ...good, password });
+
+      await assert.rejects(() => result, (error) => error.statusCode === 429);
+      assert.equal(callTo(calls, FAILED), undefined, password);
+      assert.equal(callTo(calls, SUCCEEDED), undefined, password);
+    }
+  });
+
+  // The thresholds, pinned as the literals that were agreed.
+  test("a wrong password is recorded against the account, with 8 attempts and 15 minutes", async () => {
+    const { calls, result } = login(employeeRow(), { ...good, password: "WrongPass@123" });
+    await result.catch(() => {});
+
+    assert.deepEqual(inputsFor(calls, FAILED), {
+      us01_user_id: 12,
+      max_attempts: 8,
+      lock_minutes: 15,
+    });
+  });
+
+  test("a wrong password below the limit is still the uniform 401", async () => {
+    await assert.rejects(
+      () => login(employeeRow(), { ...good, password: "WrongPass@123" }).result,
+      (error) => error.statusCode === 401 && error.message === "Invalid Credentials",
+    );
+  });
+
+  // The attempt that locks the account says so.
+  test("the wrong password that reaches the limit answers 429", async () => {
+    const { result } = login(
+      employeeRow(),
+      { ...good, password: "WrongPass@123" },
+      EMPLOYEE_DOOR,
+      { failed: [{ us01_failed_login_attempts: 8, lock_seconds_remaining: 900 }] },
+    );
+
+    await assert.rejects(
+      () => result,
+      (error) => error.statusCode === 429 && /Try again in 15 minutes/.test(error.message),
+    );
+  });
+
+  test("the minutes are rounded up, and never say 0", async () => {
+    for (const [seconds, phrase] of [
+      [1, "1 minute."],
+      [60, "1 minute."],
+      [61, "2 minutes."],
+      [899, "15 minutes."],
+    ]) {
+      const error = await login(locked(seconds), good).result.catch((caught) => caught);
+
+      assert.ok(error.message.endsWith(phrase), `${seconds}s: ${error.message}`);
+    }
+  });
+
+  // Only an account that exists can be locked.
+  test("an unknown username records nothing", async () => {
+    const { calls, result } = login(null, good);
+    await result.catch(() => {});
+
+    assert.equal(callTo(calls, FAILED), undefined);
+  });
+
+  // The right password on a closed account is still a refusal, and not a
+  // sign-in worth recording.
+  test("a closed account with the right password does not clear the count", async () => {
+    const { calls, result } = login(employeeRow({ us01_is_active: false }), good);
+    await result.catch(() => {});
+
+    assert.equal(callTo(calls, SUCCEEDED), undefined);
+  });
+
+  // Both doors share this, so the lock is per account, not per door.
+  test("the admin door locks the same way", async () => {
+    const { result } = login(
+      hrRow({ lock_seconds_remaining: 300 }),
+      { ...good, username: "hr.coforge" },
+      ADMIN_DOOR,
+    );
+
+    await assert.rejects(
+      () => result,
+      (error) => error.statusCode === 429 && /5 minutes/.test(error.message),
+    );
   });
 });

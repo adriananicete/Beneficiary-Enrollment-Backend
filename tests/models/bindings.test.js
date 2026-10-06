@@ -2,7 +2,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 import "../helpers/env.js";
-import { callTo, declarationOf } from "../helpers/fakePool.js";
+import { callTo, declarationOf, fakePool } from "../helpers/fakePool.js";
 
 import ClientModel from "../../src/models/clientModel.js";
 import AddressModel from "../../src/models/addressModel.js";
@@ -219,6 +219,8 @@ describe("model bindings — the schema prefix", () => {
     ["findUserByUsername", (pool) => UserModel.findUserByUsername(pool, "EMP-020")],
     ["findUserById", (pool) => UserModel.findUserById(pool, 12)],
     ["changePassword", (pool) => UserModel.changePassword(pool, {})],
+    ["recordFailedLogin", (pool) => UserModel.recordFailedLogin(pool, 12, {})],
+    ["recordSuccessfulLogin", (pool) => UserModel.recordSuccessfulLogin(pool, 12)],
     ["getEmployersByUser", (pool) => InvitationModel.getEmployersByUser(pool, 7)],
   ];
 
@@ -306,14 +308,49 @@ describe("model bindings — output parameters", () => {
     );
   });
 
-  // The contrast, pinned so nobody tidies the two into agreement. updateLastLogin
-  // is a raw UPDATE with nothing to return, and adding an output here would be
-  // the mirror of the mistake above.
-  test("updateLastLogin declares no output at all", async () => {
+  // The contrast, pinned so nobody tidies the two into agreement. The lockout
+  // procedures from DBA request 18 take no output at all. That was asked for in
+  // the request and read back from sys.parameters on 2026-10-06, so adding one
+  // here would be the mirror of the mistake above.
+  for (const [name, call] of [
+    ["recordFailedLogin", (pool) => UserModel.recordFailedLogin(pool, 12, { maxAttempts: 8, lockMinutes: 15 })],
+    ["recordSuccessfulLogin", (pool) => UserModel.recordSuccessfulLogin(pool, 12)],
+  ])
+    test(`${name} declares no output at all`, async () => {
+      const { pool, calls } = anyProcedure();
+
+      await call(pool);
+
+      assert.deepEqual(Object.keys(calls[0].outputs), []);
+    });
+
+  // Resend-credentials is HR's way to unlock somebody at once. A reissued
+  // password with any of these left set is a working password and a closed
+  // door, with everything appearing to have worked.
+  // The shared fakePool, because resetPassword reads rowsAffected and the local
+  // recorder does not supply it.
+  test("resetPassword clears the permanent lock, the count and the temporary lock", async () => {
+    const { pool, calls } = fakePool({});
+
+    await UserModel.resetPassword(pool, { us01_user_id: 12 });
+
+    const { query } = calls[0];
+
+    assert.match(query, /us01_is_locked\s*=\s*0/);
+    assert.match(query, /us01_failed_login_attempts\s*=\s*0/);
+    assert.match(query, /us01_locked_until\s*=\s*NULL/);
+  });
+
+  // The thresholds are ints, and the id is a BigInt like every user id.
+  test("recordFailedLogin binds the thresholds as ints", async () => {
     const { pool, calls } = anyProcedure();
 
-    await UserModel.updateLastLogin(pool, "EMP-020");
+    await UserModel.recordFailedLogin(pool, 12, { maxAttempts: 8, lockMinutes: 15 });
 
-    assert.deepEqual(Object.keys(calls[0].outputs), []);
+    const { bindings } = callTo(calls, "sec.us01_usp_login_failed");
+
+    assert.equal(declarationOf(bindings.max_attempts.type), declarationOf(sql.Int));
+    assert.equal(declarationOf(bindings.lock_minutes.type), declarationOf(sql.Int));
+    assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
   });
 });
