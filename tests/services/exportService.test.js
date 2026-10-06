@@ -194,6 +194,31 @@ describe("exportService — the date range", () => {
     assert.equal(rowCount, 0);
   });
 
+  // enrollment_date is the true instant since 2026-10-06 (db.js, useUTC:
+  // false). 22:00 on the closing date in the Philippines is 14:00Z, and it
+  // belongs in the report. Before the fix it arrived as 22:00Z, which is
+  // 06:00 the next morning here, and the report dropped it.
+  test("an enrollment late in the evening of the closing date is in its report", async () => {
+    const { rowCount } = await report(
+      [employee({ enrollment_date: new Date("2026-03-15T14:00:00.000Z") })],
+      [beneficiary()],
+      { from: "2026-03-01", to: "2026-03-15" },
+    );
+
+    assert.equal(rowCount, 1);
+  });
+
+  test("and one just after midnight is not", async () => {
+    // 00:00:30 on 16 March in the Philippines.
+    const { employeeCount } = await report(
+      [employee({ enrollment_date: new Date("2026-03-15T16:00:30.000Z") })],
+      [beneficiary()],
+      { from: "2026-03-01", to: "2026-03-15" },
+    );
+
+    assert.equal(employeeCount, 0);
+  });
+
   // An employee with no enrollment has no enrollment_date, so they cannot
   // satisfy a range and are dropped when one is given. That is the right answer
   // to "who enrolled in the last three months" — and it does mean a filtered

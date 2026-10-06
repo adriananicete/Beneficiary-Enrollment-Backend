@@ -38,20 +38,20 @@ const money = (value) => {
   }).format(rounded);
 };
 
-// enrollment_date is written with getdate(), which is Philippine local time,
-// and mssql hands every datetime back labelled as UTC: an enrollment at 13:18
-// arrives as 13:18Z. So the date is read in UTC, which returns the wall-clock
-// value the database holds.
+// enrollment_date is written with getdate(), Philippine local time. Since
+// 2026-10-06 the driver reads it as what it is (db.js, useUTC: false), so an
+// enrollment at 13:18 local arrives as the true instant, 05:18Z. The date is
+// read in Asia/Manila, which gives back the day it happened there.
 //
-// Formatting it in Asia/Manila instead would add eight hours to a time that
-// was already local, and every enrollment after four in the afternoon would be
-// certified as covered from the following day.
+// Until that day this read in UTC instead, because the driver labelled local
+// times as UTC. Leaving it in UTC now would certify every enrollment made
+// between midnight and eight in the morning as covered from the day before.
 export const formatCoverageDate = (value) =>
   new Intl.DateTimeFormat("en-US", {
     month: "long",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
+    timeZone: "Asia/Manila",
   }).format(new Date(value));
 
 const formatAddress = (record) =>

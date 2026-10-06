@@ -33,8 +33,8 @@ const SETTING = "usp_sel_coc_email_by_client";
 const COC_ON = [{ employer_id: "1", send_coc_email: true }];
 const COC_OFF = [{ employer_id: "1", send_coc_email: false }];
 
-// mssql hands a datetime back as a Date labelled UTC, holding the wall-clock
-// time the database wrote with getdate(): 13:18 local arrives as 13:18Z.
+// A datetime arrives as the true instant since 2026-10-06 (db.js, useUTC:
+// false): 13:18 local is 05:18Z. Until then it arrived as 13:18Z.
 const enrollmentRow = (overrides = {}) => ({
   enrollment_id: "74",
   client_id: "96",
@@ -52,7 +52,7 @@ const enrollmentRow = (overrides = {}) => ({
   zip_code: "4026",
   company_name: "Coforge BPS Philippines, Inc.",
   email_address: "lorenz@coforge.com",
-  enrollment_date: new Date("2026-09-11T13:18:06.510Z"),
+  enrollment_date: new Date("2026-09-11T05:18:06.510Z"),
   ...overrides,
 });
 
@@ -180,19 +180,27 @@ describe("certificateService — what the certificate says", () => {
 });
 
 describe("certificateService — the coverage date", () => {
-  // The trap: 17:30 local arrives as 17:30Z. Read in Asia/Manila it becomes
-  // 01:30 the next morning, and the certificate would say the cover began a
-  // day after it did. Anything after 16:00 local shows it.
-  test("an enrollment late in the afternoon keeps its own date", () => {
-    assert.equal(formatCoverageDate(new Date("2026-09-11T17:30:00.000Z")), "September 11, 2026");
+  // Since 2026-10-06 enrollment_date arrives as the true instant (db.js,
+  // useUTC: false). A Philippine day runs from 16:00Z the day before to
+  // 15:59:59Z, and the certificate prints the Philippine date.
+  test("an enrollment just before midnight keeps its own date", () => {
+    // 23:59:59 on 11 September in the Philippines.
+    assert.equal(formatCoverageDate(new Date("2026-09-11T15:59:59.000Z")), "September 11, 2026");
   });
 
-  test("so does one just before midnight", () => {
-    assert.equal(formatCoverageDate(new Date("2026-09-11T23:59:59.000Z")), "September 11, 2026");
+  test("one just after midnight is the next day", () => {
+    // 00:00:30 on 12 September in the Philippines.
+    assert.equal(formatCoverageDate(new Date("2026-09-11T16:00:30.000Z")), "September 12, 2026");
+  });
+
+  // The one reading it in UTC would get wrong now: 01:30 on 11 September in
+  // the Philippines is still 10 September in UTC.
+  test("one early in the morning keeps its own date", () => {
+    assert.equal(formatCoverageDate(new Date("2026-09-10T17:30:00.000Z")), "September 11, 2026");
   });
 
   test("accepts the ISO string form as well as a Date", () => {
-    assert.equal(formatCoverageDate("2026-09-11T13:18:06.510Z"), "September 11, 2026");
+    assert.equal(formatCoverageDate("2026-09-11T05:18:06.510Z"), "September 11, 2026");
   });
 });
 
