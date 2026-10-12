@@ -51,6 +51,13 @@ const MUST_BE_MAPPED = [
   [50158, 404, /No pending claim found/i],
   [50159, 400, /APPROVED, REJECTED or RETURNED/],
   [50160, 400, /required to reject or return/i],
+  // Messaging, DBA request 22, read back 2026-10-12.
+  [50170, 403, /not authorized to use messaging/i],
+  [50171, 404, /Employee not found/i],
+  [50172, 404, /Conversation not found/i],
+  [50173, 409, /can be read but no longer added to/i],
+  [50174, 400, /cannot be empty/i],
+  [50175, 400, /at most 2000 characters/i],
 ];
 
 describe("sqlErrorMap", () => {

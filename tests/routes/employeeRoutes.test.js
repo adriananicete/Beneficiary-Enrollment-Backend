@@ -6,8 +6,9 @@ import "../helpers/env.js";
 const { default: router } = await import("../../src/routes/employeeRoutes.js");
 const { verifyToken } = await import("../../src/middlewares/verifyToken.js");
 const { parseDocuments } = await import("../../src/middlewares/parseDocuments.js");
-const { claimSubmitLimiter } = await import("../../src/middlewares/rateLimiter.js");
+const { claimSubmitLimiter, messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
 const claims = await import("../../src/controllers/claimController.js");
+const messages = await import("../../src/controllers/messageController.js");
 
 const handlersFor = (method, path) => {
   const layer = router.stack.find(
@@ -84,5 +85,55 @@ describe("the employee claim routes", () => {
 
     assert.equal(limiter, 3, "the id check sits between the role check and the limiter");
     assert.equal(upload, 4);
+  });
+});
+
+// Messaging with HR, DBA request 22.
+describe("the employee messaging routes", () => {
+  const ROUTES = [
+    ["post", "/conversation", messages.openMyConversation],
+    ["get", "/conversations/unread-count", messages.getUnreadMessageCount],
+    ["get", "/conversations/:conversation_id", messages.getConversation],
+    ["post", "/conversations/:conversation_id/messages", messages.sendMessage],
+    ["post", "/conversations/:conversation_id/read", messages.markConversationRead],
+  ];
+
+  // The role check is the second handler. Run it with each role and read
+  // what it does, rather than trusting how it was built.
+  const roleCheckAnswers = (handlers, role_name) => {
+    let passed = false;
+    let refused = null;
+
+    handlers[1]({ user: { role_name } }, {}, (error) => {
+      if (error) refused = error.statusCode;
+      else passed = true;
+    });
+
+    return passed ? "passed" : refused;
+  };
+
+  for (const [method, path, controller] of ROUTES)
+    test(`${method.toUpperCase()} ${path} is for employees only, behind verifyToken, and reaches its controller`, () => {
+      const handlers = handlersFor(method, path);
+
+      assert.equal(handlers[0], verifyToken);
+      assert.equal(handlers.at(-1), controller);
+      assert.equal(roleCheckAnswers(handlers, "Employee"), "passed");
+      assert.equal(roleCheckAnswers(handlers, "HR"), 403);
+    });
+
+  test("/conversations/unread-count is declared before /conversations/:conversation_id, and rate limited", () => {
+    const indexOf = (path) =>
+      router.stack.findIndex((layer) => layer.route?.path === path && layer.route.methods.get);
+
+    assert.ok(indexOf("/conversations/unread-count") < indexOf("/conversations/:conversation_id"));
+    assert.ok(handlersFor("get", "/conversations/unread-count").includes(pendingCountLimiter));
+  });
+
+  test("sending is rate limited, after the id check", () => {
+    const handlers = handlersFor("post", "/conversations/:conversation_id/messages");
+
+    assert.equal(handlers.length, 5);
+    assert.equal(handlers.indexOf(messageSendLimiter), 3);
   });
 });

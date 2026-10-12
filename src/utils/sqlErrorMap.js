@@ -344,6 +344,24 @@ export const sqlErrorMap = {
     50159: { statusCode: 400, message: 'Status must be APPROVED, REJECTED or RETURNED' },
     50160: { statusCode: 400, message: 'Review remarks are required to reject or return a claim' },
 
+    // ── Messaging, DBA request 22, read back 2026-10-12 ────────────────────
+    //
+    // The role guard on all six procedures. The routes refuse other roles
+    // first, so this is the stale-session case, and an Administrator, who
+    // has no access to messaging in v1.
+    50170: { statusCode: 403, message: 'You are not authorized to use messaging' },
+    // Opening a conversation with an employee who is not in HR's companies,
+    // or does not exist. One answer for both.
+    50171: { statusCode: 404, message: 'Employee not found' },
+    // Sending to, or marking read, a conversation that is not the caller's.
+    50172: { statusCode: 404, message: 'Conversation not found' },
+    // The employee's account is closed, or the company is no longer theirs.
+    // HR can still read it.
+    50173: { statusCode: 409, message: 'This conversation can be read but no longer added to' },
+    // Both checked by messageBodyOf first; the database's own guards.
+    50174: { statusCode: 400, message: 'A message cannot be empty' },
+    50175: { statusCode: 400, message: 'A message can be at most 2000 characters' },
+
     2627: {statusCode: 409, message: 'Duplicate record'},
 
     // SQL Server's unique-INDEX violation, where 2627 is the unique-CONSTRAINT
