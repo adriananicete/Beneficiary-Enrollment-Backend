@@ -57,6 +57,8 @@ const MUST_BE_MAPPED = [
   [50163, 409, /once a death claim has been filed/i],
   [50164, 403, /Only an Administrator/i],
   [50165, 409, /not marked deceased/i],
+  [50166, 409, /death claim has already been filed/i],
+  [50167, 404, /No death claim found/i],
   [50169, 403, /not authorized to manage deceased/i],
   // Messaging, DBA request 22, read back 2026-10-12.
   [50170, 403, /not authorized to use messaging/i],

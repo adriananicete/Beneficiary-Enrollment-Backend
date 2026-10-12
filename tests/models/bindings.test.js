@@ -415,6 +415,9 @@ describe("model bindings — claims", () => {
     ["getClaimsByUser", (pool) => ClaimModel.getClaimsByUser(pool, 3, "PENDING", { page: 1, pageSize: 25 }), "usp_sel_claims_by_user"],
     ["getPendingCountByUser", (pool) => ClaimModel.getPendingCountByUser(pool, 3), "usp_sel_claims_pending_count_by_user"],
     ["reviewClaim", (pool) => ClaimModel.reviewClaim(pool, {}), "usp_upd_claim_review"],
+    // DBA request 21, read back 2026-10-12.
+    ["fileDeathClaim", (pool) => ClaimModel.fileDeathClaim(pool, 40, 3), "usp_upd_claim_file_death"],
+    ["closeClaim", (pool) => ClaimModel.closeClaim(pool, 40, 3), "usp_upd_claim_close"],
   ];
 
   for (const [name, call, procedure] of CLAIM_CALLS)

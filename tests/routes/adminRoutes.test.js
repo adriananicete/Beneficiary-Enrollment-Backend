@@ -12,7 +12,8 @@ const claims = await import("../../src/controllers/claimController.js");
 const messages = await import("../../src/controllers/messageController.js");
 const deceased = await import("../../src/controllers/deceasedController.js");
 const { verifyClientAccess } = await import("../../src/middlewares/verifyClientAccess.js");
-const { messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
+const { claimSubmitLimiter, messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
+const { parseDocuments } = await import("../../src/middlewares/parseDocuments.js");
 
 const handlersFor = (method, path) => {
   const layer = router.stack.find(
@@ -119,6 +120,44 @@ describe("the deceased routes", () => {
     assert.equal(handlers.at(-1), deceased.undoDeceased);
     assert.equal(roleAnswer(handlers, "Administrator"), "passed");
     assert.equal(roleAnswer(handlers, "HR"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
+// The death claim, DBA request 21. HR and the Administrator.
+describe("the death claim routes", () => {
+  test("GET /claim-types gives HR's types, for HR and the Administrator", () => {
+    const handlers = handlersFor("get", "/claim-types");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), claims.getHrClaimTypes);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+
+  // The upload is read last, after the session, the role, the company and
+  // the limiter, so nobody outside the company gets 50MB held in memory.
+  test("POST /enrollments/:client_id/death-claim checks the company and the limiter before reading the upload", () => {
+    const handlers = handlersFor("post", "/enrollments/:client_id/death-claim");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+    assert.equal(handlers[2], verifyClientAccess);
+    assert.equal(handlers[3], claimSubmitLimiter);
+    assert.equal(handlers[4], parseDocuments);
+    assert.equal(handlers.at(-1), claims.fileDeathClaim);
+  });
+
+  test("PATCH /claims/:claim_id/close checks the id, for HR and the Administrator", () => {
+    const handlers = handlersFor("patch", "/claims/:claim_id/close");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.length, 4);
+    assert.equal(handlers.at(-1), claims.closeDeathClaim);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
     assert.equal(roleAnswer(handlers, "Employee"), 403);
   });
 });
