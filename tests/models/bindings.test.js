@@ -14,6 +14,7 @@ import ReferenceModel from "../../src/models/referenceModel.js";
 import ChangeRequestModel from "../../src/models/changeRequestModel.js";
 import SignatureModel from "../../src/models/signatureModel.js";
 import EmployerModel from "../../src/models/employerModel.js";
+import ClaimModel from "../../src/models/claimModel.js";
 import { sql } from "../../src/config/db.js";
 
 // One file rather than nine, and deliberately so.
@@ -393,5 +394,67 @@ describe("model bindings — output parameters", () => {
     assert.equal(declarationOf(bindings.max_attempts.type), declarationOf(sql.Int));
     assert.equal(declarationOf(bindings.lock_minutes.type), declarationOf(sql.Int));
     assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
+  });
+});
+
+// DBA request 20, read back 2026-10-12. The procedures return new ids in a
+// result set and declare no OUTPUT parameter (sys.parameters, no rows).
+describe("model bindings — claims", () => {
+  const CLAIM_CALLS = [
+    ["getClaimTypes", (pool) => ClaimModel.getClaimTypes(pool, "EMPLOYEE"), "usp_sel_claim_types"],
+    ["insertClaim", (pool) => ClaimModel.insertClaim(pool, {}), "usp_ins_claim"],
+    ["insertClaimDocument", (pool) => ClaimModel.insertClaimDocument(pool, {}), "usp_ins_claim_document"],
+    ["checkClaimRequirements", (pool) => ClaimModel.checkClaimRequirements(pool, 30), "usp_chk_claim_requirements"],
+    ["getClaimsByClient", (pool) => ClaimModel.getClaimsByClient(pool, 75), "usp_sel_claims_by_client"],
+    ["getClaimById", (pool) => ClaimModel.getClaimById(pool, 30, 12), "usp_sel_claim_by_id"],
+    ["getClaimDocument", (pool) => ClaimModel.getClaimDocument(pool, 9, 12), "usp_sel_claim_document"],
+    ["cancelClaim", (pool) => ClaimModel.cancelClaim(pool, {}), "usp_upd_claim_cancel"],
+  ];
+
+  for (const [name, call, procedure] of CLAIM_CALLS)
+    test(`${name} calls ${procedure} and declares no output`, async () => {
+      const { pool, calls } = anyProcedure();
+
+      await call(pool);
+
+      assert.ok(callTo(calls, procedure), `${name} does not call ${procedure}`);
+      assert.deepEqual(Object.keys(callTo(calls, procedure).outputs), []);
+    });
+
+  // The signature travelled as a string into NVarChar(500) once, and every
+  // one was cut at 500 characters with nothing reporting it.
+  test("a document's content is bound as varbinary, its name as nvarchar and its hash as char(64)", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await ClaimModel.insertClaimDocument(pool, { content: Buffer.from("%PDF-"), file_name: "Peña.pdf" });
+
+    const { bindings } = callTo(calls, "usp_ins_claim_document");
+
+    assert.equal(declarationOf(bindings.content.type), "varbinary");
+    assert.equal(declarationOf(bindings.file_name.type), "nvarchar");
+    assert.equal(declarationOf(bindings.sha256.type), "char");
+    assert.equal(declarationOf(bindings.claim_id.type), declarationOf(sql.BigInt));
+    assert.equal(declarationOf(bindings.requirement_id.type), declarationOf(sql.BigInt));
+  });
+
+  test("insertClaim binds the ids as BigInt and the filer as text", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await ClaimModel.insertClaim(pool, { client_id: "75", claim_type_id: "1", filed_by: "12", filed_by_role: "Employee" });
+
+    const { bindings } = callTo(calls, "usp_ins_claim");
+
+    assert.equal(declarationOf(bindings.client_id.type), declarationOf(sql.BigInt));
+    assert.equal(declarationOf(bindings.claim_type_id.type), declarationOf(sql.BigInt));
+    assert.equal(declarationOf(bindings.filed_by.type), "varchar");
+    assert.equal(bindings.filed_by_role.value, "Employee");
+  });
+
+  // Three result sets, read by position. An empty answer must still give
+  // null and two empty lists, not a crash.
+  test("getClaimById reads three result sets, and an empty answer is a null claim", async () => {
+    const { pool } = anyProcedure();
+
+    assert.deepEqual(await ClaimModel.getClaimById(pool, 30, 12), { claim: null, documents: [], requirements: [] });
   });
 });

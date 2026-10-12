@@ -228,6 +228,24 @@ export const certificateResendLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Filing a claim uploads up to ten files of 5MB, held in memory while they
+// are read. Keyed on the employee, like the HR limiters above, and it runs
+// after verifyToken and before parseDocuments, so a caller over the limit is
+// refused before any file is buffered. An employee files a claim a handful of
+// times in their life; twenty an hour leaves room for refusals and retries.
+export const claimSubmitLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? 100 : 20,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many claim submissions, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // The HR screen polls the pending count every ~30s to drive a badge, so a
 // 15-minute window holds about 30 requests from one correctly behaving client.
 // Several HR users on one shared account, and a tab left open in more than one
