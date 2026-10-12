@@ -4,10 +4,12 @@ import bcrypt from "bcrypt";
 
 import "../helpers/env.js";
 import { fakePool, inputsFor, callTo } from "../helpers/fakePool.js";
+import { fakeIo } from "../helpers/fakeIo.js";
 
 const { default: PasswordService } = await import(
   "../../src/services/passwordService.js"
 );
+const { setRealtimeServer } = await import("../../src/realtime/realtime.js");
 const { EMPLOYEE, ADMIN, SUPER_ADMIN } = await import(
   "../../src/utils/constants.js"
 );
@@ -326,6 +328,24 @@ describe("passwordService — what reaches the database", () => {
       await result.catch(() => {});
 
       assert.equal(callTo(calls, END_SESSIONS), undefined, JSON.stringify(fields));
+    }
+  });
+
+  // And the sockets opened with those sessions (branch 9). A refused change
+  // closes none.
+  test("a change disconnects the user's sockets, and a refused one does not", async () => {
+    const { io, events } = fakeIo();
+    setRealtimeServer(io);
+
+    try {
+      await change(userRow()).result;
+      assert.deepEqual(events, [{ kind: "disconnect", room: "user:12", close: true }]);
+
+      events.length = 0;
+      await change(userRow(), { oldPassword: "NotTheOne@1" }).result.catch(() => {});
+      assert.deepEqual(events, []);
+    } finally {
+      setRealtimeServer(null);
     }
   });
 

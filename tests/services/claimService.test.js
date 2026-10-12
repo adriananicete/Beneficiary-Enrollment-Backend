@@ -4,11 +4,13 @@ import assert from "node:assert/strict";
 import "../helpers/env.js";
 import { callTo, fakePool, inputsFor } from "../helpers/fakePool.js";
 import { silenceConsoleError } from "../helpers/http.js";
+import { fakeIo } from "../helpers/fakeIo.js";
 import { AppError } from "../../src/utils/AppError.js";
 
 const { default: ClaimService, asOpenClaimConflict, reviewDecisionOf } = await import(
   "../../src/services/claimService.js"
 );
+const { setRealtimeServer } = await import("../../src/realtime/realtime.js");
 
 // The employee's claim submit and cancel. Everything covered here happens
 // BEFORE the transaction opens: the refusals that decide whether anything is
@@ -374,6 +376,25 @@ describe("claimService.reviewClaim", () => {
       assert.deepEqual(await review(pool), { accountClosed: true }, String(closed));
       assert.match(sent[0].body.content, /your account on this\s+system has been closed/);
       assert.doesNotMatch(sent[0].body.content, /Sign in/);
+    }
+  });
+
+  // The procedure closed the account and ended its sessions. Its open sockets
+  // close at once (branch 9), and only then.
+  test("an approval that closed the account disconnects the employee's sockets", async () => {
+    stubMail();
+    const { io, events } = fakeIo();
+    setRealtimeServer(io);
+
+    try {
+      await review(withClaim({ claim: PENDING, reviewOutcome: [{ account_closed: true }] }).pool);
+      assert.deepEqual(events, [{ kind: "disconnect", room: "client:75", close: true }]);
+
+      events.length = 0;
+      await review(withClaim({ claim: PENDING, reviewOutcome: [{ account_closed: false }] }).pool);
+      assert.deepEqual(events, []);
+    } finally {
+      setRealtimeServer(null);
     }
   });
 

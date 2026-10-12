@@ -2,6 +2,7 @@ import bcrypt from "bcrypt";
 import UserModel from "../models/userModel.js";
 import { AppError } from "../utils/AppError.js";
 import { validatePassword } from "../utils/validatePassword.js";
+import { endUserSessions } from "../realtime/realtime.js";
 
 // The forced password change is one flow reached from two logins, so it is one
 // implementation. It was employee-only until now, which is why an HR or admin
@@ -80,6 +81,9 @@ const changePassword = async (
   // forced change is the only way a password changes here, so this is also the
   // path an employee takes after HR reissues their credentials.
   await UserModel.endSessions(pool, user.us01_user_id);
+
+  // And any socket open with one of those sessions.
+  endUserSessions(user.us01_user_id);
 };
 
 export default {

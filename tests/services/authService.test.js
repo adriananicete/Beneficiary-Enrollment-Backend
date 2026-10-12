@@ -5,8 +5,10 @@ import jwt from "jsonwebtoken";
 
 import "../helpers/env.js";
 import { fakePool, inputsFor, callTo } from "../helpers/fakePool.js";
+import { fakeIo } from "../helpers/fakeIo.js";
 
 const { default: AuthService } = await import("../../src/services/authService.js");
+const { setRealtimeServer } = await import("../../src/realtime/realtime.js");
 const { default: config } = await import("../../src/config/env.js");
 const {
   EMPLOYEE,
@@ -731,6 +733,23 @@ describe("authService — logout", () => {
     await result;
 
     assert.equal(inputsFor(calls, END_SESSIONS)?.us01_user_id, 12);
+  });
+
+  // And the sockets opened with those sessions, at once (branch 9).
+  test("a live session's sockets are disconnected too, and a stale token's are not", async () => {
+    const { io, events } = fakeIo();
+    setRealtimeServer(io);
+
+    try {
+      await logout(signed({ token_version: 4 })).result;
+      assert.deepEqual(events, [{ kind: "disconnect", room: "user:12", close: true }]);
+
+      events.length = 0;
+      await logout(signed({ token_version: 3 })).result;
+      assert.deepEqual(events, []);
+    } finally {
+      setRealtimeServer(null);
+    }
   });
 
   // A revoked token still verifies as a JWT for up to thirty days. If it could

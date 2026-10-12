@@ -5,6 +5,7 @@ import { AppError } from "../utils/AppError.js";
 import { matchDocuments } from "../utils/claimDocuments.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
 import { sendClaimDecisionEmail } from "./emailService.js";
+import { endClientSessions } from "../realtime/realtime.js";
 
 // Employee claims, branch 3 of md/CLAIMS-AND-MESSAGING-DECISIONS.md, on the
 // procedures of DBA request 20.
@@ -255,6 +256,10 @@ const reviewClaim = async (pool, { userId, claimId, status, remarks }) => {
 
   // A BIT, which the driver hands back as a boolean. Read for truth.
   const accountClosed = Boolean(outcome?.account_closed);
+
+  // The procedure ended the employee's sessions with the account. Their open
+  // sockets close now rather than at the next re-check.
+  if (accountClosed) endClientSessions(claim.client_id);
 
   await notifyClaimDecision(claim, status, remarks, accountClosed);
 

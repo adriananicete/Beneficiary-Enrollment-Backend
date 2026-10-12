@@ -12,6 +12,7 @@ import { buildPage, parsePaging, parseSearch } from "../utils/parsePaging.js";
 import { AppError } from "../utils/AppError.js";
 import { localIsoDate } from "../utils/localDate.js";
 import { sendCredentialsEmail } from "../services/emailService.js";
+import { endUserSessions } from "../realtime/realtime.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 
@@ -135,6 +136,10 @@ export const resendCredentials = async (req, res, next) => {
         500,
       );
     }
+
+    // resetPassword raised the token version, which ends the employee's
+    // sessions at verifySession. This closes their open sockets too.
+    endUserSessions(user.us01_user_id);
 
     return res.status(200).json({
       success: true,
