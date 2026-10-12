@@ -12,6 +12,7 @@ import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { getEmployerSettings, updateEmployerSettings } from '../controllers/employerSettingsController.js';
 import { getClaimDetails, getClaimDocument, getClaims, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
 import { getConversation, getConversations, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
+import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
 
 const router = express.Router();
 
@@ -43,6 +44,11 @@ router.post('/enrollments/:client_id/resend-credentials', verifyToken, allowedRo
 // company scoping: usp_get_insurance_enrollment_by_id takes a client_id and
 // trusts it, so without it an HR could mail any company's certificate out.
 router.post('/enrollments/:client_id/resend-certificate', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, certificateResendLimiter, resendCertificate);
+// Deceased status, DBA request 21. HR and the Administrator mark it or correct
+// the date; only the Administrator undoes it (decided 2026-10-06). Both behind
+// verifyClientAccess, and the procedures scope again.
+router.post('/enrollments/:client_id/deceased', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, markDeceased);
+router.delete('/enrollments/:client_id/deceased', verifyToken, allowedRoles(SUPER_ADMIN), verifyClientAccess, undoDeceased);
 // /pending-count is declared before /:request_id on purpose. Express matches in
 // order, so the param route would otherwise swallow it and try to read
 // "pending-count" as an id.
