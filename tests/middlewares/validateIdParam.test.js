@@ -35,6 +35,17 @@ describe("isNumericId", () => {
       assert.equal(isNumericId(value), false, `value=${JSON.stringify(value)}`);
     }
   });
+
+  // Every id is bound as sql.BigInt, and the driver refuses a value outside
+  // its range before the procedure runs, which answered 500. Measured
+  // 2026-10-12 with tedious's own validator: 9223372036854775807 passes,
+  // 9223372036854775808 throws. Pinned as literals.
+  test("accepts 18 digits and refuses 19, so every id fits a BigInt", () => {
+    assert.equal(isNumericId("9".repeat(18)), true);
+    assert.equal(isNumericId("1".repeat(19)), false);
+    assert.equal(isNumericId("9223372036854775808"), false);
+    assert.equal(isNumericId("99999999999999999999"), false);
+  });
 });
 
 describe("isInvitationToken", () => {
@@ -127,5 +138,15 @@ describe("validateIdParam", () => {
     middleware(makeReq(), makeRes(), next);
 
     assert.equal(next.refusal().statusCode, 404);
+  });
+
+  // The case found 2026-10-12: /admin/enrollments/99999999999999999999
+  // reached the driver and answered 500.
+  test("an id too long for a BigInt is 404, like any id that cannot exist", () => {
+    const next = makeNext();
+
+    middleware(makeReq({ params: { request_id: "99999999999999999999" } }), makeRes(), next);
+
+    assert.deepEqual(next.refusal(), { statusCode: 404, message: "Change request not found" });
   });
 });

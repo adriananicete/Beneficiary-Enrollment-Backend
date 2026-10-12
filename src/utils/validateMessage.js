@@ -28,15 +28,11 @@ export const messageBodyOf = (value) => {
 };
 
 // A whole-number id given as text or as a number, or null. Text and numbers
-// only: String() throws on {"toString": 1}, which once answered 500. At most
-// 18 digits, so it always fits the BigInt it is bound as; a longer one is a
-// driver error, which would also answer 500.
-const MAX_ID_DIGITS = 18;
-
+// only: String() throws on {"toString": 1}, which once answered 500.
+// isNumericId caps it at 18 digits, so it always fits the BigInt it is bound
+// as.
 const idOf = (value) =>
-  (typeof value === "string" || typeof value === "number") &&
-  isNumericId(value) &&
-  String(value).length <= MAX_ID_DIGITS
+  (typeof value === "string" || typeof value === "number") && isNumericId(value)
     ? String(value)
     : null;
 
