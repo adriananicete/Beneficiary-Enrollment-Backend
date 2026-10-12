@@ -10,6 +10,8 @@ const { getEmployerSettings, updateEmployerSettings } = await import(
 );
 const claims = await import("../../src/controllers/claimController.js");
 const messages = await import("../../src/controllers/messageController.js");
+const deceased = await import("../../src/controllers/deceasedController.js");
+const { verifyClientAccess } = await import("../../src/middlewares/verifyClientAccess.js");
 const { messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
 
 const handlersFor = (method, path) => {
@@ -81,6 +83,43 @@ describe("the HR claim routes", () => {
     assert.equal(handlersFor("get", "/claims/:claim_id").length, 4);
     assert.equal(handlersFor("patch", "/claims/:claim_id").length, 4);
     assert.equal(handlersFor("get", "/claims/:claim_id/documents/:document_id").length, 5);
+  });
+});
+
+// Run the role check (the second handler) with a role, and read what it did.
+const roleAnswer = (handlers, role_name) => {
+  let answer = null;
+
+  handlers[1]({ user: { role_name } }, {}, (error) => {
+    answer = error ? error.statusCode : "passed";
+  });
+
+  return answer;
+};
+
+// Deceased status, DBA request 21. HR and the Administrator mark; only the
+// Administrator undoes (decided 2026-10-06).
+describe("the deceased routes", () => {
+  test("POST marks, for HR and the Administrator, behind verifyToken and verifyClientAccess", () => {
+    const handlers = handlersFor("post", "/enrollments/:client_id/deceased");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers[2], verifyClientAccess);
+    assert.equal(handlers.at(-1), deceased.markDeceased);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+
+  test("DELETE undoes, for the Administrator only", () => {
+    const handlers = handlersFor("delete", "/enrollments/:client_id/deceased");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers[2], verifyClientAccess);
+    assert.equal(handlers.at(-1), deceased.undoDeceased);
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "HR"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
   });
 });
 

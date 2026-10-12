@@ -51,6 +51,13 @@ const MUST_BE_MAPPED = [
   [50158, 404, /No pending claim found/i],
   [50159, 400, /APPROVED, REJECTED or RETURNED/],
   [50160, 400, /required to reject or return/i],
+  // Deceased status, DBA request 21, read back 2026-10-12.
+  [50161, 404, /Employee not found/i],
+  [50162, 400, /date of death is not valid/i],
+  [50163, 409, /once a death claim has been filed/i],
+  [50164, 403, /Only an Administrator/i],
+  [50165, 409, /not marked deceased/i],
+  [50169, 403, /not authorized to manage deceased/i],
   // Messaging, DBA request 22, read back 2026-10-12.
   [50170, 403, /not authorized to use messaging/i],
   [50171, 404, /Employee not found/i],

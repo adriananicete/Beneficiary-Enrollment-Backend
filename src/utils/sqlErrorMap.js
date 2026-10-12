@@ -344,6 +344,22 @@ export const sqlErrorMap = {
     50159: { statusCode: 400, message: 'Status must be APPROVED, REJECTED or RETURNED' },
     50160: { statusCode: 400, message: 'Review remarks are required to reject or return a claim' },
 
+    // ── Deceased status, DBA request 21, read back 2026-10-12 ─────────────
+    //
+    // The client is not active, or not in HR's companies. One answer for both.
+    50161: { statusCode: 404, message: 'Employee not found' },
+    // The procedure's own check of the date. validateDateOfDeath answers
+    // each case with its own sentence first, so this is the backstop.
+    50162: { statusCode: 400, message: 'The date of death is not valid' },
+    // Correcting the date or undoing the mark once a death claim exists.
+    50163: { statusCode: 409, message: 'This cannot be changed once a death claim has been filed' },
+    // The undo route allows the Administrator alone, so this is the
+    // stale-session case.
+    50164: { statusCode: 403, message: 'Only an Administrator can undo a deceased mark' },
+    50165: { statusCode: 409, message: 'This employee is not marked deceased' },
+    // The role guard on all four procedures.
+    50169: { statusCode: 403, message: 'You are not authorized to manage deceased status or death claims' },
+
     // ── Messaging, DBA request 22, read back 2026-10-12 ────────────────────
     //
     // The role guard on all six procedures. The routes refuse other roles

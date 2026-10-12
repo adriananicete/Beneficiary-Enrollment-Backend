@@ -16,6 +16,7 @@ import SignatureModel from "../../src/models/signatureModel.js";
 import EmployerModel from "../../src/models/employerModel.js";
 import ClaimModel from "../../src/models/claimModel.js";
 import MessageModel from "../../src/models/messageModel.js";
+import DeathModel from "../../src/models/deathModel.js";
 import { sql } from "../../src/config/db.js";
 
 // One file rather than nine, and deliberately so.
@@ -491,6 +492,37 @@ describe("model bindings — claims", () => {
     const { pool } = anyProcedure();
 
     assert.deepEqual(await ClaimModel.getClaimById(pool, 30, 12), { claim: null, documents: [], requirements: [] });
+  });
+});
+
+// DBA request 21, read back 2026-10-12. No OUTPUT parameters.
+describe("model bindings — deceased status", () => {
+  for (const [name, call, procedure] of [
+    ["markDeceased", (pool) => DeathModel.markDeceased(pool, { clientId: "75", dateOfDeath: "2026-10-01", userId: 3 }), "usp_upd_client_death"],
+    ["undoDeceased", (pool) => DeathModel.undoDeceased(pool, { clientId: "75", userId: 1 }), "usp_del_client_death"],
+  ])
+    test(`${name} calls ${procedure} and declares no output`, async () => {
+      const { pool, calls } = anyProcedure();
+
+      await call(pool);
+
+      assert.ok(callTo(calls, procedure), `${name} does not call ${procedure}`);
+      assert.deepEqual(Object.keys(callTo(calls, procedure).outputs), []);
+    });
+
+  // A date, bound from its "YYYY-MM-DD" text as the birthdate is. Bound as a
+  // datetime, it would carry a time and a zone the column does not have.
+  test("the date of death is bound as a date, and the ids as BigInt", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await DeathModel.markDeceased(pool, { clientId: "75", dateOfDeath: "2026-10-01", userId: 3 });
+
+    const { bindings } = callTo(calls, "usp_upd_client_death");
+
+    assert.equal(declarationOf(bindings.date_of_death.type), "date");
+    assert.equal(bindings.date_of_death.value, "2026-10-01");
+    assert.equal(declarationOf(bindings.client_id.type), declarationOf(sql.BigInt));
+    assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
   });
 });
 
