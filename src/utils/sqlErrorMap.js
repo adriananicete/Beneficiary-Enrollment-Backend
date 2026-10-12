@@ -357,6 +357,11 @@ export const sqlErrorMap = {
     // stale-session case.
     50164: { statusCode: 403, message: 'Only an Administrator can undo a deceased mark' },
     50165: { statusCode: 409, message: 'This employee is not marked deceased' },
+    // The death claim, branch 6. A second one for the same employee.
+    50166: { statusCode: 409, message: 'A death claim has already been filed for this employee' },
+    // Filing or closing: not the caller's company, not a death claim, or not
+    // in the status the step needs. One answer for all.
+    50167: { statusCode: 404, message: 'No death claim found' },
     // The role guard on all four procedures.
     50169: { statusCode: 403, message: 'You are not authorized to manage deceased status or death claims' },
 

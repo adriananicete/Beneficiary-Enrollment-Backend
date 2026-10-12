@@ -6,11 +6,12 @@ import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { cancelInvitationJob, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
 import { validateInvitations } from '../middlewares/validateInvitations.js';
-import { bulkInvitationLimiter, certificateResendLimiter, credentialsResendLimiter, jobStatusLimiter, messageSendLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
+import { bulkInvitationLimiter, certificateResendLimiter, claimSubmitLimiter, credentialsResendLimiter, jobStatusLimiter, messageSendLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
 import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { getEmployerSettings, updateEmployerSettings } from '../controllers/employerSettingsController.js';
-import { getClaimDetails, getClaimDocument, getClaims, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
+import { closeDeathClaim, fileDeathClaim, getClaimDetails, getClaimDocument, getClaims, getHrClaimTypes, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
+import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { getConversation, getConversations, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
 
@@ -49,6 +50,11 @@ router.post('/enrollments/:client_id/resend-certificate', verifyToken, allowedRo
 // verifyClientAccess, and the procedures scope again.
 router.post('/enrollments/:client_id/deceased', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, markDeceased);
 router.delete('/enrollments/:client_id/deceased', verifyToken, allowedRoles(SUPER_ADMIN), verifyClientAccess, undoDeceased);
+// The death claim, DBA request 21. Filed by HR or the Administrator for an
+// employee already marked deceased, approved on filing. The upload is read
+// only after the session, the role, the company and the limiter have passed,
+// as on the employee's claim route.
+router.post('/enrollments/:client_id/death-claim', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, claimSubmitLimiter, parseDocuments, fileDeathClaim);
 // /pending-count is declared before /:request_id on purpose. Express matches in
 // order, so the param route would otherwise swallow it and try to read
 // "pending-count" as an id.
@@ -69,11 +75,15 @@ router.patch('/employers/:employer_id/settings', verifyToken, allowedRoles(ADMIN
 // polled every thirty seconds are sixty requests in its window of 300.
 const claimId = validateIdParam('claim_id', 'Claim not found');
 
+router.get('/claim-types', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getHrClaimTypes);
 router.get('/claims', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getClaims);
 router.get('/claims/pending-count', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), pendingCountLimiter, getPendingClaimCount);
 router.get('/claims/:claim_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), claimId, getClaimDetails);
 router.get('/claims/:claim_id/documents/:document_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), validateIdParam('claim_id', 'Document not found'), validateIdParam('document_id', 'Document not found'), getClaimDocument);
 router.patch('/claims/:claim_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), claimId, reviewClaim);
+// Closes the death claim and the employee's account. The procedure accepts
+// only an APPROVED death claim in the caller's companies (50167).
+router.patch('/claims/:claim_id/close', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), claimId, closeDeathClaim);
 
 // Messaging, DBA request 22. HR only: the Administrator has no access in v1
 // (decided 2026-10-12), so these carry allowedRoles(ADMIN), which is HR.

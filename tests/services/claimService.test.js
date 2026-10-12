@@ -430,7 +430,143 @@ describe("claimService.reviewClaim", () => {
   });
 });
 
+// The death claim, branch 6. Filed by HR for an employee already marked
+// deceased, approved on filing.
+const ENROLLMENT = "usp_get_insurance_enrollment_by_id";
+const CLOSE = "usp_upd_claim_close";
+
+// TEST-DEATH as seeded by request 21: type 3, requirement 4.
+const HR_TYPES = {
+  types: [{ claim_type_id: "3", claim_type_code: "TEST-DEATH", claim_type_desc: "Test death claim", ends_coverage: true }],
+  requirements: [
+    { requirement_id: "4", claim_type_id: "3", requirement_desc: "Test death certificate (required)", is_required: true },
+  ],
+};
+
+const deathScripted = ({ enrollment = { client_id: "75", date_of_death: "2026-10-01" } } = {}) => {
+  const fake = fakePool({
+    [ENROLLMENT]: enrollment ? [enrollment] : [],
+    [TYPES]: () => ({ recordsets: [HR_TYPES.types, HR_TYPES.requirements], recordset: HR_TYPES.types }),
+  });
+
+  fake.transactions = 0;
+  fake.pool.acquire = (transaction, callback) => {
+    fake.transactions++;
+    callback(new Error(REACHED_TRANSACTION));
+  };
+
+  return fake;
+};
+
+const fileDeath = (pool, overrides = {}) =>
+  ClaimService.fileDeathClaim(pool, {
+    userId: 3,
+    roleName: "HR",
+    clientId: "75",
+    claimTypeId: "3",
+    documents: [doc("requirement_4")],
+    ...overrides,
+  });
+
+describe("claimService.fileDeathClaim — refused before anything is written", () => {
+  test("a claim_type_id that is not a whole number is 400, and the database is not asked", async () => {
+    const { pool, calls } = deathScripted();
+
+    await assert.rejects(fileDeath(pool, { claimTypeId: { toString: 1 } }), refusedWith(400, /^claim_type_id is required$/));
+    assert.equal(calls.length, 0);
+  });
+
+  test("an employee with no active enrollment is 404", async () => {
+    const fake = deathScripted({ enrollment: null });
+
+    await assert.rejects(fileDeath(fake.pool), refusedWith(404, /^Enrollment not found$/));
+    assert.equal(fake.transactions, 0);
+  });
+
+  // The order is decided: mark deceased first, then file.
+  test("an employee not marked deceased is 409, before the types are read and before any write", async () => {
+    const fake = deathScripted({ enrollment: { client_id: "75", date_of_death: null } });
+
+    await assert.rejects(fileDeath(fake.pool), refusedWith(409, /^This employee is not marked deceased$/));
+    assert.equal(callTo(fake.calls, TYPES), undefined);
+    assert.equal(fake.transactions, 0);
+  });
+
+  // HR cannot file an employee's claim type by naming its id.
+  test("only HR's types are read, and an employee's type is 400", async () => {
+    const fake = deathScripted();
+
+    await assert.rejects(fileDeath(fake.pool, { claimTypeId: "1" }), refusedWith(400, /^This claim type cannot be filed here$/));
+    assert.equal(inputsFor(fake.calls, TYPES).filed_by, "HR");
+    assert.equal(fake.transactions, 0);
+  });
+
+  test("a missing death certificate is 400 and names it", async () => {
+    const fake = deathScripted();
+
+    await assert.rejects(
+      fileDeath(fake.pool, { documents: [] }),
+      refusedWith(400, /^Missing required documents: Test death certificate \(required\)$/),
+    );
+    assert.equal(fake.transactions, 0);
+  });
+
+  test("a complete filing for a deceased employee reaches the transaction", async () => {
+    const fake = deathScripted();
+
+    await assert.rejects(fileDeath(fake.pool), reachedTransaction);
+    assert.equal(fake.transactions, 1);
+  });
+});
+
+describe("claimService.closeDeathClaim", () => {
+  // account_closed is a BIT, which the driver hands back as a boolean; a
+  // procedure that computes it may hand back 1. Both mean closed.
+  test("closes the claim as the caller, and disconnects the employee's sockets", async () => {
+    for (const closed of [true, 1]) {
+      const { io, events } = fakeIo();
+      setRealtimeServer(io);
+
+      try {
+        const { pool, calls } = fakePool({ [CLOSE]: [{ claim_id: "40", client_id: "75", account_closed: closed }] });
+
+        assert.deepEqual(await ClaimService.closeDeathClaim(pool, { userId: 3, claimId: "40" }), { accountClosed: true }, String(closed));
+        assert.deepEqual(inputsFor(calls, CLOSE), { claim_id: "40", us01_user_id: 3 });
+        assert.deepEqual(events, [{ kind: "disconnect", room: "client:75", close: true }], String(closed));
+      } finally {
+        setRealtimeServer(null);
+      }
+    }
+  });
+
+  test("a refused close disconnects nobody", async () => {
+    const { io, events } = fakeIo();
+    setRealtimeServer(io);
+
+    try {
+      const { pool } = fakePool({
+        [CLOSE]: () => {
+          throw Object.assign(new Error("No death claim found."), { number: 50167 });
+        },
+      });
+
+      await assert.rejects(ClaimService.closeDeathClaim(pool, { userId: 3, claimId: "40" }));
+      assert.deepEqual(events, []);
+    } finally {
+      setRealtimeServer(null);
+    }
+  });
+});
+
 describe("asOpenClaimConflict", () => {
+  // The death claim's race names itself in HR's words, not the employee's.
+  test("the sentence can be the caller's own", () => {
+    assert.equal(
+      asOpenClaimConflict({ number: 2601 }, "A death claim has already been filed for this employee").message,
+      "A death claim has already been filed for this employee",
+    );
+  });
+
   // UX_claims_open is a unique INDEX, so a race past the procedure's own 50152
   // check raises 2601, which used to be unmapped.
   test("2601 becomes the open-claim 409, at the top or one level down", () => {

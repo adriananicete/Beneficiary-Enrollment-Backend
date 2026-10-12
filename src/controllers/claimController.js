@@ -125,15 +125,66 @@ export const cancelRemarksOf = (value) => {
   return remarks || null;
 };
 
-export const getMyClaimTypes = async (req, res, next) => {
+// The types one side may file, with their requirements and field names.
+// `filedBy` is 'EMPLOYEE' or 'HR', the values CK_claim_types_filed_by allows.
+const claimTypesFor = (filedBy) => async (req, res, next) => {
   try {
     const pool = await getPool();
 
-    const { types, requirements } = await ClaimModel.getClaimTypes(pool, "EMPLOYEE");
+    const { types, requirements } = await ClaimModel.getClaimTypes(pool, filedBy);
 
     return res.status(200).json({
       success: true,
       data: types.map((type) => claimTypeOf(type, requirements)),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getMyClaimTypes = claimTypesFor("EMPLOYEE");
+
+// HR's types: the death claim, today. Branch 6.
+export const getHrClaimTypes = claimTypesFor("HR");
+
+// multipart/form-data, the same as an employee's claim: claim_type_id, and
+// one field per requirement. The employee must already be marked deceased.
+export const fileDeathClaim = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    const { claimId } = await ClaimService.fileDeathClaim(pool, {
+      userId: req.user.user_id,
+      roleName: req.user.role_name,
+      clientId: req.params.client_id,
+      claimTypeId: req.body?.claim_type_id,
+      documents: req.documents ?? [],
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: { claim_id: claimId, claim_status: "APPROVED" },
+      message: "Death claim filed",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Closes the death claim and, with it, the employee's account.
+export const closeDeathClaim = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    const { accountClosed } = await ClaimService.closeDeathClaim(pool, {
+      userId: req.user.user_id,
+      claimId: req.params.claim_id,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { claim_id: req.params.claim_id, claim_status: "CLOSED", account_closed: accountClosed },
+      message: "Death claim closed. The employee's account is closed.",
     });
   } catch (error) {
     next(error);

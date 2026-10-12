@@ -4,10 +4,11 @@ import { sql } from "../config/db.js";
 // and is in md/DBA-PROCEDURES.md. None declares an OUTPUT parameter: the new
 // ids come back in a result set, so nothing here calls .output().
 //
-// Four of these run inside the caller's transaction and open none of their
+// Five of these run inside the caller's transaction and open none of their
 // own (read back, sys.sql_modules): insertClaim, insertClaimDocument,
-// checkClaimRequirements and resubmitClaim. They take the transaction where
-// the others take the pool. reviewClaim owns its transaction.
+// checkClaimRequirements, resubmitClaim and fileDeathClaim. They take the
+// transaction where the others take the pool. reviewClaim and closeClaim own
+// their transactions.
 
 // Two result sets: the active types for this filer, then their active
 // requirements. `filedBy` is 'EMPLOYEE' or 'HR', in capitals, the values
@@ -166,6 +167,32 @@ const reviewClaim = async (pool, reviewData) => {
   return result.recordset[0];
 };
 
+// The death claim, DBA request 21: approves the claim just inserted, inside
+// the caller's transaction and last, and queues it for ticketing. It opens no
+// transaction of its own (read back 2026-10-12). It refuses an employee not
+// marked deceased (50165) and a second death claim (50166), and holds a lock
+// on the deceased row until the caller commits.
+const fileDeathClaim = async (transaction, claimId, userId) => {
+  await transaction
+    .request()
+    .input("claim_id", sql.BigInt, claimId)
+    .input("us01_user_id", sql.BigInt, userId)
+    .execute("usp_upd_claim_file_death");
+};
+
+// Closes an APPROVED death claim and the employee's account, in one
+// transaction the procedure owns: us01_is_active = 0 and the token version
+// raised. Returns { claim_id, client_id, account_closed }.
+const closeClaim = async (pool, claimId, userId) => {
+  const result = await pool
+    .request()
+    .input("claim_id", sql.BigInt, claimId)
+    .input("us01_user_id", sql.BigInt, userId)
+    .execute("usp_upd_claim_close");
+
+  return result.recordset[0];
+};
+
 // Scoped by client_id. "Not yours" and "no longer open" are one refusal,
 // 50156.
 const cancelClaim = async (pool, cancelData) => {
@@ -190,5 +217,7 @@ export default {
   getClaimsByUser,
   getPendingCountByUser,
   reviewClaim,
+  fileDeathClaim,
+  closeClaim,
   cancelClaim,
 };
