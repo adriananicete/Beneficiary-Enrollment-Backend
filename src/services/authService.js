@@ -4,6 +4,7 @@ import UserModel from "../models/userModel.js";
 import InvitationModel from "../models/invitationModel.js";
 import config from "../config/env.js";
 import { AppError } from "../utils/AppError.js";
+import { endUserSessions } from "../realtime/realtime.js";
 import {
   EMPLOYEE,
   LOGIN_LOCK_MINUTES,
@@ -193,6 +194,10 @@ const logout = async (pool, token) => {
   }
 
   await UserModel.endSessions(pool, session.user_id);
+
+  // And the sockets opened with those sessions, now rather than at their next
+  // re-check.
+  endUserSessions(session.user_id);
 };
 
 const login = async (

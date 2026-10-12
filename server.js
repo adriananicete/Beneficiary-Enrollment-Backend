@@ -1,6 +1,10 @@
 import express from 'express';
+import http from 'node:http';
 import config from './src/config/env.js';
 import { getPool } from './src/config/db.js';
+import AuthService from './src/services/authService.js';
+import { createSocketServer } from './src/realtime/socketServer.js';
+import { setRealtimeServer } from './src/realtime/realtime.js';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import authRoutes from './src/routes/authRoutes.js';
@@ -98,4 +102,14 @@ try {
     process.exit(1);
 }
 
-app.listen(config.PORT, "0.0.0.0", () => console.log(`Server is running on port ${config.PORT}`));
+// One HTTP server for the API and the socket, on the same port. The socket
+// lives at /api/v1/socket.io (src/realtime/socketServer.js), so a proxy that
+// forwards /api reaches it too. One instance is assumed: a second would need a
+// shared adapter so a message saved on one reaches a socket on the other.
+const server = http.createServer(app);
+
+setRealtimeServer(
+    createSocketServer({ httpServer: server, getPool, verifySession: AuthService.verifySession }),
+);
+
+server.listen(config.PORT, "0.0.0.0", () => console.log(`Server is running on port ${config.PORT}`));

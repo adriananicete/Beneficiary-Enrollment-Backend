@@ -1,5 +1,6 @@
 import { getPool } from "../config/db.js";
 import MessageModel from "../models/messageModel.js";
+import MessageService, { messageOf } from "../services/messageService.js";
 import { AppError } from "../utils/AppError.js";
 import { buildPage, parsePaging } from "../utils/parsePaging.js";
 import {
@@ -10,8 +11,9 @@ import {
 } from "../utils/validateMessage.js";
 
 // HR ↔ employee messaging over REST, branch 8 of
-// md/CLAIMS-AND-MESSAGING-DECISIONS.md. Branch 9 adds the socket, which only
-// announces that a message arrived; REST stays the source of truth.
+// md/CLAIMS-AND-MESSAGING-DECISIONS.md. Branch 9 added the socket, which only
+// announces; sending and marking read go through messageService, which saves
+// and then announces. REST stays the source of truth.
 //
 // One set of handlers serves both sides. Every procedure scopes by the
 // caller's own roles, so the employee's routes and HR's differ only in how a
@@ -37,12 +39,8 @@ export const conversationOf = (row) => ({
   can_send: row.can_send,
 });
 
-export const messageOf = (row) => ({
-  message_id: row.message_id,
-  sender_role: row.sender_role,
-  body: row.body,
-  created_date: row.created_date,
-});
+// The same shape over REST and over the socket, so it lives in messageService.
+export { messageOf };
 
 // A row of HR's list.
 export const conversationListItemOf = (row) => ({
@@ -149,16 +147,14 @@ export const sendMessage = async (req, res, next) => {
 
     const pool = await getPool();
 
-    const message = await MessageModel.insertMessage(pool, {
+    // Saved, then announced to both sides' open screens.
+    const message = await MessageService.sendMessage(pool, {
       conversationId: req.params.conversation_id,
       userId: req.user.user_id,
       body,
     });
 
-    return res.status(201).json({
-      success: true,
-      data: { conversation_id: message.conversation_id, ...messageOf(message) },
-    });
+    return res.status(201).json({ success: true, data: message });
   } catch (error) {
     next(error);
   }
@@ -170,12 +166,11 @@ export const markConversationRead = async (req, res, next) => {
 
     const pool = await getPool();
 
-    await MessageModel.markConversationRead(
-      pool,
-      req.params.conversation_id,
-      req.user.user_id,
+    await MessageService.markRead(pool, {
+      conversationId: req.params.conversation_id,
+      userId: req.user.user_id,
       lastReadMessageId,
-    );
+    });
 
     return res.status(200).json({ success: true, message: "Marked as read" });
   } catch (error) {
