@@ -22,7 +22,11 @@ export const requirementIdOf = (field) => FIELD.exec(field)?.[1] ?? null;
 // `requirements` are the active requirements of ONE claim type. Returns the
 // documents, each with the requirement id it answers, or throws a 400 that
 // names what is wrong.
-export const matchDocuments = (requirements, documents) => {
+//
+// `alreadyProvided` holds the requirement ids a claim already has a document
+// for. A resubmit adds to the documents a claim was filed with, so those
+// count toward what is required.
+export const matchDocuments = (requirements, documents, alreadyProvided = []) => {
   const known = new Map(
     requirements.map((requirement) => [String(requirement.requirement_id), requirement]),
   );
@@ -38,7 +42,10 @@ export const matchDocuments = (requirements, documents) => {
     return { ...document, requirementId };
   });
 
-  const provided = new Set(matched.map((document) => document.requirementId));
+  const provided = new Set([
+    ...alreadyProvided.map(String),
+    ...matched.map((document) => document.requirementId),
+  ]);
 
   // is_required is a BIT, which the driver hands back as a boolean. Read for
   // truth rather than compared with 1, the lesson of the invitation resend

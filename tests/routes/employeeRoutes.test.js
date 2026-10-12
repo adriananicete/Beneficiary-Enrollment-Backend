@@ -69,4 +69,20 @@ describe("the employee claim routes", () => {
     assert.equal(handlersFor("get", "/claims/:claim_id/documents/:document_id").length, 5);
     assert.equal(handlersFor("patch", "/claims/:claim_id/cancel").length, 4);
   });
+
+  // The resubmit takes an upload too, so it gets the same order as the
+  // submit, with the id checked first: a bad URL costs nothing to read.
+  test("POST /claims/:claim_id/resubmit checks the id, then the limiter, then reads the upload", () => {
+    const handlers = handlersFor("post", "/claims/:claim_id/resubmit");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), claims.resubmitMyClaim);
+    assert.equal(handlers.length, 6);
+
+    const limiter = handlers.indexOf(claimSubmitLimiter);
+    const upload = handlers.indexOf(parseDocuments);
+
+    assert.equal(limiter, 3, "the id check sits between the role check and the limiter");
+    assert.equal(upload, 4);
+  });
 });

@@ -321,9 +321,28 @@ export const sqlErrorMap = {
     50153: { statusCode: 400, message: 'That document does not belong to this claim' },
     50154: { statusCode: 400, message: 'A required document is missing' },
 
+    // usp_upd_claim_resubmit. "Not yours" and "not returned" are one
+    // refusal. claimService checks the status first and answers this same
+    // sentence, so this fires only in a race.
+    50155: { statusCode: 409, message: 'Only a returned claim can be resubmitted' },
+
     // usp_upd_claim_cancel. One answer for "not yours" and "no longer open",
     // as the change request cancel gives, so 404 for both.
     50156: { statusCode: 404, message: 'No open claim found' },
+
+    // The role guard on HR's list and on the review. allowedRoles refuses
+    // these callers first, so this is the stale-session case, as with 50130.
+    50157: { statusCode: 403, message: 'You are not authorized to view or review claims' },
+
+    // usp_upd_claim_review. "Another company's" and "not pending" are one
+    // answer, as the change request review gives: a claim already decided,
+    // or decided by somebody else a moment earlier.
+    50158: { statusCode: 404, message: 'No pending claim found' },
+
+    // Both checked by reviewDecisionOf before the procedure runs, so these
+    // are the database's own guards on rules we also check.
+    50159: { statusCode: 400, message: 'Status must be APPROVED, REJECTED or RETURNED' },
+    50160: { statusCode: 400, message: 'Review remarks are required to reject or return a claim' },
 
     2627: {statusCode: 409, message: 'Duplicate record'},
 

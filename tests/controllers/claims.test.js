@@ -12,6 +12,11 @@ const {
   claimTypeOf,
   employeeClaimDetailOf,
   employeeClaimOf,
+  hrClaimListItemOf,
+  hrClaimOf,
+  reviewClaim,
+  statusFilterOf,
+  getClaims,
 } = await import("../../src/controllers/claimController.js");
 
 // The employee's side of claims. What is tested here is what this side
@@ -137,6 +142,100 @@ describe("what leaves, field by field", () => {
       { requirement_id: "1", requirement_desc: "Required", is_required: true, sort_order: 1, field: "requirement_1" },
       { requirement_id: "2", requirement_desc: "Optional", is_required: false, sort_order: 2, field: "requirement_2" },
     ]);
+  });
+});
+
+describe("HR's view, field by field", () => {
+  // HR sees the whole header, but named, so a column the procedure gains
+  // later stays out until somebody adds it on purpose.
+  test("the claim detail carries every header column, and nothing a procedure adds later", () => {
+    const shown = hrClaimOf({ ...HEADER, some_new_column: "x" });
+
+    assert.deepEqual(Object.keys(shown).sort(), Object.keys(HEADER).sort());
+  });
+
+  test("a list row carries the named fields, and not the paging total", () => {
+    const shown = hrClaimListItemOf({
+      claim_id: "30",
+      client_id: "75",
+      employee_name: "Ana Reyes",
+      claim_type_code: "TEST-CLAIM",
+      claim_type_desc: "Test claim",
+      claim_status: "PENDING",
+      filed_by_role: "Employee",
+      filed_date: new Date(),
+      resubmitted_date: null,
+      reviewed_by: null,
+      reviewed_date: null,
+      ticket_status: null,
+      total_count: 1,
+      some_new_column: "x",
+    });
+
+    assert.equal("total_count" in shown, false);
+    assert.equal("some_new_column" in shown, false);
+    assert.equal(Object.keys(shown).length, 12);
+  });
+});
+
+describe("the list's status filter", () => {
+  test("absent is no filter, and each status the table allows passes", () => {
+    assert.equal(statusFilterOf(undefined), undefined);
+    assert.equal(statusFilterOf(""), undefined);
+
+    for (const status of ["PENDING", "RETURNED", "APPROVED", "REJECTED", "CANCELLED", "CLOSED"])
+      assert.equal(statusFilterOf(status), status);
+  });
+
+  // A value longer than the VarChar(20) binding is refused by the driver,
+  // which answers 500. An array arrives from ?status=a&status=b.
+  test("anything else is 400", () => {
+    for (const status of ["pending", "OPEN", "x".repeat(30), ["PENDING"], { a: 1 }])
+      assert.throws(() => statusFilterOf(status), (error) => error.statusCode === 400, JSON.stringify(status));
+  });
+
+  test("a bad filter is refused before the database is touched", async () => {
+    const next = makeNext();
+
+    await getClaims(makeReq({ query: { status: "OPEN" }, user: { user_id: 3 } }), makeRes(), next);
+
+    assert.equal(next.refusal()?.statusCode, 400);
+  });
+});
+
+describe("the review, refused before the database", () => {
+  // getPool is never reached, so these run without one.
+  test("a bad status is 400", async () => {
+    const next = makeNext();
+
+    await reviewClaim(
+      makeReq({ params: { claim_id: "30" }, body: { status: "APPROVE" }, user: { user_id: 3 } }),
+      makeRes(),
+      next,
+    );
+
+    assert.deepEqual(next.refusal(), { statusCode: 400, message: "Status must be APPROVED, REJECTED or RETURNED" });
+  });
+
+  test("returning without remarks is 400", async () => {
+    const next = makeNext();
+
+    await reviewClaim(
+      makeReq({ params: { claim_id: "30" }, body: { status: "RETURNED", review_remarks: "  " }, user: { user_id: 3 } }),
+      makeRes(),
+      next,
+    );
+
+    assert.equal(next.refusal()?.statusCode, 400);
+    assert.match(next.refusal().message, /required to reject or return/);
+  });
+
+  test("a request with no body at all is 400, not a crash", async () => {
+    const next = makeNext();
+
+    await reviewClaim(makeReq({ params: { claim_id: "30" }, body: undefined, user: { user_id: 3 } }), makeRes(), next);
+
+    assert.equal(next.refusal()?.statusCode, 400);
   });
 });
 

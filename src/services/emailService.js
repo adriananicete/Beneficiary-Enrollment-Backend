@@ -4,6 +4,7 @@ import { invitationEmailTemplate } from "../utils/invitationEmailTemplate.js";
 import { changeRequestEmailTemplate } from "../utils/changeRequestEmailTemplate.js";
 import { credentialsEmailTemplate } from "../utils/credentialsEmailTemplate.js";
 import { certificateEmailTemplate } from "../utils/certificateEmailTemplate.js";
+import { claimDecisionEmailTemplate } from "../utils/claimDecisionEmailTemplate.js";
 
 // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
@@ -324,6 +325,65 @@ export const sendChangeRequestDecisionEmail = async ({
       },
       attachments,
     ),
+    saveToSentItems: "false",
+  };
+
+  const response = await fetch(sendMailUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(mailPayload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw graphSendError(response, errorText);
+  }
+};
+
+const CLAIM_SUBJECTS = {
+  APPROVED: "Your claim was approved",
+  REJECTED: "Your claim was not approved",
+  RETURNED: "Your claim needs more documents",
+};
+
+// Sent to the employee after HR approves, rejects or returns their claim.
+// Never on a cancellation, which was the employee's own action. The caller
+// swallows a failure, as with the change request decision: HR decided, and
+// the record must say so whether or not Microsoft was reachable.
+export const sendClaimDecisionEmail = async ({
+  to,
+  employeeName,
+  claimType,
+  status,
+  reviewRemarks,
+  accountClosed = false,
+}) => {
+  const accessToken = await getAccessToken();
+  const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${config.smtp.user}/sendMail`;
+  const loginUrl = `${config.appUrl}/employee-login`;
+
+  const mailPayload = {
+    message: {
+      subject: CLAIM_SUBJECTS[status],
+      body: claimDecisionEmailTemplate({
+        employeeName,
+        claimType,
+        status,
+        reviewRemarks,
+        accountClosed,
+        loginUrl,
+      }),
+      toRecipients: [
+        {
+          emailAddress: {
+            address: to,
+          },
+        },
+      ],
+    },
     saveToSentItems: "false",
   };
 

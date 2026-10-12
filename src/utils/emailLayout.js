@@ -1,3 +1,5 @@
+import { escapeHtml } from "./escapeHtml.js";
+
 // The shell every email shares: the logo, the card, the background and the
 // heading. Each template supplies a title, a heading and its own body.
 //
@@ -189,4 +191,49 @@ export const emailNote = (content) => `
 ${content}
                 </p>`;
 
-export default { emailLayout, emailCallout, emailButton, emailNote };
+// HR's note to the employee, with an accent that follows the decision.
+// Moved here from changeRequestEmailTemplate on 2026-10-12, when the claim
+// decision email became the second one to need it, for the reason the shell
+// was extracted: two copies drift. The change request email's output is
+// byte for byte what it was.
+//
+// The remarks are free text written by one person about another, so they are
+// escaped here, where they enter the HTML, rather than trusted to every caller.
+// Nothing is drawn when there are none.
+export const emailRemarks = ({ remarks, accent }) =>
+  remarks
+    ? `
+                <table
+                  width="100%"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                  style="width: 100%; margin: 18px 0"
+                >
+                  <tr>
+                    <td
+                      style="
+                        padding: 14px 16px;
+                        background-color: #f7f7f7;
+                        border-left: 4px solid ${accent};
+                        font-size: 14px;
+                        line-height: 1.6;
+                        color: #333333;
+                      "
+                    >
+                      <strong
+                        style="
+                          display: block;
+                          margin-bottom: 6px;
+                          color: #1a1760;
+                        "
+                      >
+                        Note from your HR
+                      </strong>
+                      ${escapeHtml(remarks)}
+                    </td>
+                  </tr>
+                </table>`
+    : "";
+
+export default { emailLayout, emailCallout, emailButton, emailNote, emailRemarks };

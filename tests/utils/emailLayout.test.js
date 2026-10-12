@@ -7,6 +7,7 @@ import { credentialsEmailTemplate } from "../../src/utils/credentialsEmailTempla
 import { invitationEmailTemplate } from "../../src/utils/invitationEmailTemplate.js";
 import { certificateEmailTemplate } from "../../src/utils/certificateEmailTemplate.js";
 import { changeRequestEmailTemplate } from "../../src/utils/changeRequestEmailTemplate.js";
+import { claimDecisionEmailTemplate } from "../../src/utils/claimDecisionEmailTemplate.js";
 
 // One design for five emails. What these pin is the part a reader cannot check
 // by opening one message: that all five agree.
@@ -74,6 +75,18 @@ const TEMPLATES = [
         loginUrl: "https://example.com/employee-login",
       }),
   },
+  // The sixth, added 2026-10-12 with the claims review.
+  {
+    name: "claimDecisionEmailTemplate",
+    build: () =>
+      claimDecisionEmailTemplate({
+        employeeName: "John Cruz",
+        claimType: "Test claim",
+        status: "RETURNED",
+        reviewRemarks: "Add the medical certificate.",
+        loginUrl: "https://example.com/employee-login",
+      }),
+  },
 ];
 
 describe("emailLayout — the shell every email shares", () => {
@@ -125,8 +138,8 @@ describe("every email is built from that shell", () => {
   // file now, so the way this regresses is a template that stops using it and
   // grows its own copy — which looks right in isolation and is invisible from
   // inside any single message.
-  test("all five, and none of them carrying a second card", () => {
-    assert.equal(TEMPLATES.length, 5);
+  test("all six, and none of them carrying a second card", () => {
+    assert.equal(TEMPLATES.length, 6);
 
     for (const { name, build } of TEMPLATES) {
       const cards = build().content.match(/width: 450px; max-width: 100%/g);

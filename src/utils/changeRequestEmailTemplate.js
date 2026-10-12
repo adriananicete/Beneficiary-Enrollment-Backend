@@ -1,8 +1,8 @@
 // HR's review remarks are free text written by one person about another and go
-// straight into an HTML document. Escaped rather than trusted — this is the
-// only field in any template that crosses a user boundary.
+// straight into an HTML document. emailRemarks escapes them rather than
+// trusting them. The first name is escaped here.
 import { escapeHtml } from "./escapeHtml.js";
-import { emailButton, emailLayout, emailNote } from "./emailLayout.js";
+import { emailButton, emailLayout, emailNote, emailRemarks } from "./emailLayout.js";
 
 export const changeRequestEmailTemplate = ({
   firstName,
@@ -31,42 +31,7 @@ export const changeRequestEmailTemplate = ({
 
   const accent = approved ? "#409965" : "#b3541e";
 
-  // The one block the shared layout has no helper for, because only this email
-  // has it and the accent changes with the decision.
-  const remarksBlock = reviewRemarks
-    ? `
-                <table
-                  width="100%"
-                  cellpadding="0"
-                  cellspacing="0"
-                  border="0"
-                  style="width: 100%; margin: 18px 0"
-                >
-                  <tr>
-                    <td
-                      style="
-                        padding: 14px 16px;
-                        background-color: #f7f7f7;
-                        border-left: 4px solid ${accent};
-                        font-size: 14px;
-                        line-height: 1.6;
-                        color: #333333;
-                      "
-                    >
-                      <strong
-                        style="
-                          display: block;
-                          margin-bottom: 6px;
-                          color: #1a1760;
-                        "
-                      >
-                        Note from your HR
-                      </strong>
-                      ${escapeHtml(reviewRemarks)}
-                    </td>
-                  </tr>
-                </table>`
-    : "";
+  const remarksBlock = emailRemarks({ remarks: reviewRemarks, accent });
 
   return emailLayout({
     title: heading,

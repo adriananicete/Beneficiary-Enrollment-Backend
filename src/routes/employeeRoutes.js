@@ -16,6 +16,7 @@ import {
     getMyClaimDocument,
     getMyClaims,
     getMyClaimTypes,
+    resubmitMyClaim,
     submitMyClaim,
 } from '../controllers/claimController.js';
 
@@ -45,5 +46,8 @@ router.get('/claims', verifyToken, allowedRoles(EMPLOYEE), getMyClaims);
 router.get('/claims/:claim_id', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('claim_id', 'Claim not found'), getMyClaim);
 router.get('/claims/:claim_id/documents/:document_id', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('claim_id', 'Document not found'), validateIdParam('document_id', 'Document not found'), getMyClaimDocument);
 router.patch('/claims/:claim_id/cancel', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('claim_id', 'No open claim found'), cancelMyClaim);
+// A returned claim, with more documents, back to PENDING. The id is checked
+// before the limiter and the upload, so a bad URL costs nothing to read.
+router.post('/claims/:claim_id/resubmit', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('claim_id', 'Claim not found'), claimSubmitLimiter, parseDocuments, resubmitMyClaim);
 
 export default router;
