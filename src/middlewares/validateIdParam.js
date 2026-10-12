@@ -9,7 +9,17 @@ import { AppError } from "../utils/AppError.js";
 // invitation endpoint, and `GET /admin/enrollments/agreements`, which has no
 // route of its own and so matches /enrollments/:client_id with client_id set
 // to the string "agreements".
-export const isNumericId = (value) => /^\d+$/.test(String(value));
+//
+// At most 18 digits, since 2026-10-12. Every id is bound as sql.BigInt, and
+// the driver refuses a value outside the BigInt range before the procedure
+// runs, which also answered 500. Measured with tedious's own validator:
+// 9223372036854775807 passes and 9223372036854775808 throws. 18 digits always
+// fit; no real id is anywhere near.
+export const MAX_ID_DIGITS = 18;
+
+const ID_SHAPE = new RegExp(`^\\d{1,${MAX_ID_DIGITS}}$`);
+
+export const isNumericId = (value) => ID_SHAPE.test(String(value));
 
 // The same rule for the other identifier a caller can hand us. An invitation
 // token is 64 hex characters — crypto.randomBytes(32).toString("hex") — and the
