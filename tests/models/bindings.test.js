@@ -15,6 +15,7 @@ import ChangeRequestModel from "../../src/models/changeRequestModel.js";
 import SignatureModel from "../../src/models/signatureModel.js";
 import EmployerModel from "../../src/models/employerModel.js";
 import ClaimModel from "../../src/models/claimModel.js";
+import MessageModel from "../../src/models/messageModel.js";
 import { sql } from "../../src/config/db.js";
 
 // One file rather than nine, and deliberately so.
@@ -490,5 +491,99 @@ describe("model bindings — claims", () => {
     const { pool } = anyProcedure();
 
     assert.deepEqual(await ClaimModel.getClaimById(pool, 30, 12), { claim: null, documents: [], requirements: [] });
+  });
+});
+
+// DBA request 22, read back 2026-10-12. No OUTPUT parameters.
+describe("model bindings — messaging", () => {
+  const MESSAGE_CALLS = [
+    ["openConversation", (pool) => MessageModel.openConversation(pool, 12), "usp_ins_conversation"],
+    ["insertMessage", (pool) => MessageModel.insertMessage(pool, { conversationId: 7, userId: 12, body: "hi" }), "usp_ins_message"],
+    ["getConversationsByUser", (pool) => MessageModel.getConversationsByUser(pool, 3, { page: 1, pageSize: 25 }), "usp_sel_conversations_by_user"],
+    ["getConversationById", (pool) => MessageModel.getConversationById(pool, 7, 12), "usp_sel_conversation_by_id"],
+    ["markConversationRead", (pool) => MessageModel.markConversationRead(pool, 7, 12, "120"), "usp_upd_conversation_read"],
+    ["getUnreadCountByUser", (pool) => MessageModel.getUnreadCountByUser(pool, 12), "usp_sel_conversation_unread_count_by_user"],
+  ];
+
+  for (const [name, call, procedure] of MESSAGE_CALLS)
+    test(`${name} calls ${procedure} and declares no output`, async () => {
+      const { pool, calls } = anyProcedure();
+
+      await call(pool);
+
+      assert.ok(callTo(calls, procedure), `${name} does not call ${procedure}`);
+      assert.deepEqual(Object.keys(callTo(calls, procedure).outputs), []);
+    });
+
+  // Wider than the column's 2000, so an overlong message reaches the
+  // procedure whole and is refused (50175) rather than cut by the driver.
+  // And nvarchar, because messages carry ñ and emoji.
+  test("a message is bound as nvarchar(4000)", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await MessageModel.insertMessage(pool, { conversationId: 7, userId: 12, body: "Salamat po 🙂" });
+
+    const { body } = callTo(calls, "usp_ins_message").bindings;
+
+    assert.equal(declarationOf(body.type), "nvarchar");
+    assert.equal(body.type.length, 4000);
+  });
+
+  // An employee opens their own conversation: the client id reaches the
+  // procedure as NULL, and the procedure finds it from the caller.
+  test("an employee's open sends no client id", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await MessageModel.openConversation(pool, 12);
+
+    assert.equal(callTo(calls, "usp_ins_conversation").inputs.client_id, null);
+  });
+
+  test("the cursor reaches the procedure, and an empty answer is a null conversation", async () => {
+    const { pool, calls } = anyProcedure();
+
+    const result = await MessageModel.getConversationById(pool, 7, 12, { before: "120", limit: 20 });
+
+    assert.deepEqual(result, { conversation: null, messages: [], hasMore: false });
+
+    const { inputs, bindings } = callTo(calls, "usp_sel_conversation_by_id");
+
+    assert.equal(inputs.before_message_id, "120");
+    assert.equal(inputs.limit, 20);
+    assert.equal(declarationOf(bindings.before_message_id.type), declarationOf(sql.BigInt));
+  });
+
+  // has_more is a BIT, which the driver hands back as a boolean.
+  test("has_more is read from the third result set, as true or 1", async () => {
+    for (const flag of [true, 1]) {
+      const pool = {
+        request: () => {
+          const chain = {
+            input: () => chain,
+            execute: async () => ({ recordsets: [[{ conversation_id: "7" }], [{ message_id: "120" }], [{ has_more: flag }]] }),
+          };
+          return chain;
+        },
+      };
+
+      const result = await MessageModel.getConversationById(pool, 7, 12);
+
+      assert.equal(result.hasMore, true, String(flag));
+      assert.equal(result.messages.length, 1);
+    }
+  });
+
+  test("the badge is read from unread_count", async () => {
+    const pool = {
+      request: () => {
+        const chain = {
+          input: () => chain,
+          execute: async () => ({ recordset: [{ unread_count: 3 }] }),
+        };
+        return chain;
+      },
+    };
+
+    assert.equal(await MessageModel.getUnreadCountByUser(pool, 12), 3);
   });
 });

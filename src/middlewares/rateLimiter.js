@@ -246,6 +246,23 @@ export const claimSubmitLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Sending a message. Keyed on the account. Decided 2026-10-12 at 300 per 15
+// minutes, higher than the other limiters: HR is one shared account, possibly
+// used by several people at once, talking to many employees. It still stops a
+// script flooding a conversation, which is what it is for.
+export const messageSendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 1000 : 300,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many messages, please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // The HR screen polls the pending count every ~30s to drive a badge, so a
 // 15-minute window holds about 30 requests from one correctly behaving client.
 // Several HR users on one shared account, and a tab left open in more than one

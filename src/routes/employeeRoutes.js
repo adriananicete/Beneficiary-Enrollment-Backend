@@ -4,7 +4,14 @@ import { verifyToken } from '../middlewares/verifyToken.js';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { EMPLOYEE } from '../utils/constants.js';
 import { verifyResetToken } from '../middlewares/verifyResetToken.js';
-import { authIpLimiter, claimSubmitLimiter, passwordChangeLimiter, strictLimiter } from '../middlewares/rateLimiter.js';
+import { authIpLimiter, claimSubmitLimiter, messageSendLimiter, passwordChangeLimiter, pendingCountLimiter, strictLimiter } from '../middlewares/rateLimiter.js';
+import {
+    getConversation,
+    getUnreadMessageCount,
+    markConversationRead,
+    openMyConversation,
+    sendMessage,
+} from '../controllers/messageController.js';
 import { getMyAgreements, getMySignature } from '../controllers/enrollmentController.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
@@ -49,5 +56,18 @@ router.patch('/claims/:claim_id/cancel', verifyToken, allowedRoles(EMPLOYEE), va
 // A returned claim, with more documents, back to PENDING. The id is checked
 // before the limiter and the upload, so a bad URL costs nothing to read.
 router.post('/claims/:claim_id/resubmit', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('claim_id', 'Claim not found'), claimSubmitLimiter, parseDocuments, resubmitMyClaim);
+
+// Messaging with HR, DBA request 22. The employee opens their conversation
+// first, which creates it the first time, and then works by its id. Every
+// procedure scopes to the caller's own conversation.
+// /conversations/unread-count is declared before /conversations/:conversation_id
+// so the badge is never read as an id.
+const conversationId = validateIdParam('conversation_id', 'Conversation not found');
+
+router.post('/conversation', verifyToken, allowedRoles(EMPLOYEE), openMyConversation);
+router.get('/conversations/unread-count', verifyToken, allowedRoles(EMPLOYEE), pendingCountLimiter, getUnreadMessageCount);
+router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, getConversation);
+router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, sendMessage);
+router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, markConversationRead);
 
 export default router;

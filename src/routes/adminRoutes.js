@@ -6,11 +6,12 @@ import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { cancelInvitationJob, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
 import { validateInvitations } from '../middlewares/validateInvitations.js';
-import { bulkInvitationLimiter, certificateResendLimiter, credentialsResendLimiter, jobStatusLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
+import { bulkInvitationLimiter, certificateResendLimiter, credentialsResendLimiter, jobStatusLimiter, messageSendLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
 import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { getEmployerSettings, updateEmployerSettings } from '../controllers/employerSettingsController.js';
 import { getClaimDetails, getClaimDocument, getClaims, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
+import { getConversation, getConversations, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 
 const router = express.Router();
 
@@ -67,6 +68,19 @@ router.get('/claims/pending-count', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN
 router.get('/claims/:claim_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), claimId, getClaimDetails);
 router.get('/claims/:claim_id/documents/:document_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), validateIdParam('claim_id', 'Document not found'), validateIdParam('document_id', 'Document not found'), getClaimDocument);
 router.patch('/claims/:claim_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), claimId, reviewClaim);
+
+// Messaging, DBA request 22. HR only: the Administrator has no access in v1
+// (decided 2026-10-12), so these carry allowedRoles(ADMIN), which is HR.
+// The procedures scope HR to their own companies. /conversations/unread-count
+// is declared before /conversations/:conversation_id for the reason above.
+const conversationId = validateIdParam('conversation_id', 'Conversation not found');
+
+router.get('/conversations', verifyToken, allowedRoles(ADMIN), getConversations);
+router.post('/conversations', verifyToken, allowedRoles(ADMIN), openConversation);
+router.get('/conversations/unread-count', verifyToken, allowedRoles(ADMIN), pendingCountLimiter, getUnreadMessageCount);
+router.get('/conversations/:conversation_id', verifyToken, allowedRoles(ADMIN), conversationId, getConversation);
+router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(ADMIN), conversationId, messageSendLimiter, sendMessage);
+router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(ADMIN), conversationId, markConversationRead);
 
 
 export default router;
