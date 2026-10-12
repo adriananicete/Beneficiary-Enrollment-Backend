@@ -4,6 +4,7 @@ import UserModel from "../models/userModel.js";
 import { AppError } from "../utils/AppError.js";
 import { matchDocuments } from "../utils/claimDocuments.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
+import { sendClaimDecisionEmail } from "./emailService.js";
 
 // Employee claims, branch 3 of md/CLAIMS-AND-MESSAGING-DECISIONS.md, on the
 // procedures of DBA request 20.
@@ -99,15 +100,7 @@ const submitClaim = async (pool, { userId, claimTypeId, documents }) => {
 
     return { claimId };
   } catch (error) {
-    // The rollback must not replace the error that caused it. If the server
-    // has already ended the transaction, rollback() throws, and that would
-    // turn a mapped 409 into a 500.
-    try {
-      await transaction.rollback();
-    } catch (rollbackError) {
-      console.error("Claim rollback failed:", rollbackError);
-    }
-
+    await rollbackQuietly(transaction, "Claim");
     throw asOpenClaimConflict(error);
   }
 };
@@ -123,4 +116,149 @@ const cancelClaim = async (pool, { userId, claimId, cancelRemarks }) => {
   });
 };
 
-export default { submitClaim, cancelClaim };
+// Rolls back without letting a failed rollback replace the error that caused
+// it. If the server has already ended the transaction, rollback() throws, and
+// that would turn a mapped 4xx into a 500.
+const rollbackQuietly = async (transaction, what) => {
+  try {
+    await transaction.rollback();
+  } catch (rollbackError) {
+    console.error(`${what} rollback failed:`, rollbackError);
+  }
+};
+
+// A returned claim, with more documents, back to PENDING. One call, decided
+// 2026-10-12, so that new documents never land on a claim that is then not
+// resubmitted, or the reverse.
+//
+// documents: req.documents from parseDocuments, as for submitClaim.
+const resubmitClaim = async (pool, { userId, claimId, documents }) => {
+  // HR returned it for missing documents, so a resubmit adds at least one
+  // (decided 2026-10-12). Checked before the database is asked.
+  if (documents.length === 0) throw new AppError("Add at least one document to resubmit", 400);
+
+  // Scoped to the caller by the procedure: another employee's claim comes
+  // back empty and is answered like one that does not exist.
+  const { claim, documents: existing, requirements } = await ClaimModel.getClaimById(
+    pool,
+    claimId,
+    userId,
+  );
+
+  if (!claim) throw new AppError("Claim not found", 404);
+
+  // The procedure's own 50155 sentence, before the upload is written.
+  if (claim.claim_status !== "RETURNED")
+    throw new AppError("Only a returned claim can be resubmitted", 409);
+
+  // The documents the claim already has count toward what is required.
+  const matched = matchDocuments(
+    requirements,
+    documents,
+    existing.map((document) => document.requirement_id),
+  );
+
+  const clientId = await clientIdOf(pool, userId);
+
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+
+  try {
+    // First, because it is the ownership check: usp_ins_claim_document does
+    // not ask whose claim it is.
+    await ClaimModel.resubmitClaim(transaction, claimId, clientId);
+
+    for (const document of matched)
+      await ClaimModel.insertClaimDocument(transaction, {
+        claim_id: claimId,
+        requirement_id: document.requirementId,
+        file_name: document.fileName,
+        content: document.content,
+        mime_type: document.mimeType,
+        byte_size: document.byteSize,
+        sha256: document.sha256,
+        uploaded_by: String(userId),
+      });
+
+    await ClaimModel.checkClaimRequirements(transaction, claimId);
+
+    await transaction.commit();
+  } catch (error) {
+    await rollbackQuietly(transaction, "Claim resubmit");
+    throw error;
+  }
+};
+
+export const REVIEW_STATUSES = ["APPROVED", "REJECTED", "RETURNED"];
+
+// HR's decision, judged before the database is asked. `status` rather than
+// `decision`, to match the change request review (decided 2026-10-12).
+// Remarks are required to reject or return, because they are the only thing
+// that tells the employee what to fix. Text, trimmed, at most the column's
+// 500.
+export const reviewDecisionOf = (status, reviewRemarks) => {
+  if (!REVIEW_STATUSES.includes(status))
+    throw new AppError("Status must be APPROVED, REJECTED or RETURNED", 400);
+
+  if (reviewRemarks !== undefined && reviewRemarks !== null && typeof reviewRemarks !== "string")
+    throw new AppError("review_remarks must be text", 400);
+
+  const remarks = reviewRemarks?.trim() || null;
+
+  if (remarks && remarks.length > 500)
+    throw new AppError("review_remarks must be 500 characters or fewer", 400);
+
+  if (status !== "APPROVED" && !remarks)
+    throw new AppError("Review remarks are required to reject or return a claim", 400);
+
+  return { status, remarks };
+};
+
+// Sent after the decision has committed, and it swallows its own failures, as
+// notifyDecision does for change requests. A failed email is a person not
+// told; a failed decision is a record that disagrees with what HR did.
+const notifyClaimDecision = async (claim, status, remarks, accountClosed) => {
+  try {
+    if (!claim.email_address) {
+      console.error(`Claim decision email skipped: no address for claim ${claim.claim_id}`);
+      return;
+    }
+
+    await sendClaimDecisionEmail({
+      to: claim.email_address,
+      employeeName: claim.employee_name,
+      claimType: claim.claim_type_desc,
+      status,
+      reviewRemarks: remarks,
+      accountClosed,
+    });
+  } catch (error) {
+    console.error(`Claim decision email failed for claim ${claim.claim_id}:`, error);
+  }
+};
+
+// status and remarks have already been through reviewDecisionOf.
+const reviewClaim = async (pool, { userId, claimId, status, remarks }) => {
+  // Read first. It settles company scoping before the procedure runs (another
+  // company's claim comes back empty), and it is where the employee's address
+  // comes from for the email.
+  const { claim } = await ClaimModel.getClaimById(pool, claimId, userId);
+
+  if (!claim) throw new AppError("Claim not found", 404);
+
+  const outcome = await ClaimModel.reviewClaim(pool, {
+    claim_id: claimId,
+    us01_user_id: userId,
+    decision: status,
+    review_remarks: remarks,
+  });
+
+  // A BIT, which the driver hands back as a boolean. Read for truth.
+  const accountClosed = Boolean(outcome?.account_closed);
+
+  await notifyClaimDecision(claim, status, remarks, accountClosed);
+
+  return { accountClosed };
+};
+
+export default { submitClaim, cancelClaim, resubmitClaim, reviewClaim };

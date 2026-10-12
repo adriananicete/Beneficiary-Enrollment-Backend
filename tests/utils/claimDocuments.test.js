@@ -117,6 +117,35 @@ describe("matchDocuments", () => {
   });
 });
 
+// A resubmit adds to the documents the claim was filed with.
+describe("matchDocuments on a resubmit", () => {
+  test("a required document the claim already has counts", () => {
+    const matched = matchDocuments(REQUIREMENTS, [file("requirement_2")], ["1"]);
+
+    assert.deepEqual(matched.map((document) => document.requirementId), ["2"]);
+  });
+
+  // The ids arrive from the database as strings, but a number must count too.
+  test("the existing ids count whether they are text or numbers", () => {
+    assert.equal(matchDocuments(REQUIREMENTS, [file("requirement_2")], [1]).length, 1);
+  });
+
+  test("a required document neither existing nor sent is still 400", () => {
+    assert.equal(
+      refusal(() => matchDocuments(REQUIREMENTS, [file("requirement_2")], ["2"])).message,
+      "Missing required documents: Test document (required)",
+    );
+  });
+
+  // What the claim already has does not widen what may be sent.
+  test("a field nobody asked for is still refused", () => {
+    assert.equal(
+      refusal(() => matchDocuments(REQUIREMENTS, [file("requirement_9")], ["1", "9"])).message,
+      "requirement_9 is not a document this claim type asks for",
+    );
+  });
+});
+
 // Through a real Express app and real multipart requests, so the field names
 // are the ones a browser's FormData actually produces, read by the real
 // parseDocuments.

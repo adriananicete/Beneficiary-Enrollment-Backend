@@ -4,10 +4,10 @@ import { sql } from "../config/db.js";
 // and is in md/DBA-PROCEDURES.md. None declares an OUTPUT parameter: the new
 // ids come back in a result set, so nothing here calls .output().
 //
-// Three of these run inside the caller's transaction and open none of their
-// own (read back, sys.sql_modules): insertClaim, insertClaimDocument and
-// checkClaimRequirements. They take the transaction where the others take the
-// pool.
+// Four of these run inside the caller's transaction and open none of their
+// own (read back, sys.sql_modules): insertClaim, insertClaimDocument,
+// checkClaimRequirements and resubmitClaim. They take the transaction where
+// the others take the pool. reviewClaim owns its transaction.
 
 // Two result sets: the active types for this filer, then their active
 // requirements. `filedBy` is 'EMPLOYEE' or 'HR', in capitals, the values
@@ -112,6 +112,60 @@ const getClaimDocument = async (pool, documentId, userId) => {
   return result.recordset[0];
 };
 
+// A returned claim back to PENDING, inside the caller's transaction, and the
+// ownership check for everything after it: usp_ins_claim_document does not
+// check whose claim it is, so this runs first. Scoped by client_id; "not
+// yours" and "not returned" are one refusal, 50155.
+const resubmitClaim = async (transaction, claimId, clientId) => {
+  await transaction
+    .request()
+    .input("claim_id", sql.BigInt, claimId)
+    .input("client_id", sql.BigInt, clientId)
+    .execute("usp_upd_claim_resubmit");
+};
+
+// HR's list. The procedure checks the role (50157), lets an Administrator
+// through unscoped, and scopes HR to their companies. `page_size` undefined
+// reaches it as NULL, which means the whole set, as with change requests.
+const getClaimsByUser = async (pool, userId, claimStatus, paging = {}) => {
+  const result = await pool
+    .request()
+    .input("us01_user_id", sql.BigInt, userId)
+    .input("claim_status", sql.VarChar(20), claimStatus ?? null)
+    .input("page", sql.Int, paging.page)
+    .input("page_size", sql.Int, paging.pageSize)
+    .execute("usp_sel_claims_by_user");
+
+  return result.recordset;
+};
+
+// The badge. No role check in the procedure, so the route's allowedRoles is
+// the whole of that rule.
+const getPendingCountByUser = async (pool, userId) => {
+  const result = await pool
+    .request()
+    .input("us01_user_id", sql.BigInt, userId)
+    .execute("usp_sel_claims_pending_count_by_user");
+
+  return result.recordset[0]?.pending_count ?? 0;
+};
+
+// Approve, reject or return. The procedure owns its transaction. Approving a
+// type that ends coverage also closes the account and ends its sessions in
+// that same transaction, and says so in account_closed. Returns
+// { claim_id, claim_status, client_id, account_closed }.
+const reviewClaim = async (pool, reviewData) => {
+  const result = await pool
+    .request()
+    .input("claim_id", sql.BigInt, reviewData.claim_id)
+    .input("us01_user_id", sql.BigInt, reviewData.us01_user_id)
+    .input("decision", sql.VarChar(20), reviewData.decision)
+    .input("review_remarks", sql.VarChar(500), reviewData.review_remarks)
+    .execute("usp_upd_claim_review");
+
+  return result.recordset[0];
+};
+
 // Scoped by client_id. "Not yours" and "no longer open" are one refusal,
 // 50156.
 const cancelClaim = async (pool, cancelData) => {
@@ -132,5 +186,9 @@ export default {
   getClaimsByClient,
   getClaimById,
   getClaimDocument,
+  resubmitClaim,
+  getClaimsByUser,
+  getPendingCountByUser,
+  reviewClaim,
   cancelClaim,
 };

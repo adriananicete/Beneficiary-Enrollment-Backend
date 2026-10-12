@@ -409,6 +409,10 @@ describe("model bindings — claims", () => {
     ["getClaimById", (pool) => ClaimModel.getClaimById(pool, 30, 12), "usp_sel_claim_by_id"],
     ["getClaimDocument", (pool) => ClaimModel.getClaimDocument(pool, 9, 12), "usp_sel_claim_document"],
     ["cancelClaim", (pool) => ClaimModel.cancelClaim(pool, {}), "usp_upd_claim_cancel"],
+    ["resubmitClaim", (pool) => ClaimModel.resubmitClaim(pool, 30, 75), "usp_upd_claim_resubmit"],
+    ["getClaimsByUser", (pool) => ClaimModel.getClaimsByUser(pool, 3, "PENDING", { page: 1, pageSize: 25 }), "usp_sel_claims_by_user"],
+    ["getPendingCountByUser", (pool) => ClaimModel.getPendingCountByUser(pool, 3), "usp_sel_claims_pending_count_by_user"],
+    ["reviewClaim", (pool) => ClaimModel.reviewClaim(pool, {}), "usp_upd_claim_review"],
   ];
 
   for (const [name, call, procedure] of CLAIM_CALLS)
@@ -448,6 +452,36 @@ describe("model bindings — claims", () => {
     assert.equal(declarationOf(bindings.claim_type_id.type), declarationOf(sql.BigInt));
     assert.equal(declarationOf(bindings.filed_by.type), "varchar");
     assert.equal(bindings.filed_by_role.value, "Employee");
+  });
+
+  // The procedure names its column pending_count, unlike the change request
+  // count's pendingCount. Read under the wrong name, the badge reads 0 forever.
+  test("getPendingCountByUser reads pending_count", async () => {
+    const pool = {
+      request: () => {
+        const chain = {
+          input: () => chain,
+          execute: async () => ({ recordset: [{ pending_count: 4 }] }),
+        };
+        return chain;
+      },
+    };
+
+    assert.equal(await ClaimModel.getPendingCountByUser(pool, 3), 4);
+  });
+
+  test("reviewClaim binds the decision and the remarks as text, and the ids as BigInt", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await ClaimModel.reviewClaim(pool, { claim_id: "30", us01_user_id: 3, decision: "RETURNED", review_remarks: "x" });
+
+    const { bindings } = callTo(calls, "usp_upd_claim_review");
+
+    assert.equal(declarationOf(bindings.claim_id.type), declarationOf(sql.BigInt));
+    assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
+    assert.equal(declarationOf(bindings.decision.type), "varchar");
+    assert.equal(bindings.decision.value, "RETURNED");
+    assert.equal(declarationOf(bindings.review_remarks.type), "varchar");
   });
 
   // Three result sets, read by position. An empty answer must still give

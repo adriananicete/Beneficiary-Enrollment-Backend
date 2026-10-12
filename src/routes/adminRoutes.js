@@ -10,6 +10,7 @@ import { bulkInvitationLimiter, certificateResendLimiter, credentialsResendLimit
 import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { getEmployerSettings, updateEmployerSettings } from '../controllers/employerSettingsController.js';
+import { getClaimDetails, getClaimDocument, getClaims, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
 
 const router = express.Router();
 
@@ -53,6 +54,19 @@ router.delete('/invitations/:invitation_id', verifyToken, allowedRoles(ADMIN), i
 // Administrator both; the procedures scope HR to their own company.
 router.get('/employers/settings', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getEmployerSettings);
 router.patch('/employers/:employer_id/settings', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), validateIdParam('employer_id', 'Company not found'), updateEmployerSettings);
+
+// Claims, DBA request 20: HR's review. The procedures scope HR to their own
+// companies and let the Administrator see every one, as with change requests.
+// /pending-count is declared before /:claim_id for the reason given above.
+// It shares pendingCountLimiter with the change request badge: two badges
+// polled every thirty seconds are sixty requests in its window of 300.
+const claimId = validateIdParam('claim_id', 'Claim not found');
+
+router.get('/claims', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getClaims);
+router.get('/claims/pending-count', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), pendingCountLimiter, getPendingClaimCount);
+router.get('/claims/:claim_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), claimId, getClaimDetails);
+router.get('/claims/:claim_id/documents/:document_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), validateIdParam('claim_id', 'Document not found'), validateIdParam('document_id', 'Document not found'), getClaimDocument);
+router.patch('/claims/:claim_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), claimId, reviewClaim);
 
 
 export default router;

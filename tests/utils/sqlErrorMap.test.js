@@ -45,7 +45,12 @@ const MUST_BE_MAPPED = [
   [50152, 409, /already have an open claim/i],
   [50153, 400, /does not belong to this claim/i],
   [50154, 400, /required document is missing/i],
+  [50155, 409, /Only a returned claim/i],
   [50156, 404, /No open claim found/i],
+  [50157, 403, /not authorized/i],
+  [50158, 404, /No pending claim found/i],
+  [50159, 400, /APPROVED, REJECTED or RETURNED/],
+  [50160, 400, /required to reject or return/i],
 ];
 
 describe("sqlErrorMap", () => {

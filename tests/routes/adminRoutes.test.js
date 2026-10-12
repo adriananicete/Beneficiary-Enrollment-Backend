@@ -8,6 +8,8 @@ const { verifyToken } = await import("../../src/middlewares/verifyToken.js");
 const { getEmployerSettings, updateEmployerSettings } = await import(
   "../../src/controllers/employerSettingsController.js"
 );
+const claims = await import("../../src/controllers/claimController.js");
+const { pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
 
 const handlersFor = (method, path) => {
   const layer = router.stack.find(
@@ -37,5 +39,46 @@ describe("the employer settings routes", () => {
     assert.equal(handlers[0], verifyToken);
     assert.equal(handlers.length, 4);
     assert.equal(handlers.at(-1), updateEmployerSettings);
+  });
+});
+
+// HR's claim review, branch 4. The procedures scope HR to their own
+// companies, for a caller who got past the session and the role first.
+describe("the HR claim routes", () => {
+  const ROUTES = [
+    ["get", "/claims", claims.getClaims],
+    ["get", "/claims/pending-count", claims.getPendingClaimCount],
+    ["get", "/claims/:claim_id", claims.getClaimDetails],
+    ["get", "/claims/:claim_id/documents/:document_id", claims.getClaimDocument],
+    ["patch", "/claims/:claim_id", claims.reviewClaim],
+  ];
+
+  for (const [method, path, controller] of ROUTES)
+    test(`${method.toUpperCase()} ${path} is behind verifyToken and a role check, and reaches its controller`, () => {
+      const handlers = handlersFor(method, path);
+
+      assert.equal(handlers[0], verifyToken);
+      assert.ok(handlers.length >= 3, "no role check");
+      assert.equal(handlers.at(-1), controller);
+    });
+
+  // Express matches in order. Declared after /:claim_id, the badge would be
+  // read as a claim id called "pending-count" and answer 404.
+  test("/claims/pending-count is declared before /claims/:claim_id", () => {
+    const indexOf = (path) =>
+      router.stack.findIndex((layer) => layer.route?.path === path && layer.route.methods.get);
+
+    assert.ok(indexOf("/claims/pending-count") < indexOf("/claims/:claim_id"));
+  });
+
+  test("the badge is rate limited", () => {
+    assert.ok(handlersFor("get", "/claims/pending-count").includes(pendingCountLimiter));
+  });
+
+  // The id checks turn /claims/abc into a 404 rather than a driver error.
+  test("every route with an id in the path checks it", () => {
+    assert.equal(handlersFor("get", "/claims/:claim_id").length, 4);
+    assert.equal(handlersFor("patch", "/claims/:claim_id").length, 4);
+    assert.equal(handlersFor("get", "/claims/:claim_id/documents/:document_id").length, 5);
   });
 });

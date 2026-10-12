@@ -1,12 +1,13 @@
 import { getPool } from "../config/db.js";
 import ClaimModel from "../models/claimModel.js";
-import ClaimService, { clientIdOf } from "../services/claimService.js";
+import ClaimService, { clientIdOf, reviewDecisionOf } from "../services/claimService.js";
 import { AppError } from "../utils/AppError.js";
 import { requirementField } from "../utils/claimDocuments.js";
+import { buildPage, parsePaging } from "../utils/parsePaging.js";
 import { sendStoredFile } from "../utils/storedFileResponse.js";
 
-// The employee's side of claims, branch 3 of
-// md/CLAIMS-AND-MESSAGING-DECISIONS.md. HR's side is branch 4.
+// Claims, branches 3 and 4 of md/CLAIMS-AND-MESSAGING-DECISIONS.md: the
+// employee's side, and HR's review.
 //
 // Every answer is built field by field rather than spread from the row. The
 // detail procedure also returns the employee's email address, the user ids of
@@ -54,6 +55,40 @@ export const employeeClaimDetailOf = (row) => ({
   ...employeeClaimOf(row),
   ends_coverage: row.ends_coverage,
   cancel_remarks: row.cancel_remarks,
+});
+
+// HR's view of a claim: the whole header, still named field by field, so a
+// column the procedure gains later stays out until somebody adds it here.
+// `filed_by`, `reviewed_by` and the rest are user ids, as text.
+export const hrClaimOf = (row) => ({
+  ...employeeClaimDetailOf(row),
+  client_id: row.client_id,
+  enrollment_id: row.enrollment_id,
+  employee_name: row.employee_name,
+  email_address: row.email_address,
+  filed_by: row.filed_by,
+  filed_by_role: row.filed_by_role,
+  reviewed_by: row.reviewed_by,
+  cancelled_by: row.cancelled_by,
+  closed_by: row.closed_by,
+  ticket_status: row.ticket_status,
+  ticket_reference: row.ticket_reference,
+});
+
+// A row of HR's paged list, as usp_sel_claims_by_user returns it.
+export const hrClaimListItemOf = (row) => ({
+  claim_id: row.claim_id,
+  client_id: row.client_id,
+  employee_name: row.employee_name,
+  claim_type_code: row.claim_type_code,
+  claim_type_desc: row.claim_type_desc,
+  claim_status: row.claim_status,
+  filed_by_role: row.filed_by_role,
+  filed_date: row.filed_date,
+  resubmitted_date: row.resubmitted_date,
+  reviewed_by: row.reviewed_by,
+  reviewed_date: row.reviewed_date,
+  ticket_status: row.ticket_status,
 });
 
 // A document's description. The content leaves only through its own route.
@@ -171,7 +206,10 @@ export const getMyClaim = async (req, res, next) => {
   }
 };
 
-export const getMyClaimDocument = async (req, res, next) => {
+// One handler for both sides. usp_sel_claim_document scopes by the caller's
+// own roles: an employee gets their own documents, HR their companies', the
+// Administrator any.
+export const getClaimDocument = async (req, res, next) => {
   try {
     const { claim_id, document_id } = req.params;
 
@@ -186,6 +224,145 @@ export const getMyClaimDocument = async (req, res, next) => {
       mimeType: document.mime_type,
       byteSize: document.byte_size,
       fileName: document.file_name,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The employee route's name, kept so the two routers read naturally.
+export const getMyClaimDocument = getClaimDocument;
+
+// multipart/form-data, the same requirement_<requirement_id> fields as the
+// submit. At least one document.
+export const resubmitMyClaim = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    await ClaimService.resubmitClaim(pool, {
+      userId: req.user.user_id,
+      claimId: req.params.claim_id,
+      documents: req.documents ?? [],
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { claim_id: req.params.claim_id, claim_status: "PENDING" },
+      message: "Claim resubmitted",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The statuses CK_claims_status allows, read back 2026-10-12.
+export const CLAIM_STATUSES = ["PENDING", "RETURNED", "APPROVED", "REJECTED", "CANCELLED", "CLOSED"];
+
+// The list's optional filter. Checked against the set rather than passed
+// through, because a value longer than the VarChar(20) binding is refused
+// by the driver, and that refusal answers 500.
+export const statusFilterOf = (value) => {
+  if (value === undefined || value === "") return undefined;
+
+  if (!CLAIM_STATUSES.includes(value))
+    throw new AppError(`status must be one of ${CLAIM_STATUSES.join(", ")}`, 400);
+
+  return value;
+};
+
+// HR's list. The procedure does the company scoping and lets an
+// Administrator through unscoped, so nothing here filters.
+export const getClaims = async (req, res, next) => {
+  try {
+    const paging = parsePaging(req.query);
+    const status = statusFilterOf(req.query.status);
+
+    const pool = await getPool();
+
+    const claims = await ClaimModel.getClaimsByUser(pool, req.user.user_id, status, paging);
+
+    return res.status(200).json({
+      success: true,
+      data: buildPage(claims, paging, hrClaimListItemOf),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The badge on HR's screen. A count of PENDING claims, not of unseen ones:
+// on a shared account, a "last seen" marker would be cleared for everyone by
+// whoever looked first.
+export const getPendingClaimCount = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    const pendingCount = await ClaimModel.getPendingCountByUser(pool, req.user.user_id);
+
+    return res.status(200).json({
+      success: true,
+      data: { pendingCount },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getClaimDetails = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    const { claim, documents, requirements } = await ClaimModel.getClaimById(
+      pool,
+      req.params.claim_id,
+      req.user.user_id,
+    );
+
+    // Another company's claim comes back empty, and is answered exactly like
+    // one that does not exist.
+    if (!claim) throw new AppError("Claim not found", 404);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        claim: hrClaimOf(claim),
+        documents: documents.map(claimDocumentOf),
+        requirements: requirements.map(requirementOf),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const REVIEWED = {
+  APPROVED: "Claim approved",
+  REJECTED: "Claim rejected",
+  RETURNED: "Claim returned to the employee",
+};
+
+// Approve, reject or return. The decision is judged before the database is
+// asked; the procedure owns the transaction, and closes the account in it
+// when an approved type ends coverage.
+export const reviewClaim = async (req, res, next) => {
+  try {
+    const { status, remarks } = reviewDecisionOf(req.body?.status, req.body?.review_remarks);
+
+    const pool = await getPool();
+
+    const { accountClosed } = await ClaimService.reviewClaim(pool, {
+      userId: req.user.user_id,
+      claimId: req.params.claim_id,
+      status,
+      remarks,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { claim_id: req.params.claim_id, claim_status: status, account_closed: accountClosed },
+      message: accountClosed
+        ? "Claim approved. The employee's coverage has ended and their account is closed."
+        : REVIEWED[status],
     });
   } catch (error) {
     next(error);

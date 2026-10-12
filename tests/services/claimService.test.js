@@ -1,11 +1,12 @@
-import { describe, test } from "node:test";
+import { afterEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 import "../helpers/env.js";
 import { callTo, fakePool, inputsFor } from "../helpers/fakePool.js";
+import { silenceConsoleError } from "../helpers/http.js";
 import { AppError } from "../../src/utils/AppError.js";
 
-const { default: ClaimService, asOpenClaimConflict } = await import(
+const { default: ClaimService, asOpenClaimConflict, reviewDecisionOf } = await import(
   "../../src/services/claimService.js"
 );
 
@@ -167,6 +168,244 @@ describe("claimService.cancelClaim", () => {
       refusedWith(404, /No enrollment found/),
     );
     assert.equal(callTo(calls, CANCEL), undefined);
+  });
+});
+
+const DETAIL = "usp_sel_claim_by_id";
+const RESUBMIT = "usp_upd_claim_resubmit";
+const REVIEW = "usp_upd_claim_review";
+
+// usp_sel_claim_by_id's three result sets, for a claim of TEST-CLAIM.
+const claimDetail = ({ claim, documents = [], requirements = SEEDED.requirements.slice(0, 2) } = {}) => () => ({
+  recordsets: [claim ? [claim] : [], claim ? documents : [], claim ? requirements : []],
+  recordset: claim ? [claim] : [],
+});
+
+const HEADER = {
+  claim_id: "30",
+  client_id: "75",
+  employee_name: "Ana Reyes",
+  email_address: "ana@coforge.com",
+  claim_type_desc: "Test claim",
+  claim_status: "RETURNED",
+};
+
+// The same fake pool, with the detail and the decision scripted, and a count
+// of how many times a transaction was asked for.
+const withClaim = ({ claim = HEADER, documents, reviewOutcome = [{ account_closed: false }] } = {}) => {
+  const fake = fakePool({
+    [USER]: [{ us01_user_id: "12", client_id: "75" }],
+    [DETAIL]: claimDetail({ claim, documents }),
+    [REVIEW]: reviewOutcome,
+  });
+
+  fake.transactions = 0;
+  fake.pool.acquire = (transaction, callback) => {
+    fake.transactions++;
+    callback(new Error(REACHED_TRANSACTION));
+  };
+
+  return fake;
+};
+
+const resubmit = (pool, overrides = {}) =>
+  ClaimService.resubmitClaim(pool, { userId: 12, claimId: "30", documents: [doc("requirement_2")], ...overrides });
+
+describe("claimService.resubmitClaim — refused before anything is written", () => {
+  test("no documents is 400, and the database is not asked", async () => {
+    const { pool, calls } = withClaim();
+
+    await assert.rejects(resubmit(pool, { documents: [] }), refusedWith(400, /^Add at least one document to resubmit$/));
+    assert.equal(calls.length, 0);
+  });
+
+  // Another employee's claim comes back empty from the procedure.
+  test("a claim the caller cannot see is 404", async () => {
+    const fake = withClaim({ claim: null });
+
+    await assert.rejects(resubmit(fake.pool), refusedWith(404, /^Claim not found$/));
+    assert.equal(fake.transactions, 0);
+  });
+
+  test("a claim that is not RETURNED is 409, and no transaction opens", async () => {
+    for (const claim_status of ["PENDING", "APPROVED", "REJECTED", "CANCELLED", "CLOSED"]) {
+      const fake = withClaim({ claim: { ...HEADER, claim_status } });
+
+      await assert.rejects(resubmit(fake.pool), refusedWith(409, /^Only a returned claim can be resubmitted$/), claim_status);
+      assert.equal(fake.transactions, 0, claim_status);
+    }
+  });
+
+  test("a required document neither on the claim nor sent is 400", async () => {
+    const fake = withClaim({ documents: [] });
+
+    await assert.rejects(resubmit(fake.pool), refusedWith(400, /^Missing required documents: Test document \(required\)$/));
+    assert.equal(fake.transactions, 0);
+  });
+
+  // The control: the claim already has its required document, so adding the
+  // optional one is enough.
+  test("the documents the claim already has count, and it reaches the transaction", async () => {
+    const fake = withClaim({ documents: [{ claim_document_id: "9", requirement_id: "1" }] });
+
+    await assert.rejects(resubmit(fake.pool), reachedTransaction);
+    assert.equal(fake.transactions, 1);
+  });
+});
+
+describe("reviewDecisionOf — HR's decision, before the database", () => {
+  test("approve with or without remarks; reject and return need them", () => {
+    assert.deepEqual(reviewDecisionOf("APPROVED"), { status: "APPROVED", remarks: null });
+    assert.deepEqual(reviewDecisionOf("APPROVED", "  ok  "), { status: "APPROVED", remarks: "ok" });
+    assert.deepEqual(reviewDecisionOf("REJECTED", "Not covered"), { status: "REJECTED", remarks: "Not covered" });
+    assert.deepEqual(reviewDecisionOf("RETURNED", "Add the medical certificate"), {
+      status: "RETURNED",
+      remarks: "Add the medical certificate",
+    });
+  });
+
+  test("anything but the three statuses is 400", () => {
+    for (const status of [undefined, null, "", "approved", "PENDING", "CANCELLED", "CLOSED", 1, {}, ["APPROVED"]])
+      assert.throws(
+        () => reviewDecisionOf(status, "x"),
+        (error) => error.statusCode === 400 && /^Status must be APPROVED, REJECTED or RETURNED$/.test(error.message),
+        JSON.stringify(status),
+      );
+  });
+
+  // The remarks are the only thing that tells the employee what to fix.
+  test("rejecting or returning without remarks is 400, blank counting as none", () => {
+    for (const status of ["REJECTED", "RETURNED"])
+      for (const remarks of [undefined, null, "", "   "])
+        assert.throws(
+          () => reviewDecisionOf(status, remarks),
+          (error) => error.statusCode === 400 && /required to reject or return/.test(error.message),
+          `${status} ${JSON.stringify(remarks)}`,
+        );
+  });
+
+  test("remarks that are not text are 400, for any status", () => {
+    for (const remarks of [1, true, {}, ["x"], { toString: 1 }])
+      assert.throws(() => reviewDecisionOf("APPROVED", remarks), (error) => error.statusCode === 400, JSON.stringify(remarks));
+  });
+
+  // The column is varchar(500). Pinned as a literal.
+  test("500 characters of remarks is accepted and 501 is 400", () => {
+    assert.equal(reviewDecisionOf("REJECTED", "x".repeat(500)).remarks.length, 500);
+    assert.throws(() => reviewDecisionOf("REJECTED", "x".repeat(501)), (error) => error.statusCode === 400);
+  });
+});
+
+describe("claimService.reviewClaim", () => {
+  const realFetch = globalThis.fetch;
+  let restoreConsole = () => {};
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    restoreConsole();
+  });
+
+  const ok = (body = {}) => ({ ok: true, status: 200, json: async () => body, text: async () => "", headers: { get: () => null } });
+
+  // Records every message sent. The token answer expires at once, so nothing
+  // is cached between tests.
+  const stubMail = ({ send = ok() } = {}) => {
+    const sent = [];
+
+    globalThis.fetch = async (url, options) => {
+      if (/login\.microsoftonline\.com/.test(String(url))) return ok({ access_token: "tok", expires_in: 0 });
+
+      sent.push(JSON.parse(options.body).message);
+      return send;
+    };
+
+    return sent;
+  };
+
+  const PENDING = { ...HEADER, claim_status: "PENDING" };
+
+  const review = (pool, overrides = {}) =>
+    ClaimService.reviewClaim(pool, { userId: 3, claimId: "30", status: "APPROVED", remarks: null, ...overrides });
+
+  // Read first: another company's claim is refused before the procedure runs,
+  // and nobody is emailed.
+  test("a claim the caller cannot see is 404; nothing is decided and nobody is emailed", async () => {
+    const sent = stubMail();
+    const { pool, calls } = withClaim({ claim: null });
+
+    await assert.rejects(review(pool), refusedWith(404, /^Claim not found$/));
+    assert.equal(callTo(calls, REVIEW), undefined);
+    assert.equal(sent.length, 0);
+  });
+
+  test("the decision reaches the procedure as the reviewer, the status and the remarks", async () => {
+    stubMail();
+    const { pool, calls } = withClaim({ claim: PENDING });
+
+    await review(pool, { status: "RETURNED", remarks: "Add the medical certificate" });
+
+    assert.deepEqual(inputsFor(calls, REVIEW), {
+      claim_id: "30",
+      us01_user_id: 3,
+      decision: "RETURNED",
+      review_remarks: "Add the medical certificate",
+    });
+  });
+
+  test("the employee is emailed at the address read before the decision", async () => {
+    const sent = stubMail();
+    const { pool } = withClaim({ claim: PENDING });
+
+    await review(pool, { status: "REJECTED", remarks: "Not covered" });
+
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].toRecipients[0].emailAddress.address, "ana@coforge.com");
+    assert.equal(sent[0].subject, "Your claim was not approved");
+    assert.match(sent[0].body.content, /Hi Ana Reyes,/);
+    assert.match(sent[0].body.content, /Not covered/);
+  });
+
+  // account_closed is a BIT, which the driver hands back as a boolean.
+  test("an approval that closed the account says so, in the result and in the email", async () => {
+    for (const closed of [true, 1]) {
+      const sent = stubMail();
+      const { pool } = withClaim({ claim: PENDING, reviewOutcome: [{ account_closed: closed }] });
+
+      assert.deepEqual(await review(pool), { accountClosed: true }, String(closed));
+      assert.match(sent[0].body.content, /your account on this\s+system has been closed/);
+      assert.doesNotMatch(sent[0].body.content, /Sign in/);
+    }
+  });
+
+  test("an approval that did not close the account says nothing of it", async () => {
+    for (const closed of [false, 0, undefined]) {
+      const sent = stubMail();
+      const { pool } = withClaim({ claim: PENDING, reviewOutcome: [{ account_closed: closed }] });
+
+      assert.deepEqual(await review(pool), { accountClosed: false }, String(closed));
+      assert.doesNotMatch(sent[0].body.content, /has been closed/);
+      assert.match(sent[0].body.content, /Sign in/);
+    }
+  });
+
+  // HR decided, and the record says so whether or not Microsoft was reachable.
+  test("a failed email does not undo or fail the decision", async () => {
+    restoreConsole = silenceConsoleError();
+    stubMail({ send: { ok: false, status: 503, text: async () => "down", headers: { get: () => null } } });
+    const { pool, calls } = withClaim({ claim: PENDING });
+
+    assert.deepEqual(await review(pool), { accountClosed: false });
+    assert.ok(callTo(calls, REVIEW));
+  });
+
+  test("a claim with no email address is decided, and nobody is emailed", async () => {
+    restoreConsole = silenceConsoleError();
+    const sent = stubMail();
+    const { pool } = withClaim({ claim: { ...PENDING, email_address: null } });
+
+    await review(pool);
+
+    assert.equal(sent.length, 0);
   });
 });
 
