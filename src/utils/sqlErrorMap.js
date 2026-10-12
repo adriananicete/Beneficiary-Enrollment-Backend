@@ -302,5 +302,36 @@ export const sqlErrorMap = {
     // handled rather than missed.
     50063: { statusCode: 409, message: 'This company is no longer active. Please contact PhilLife.' },
 
+    // ── Employee claims, DBA request 20, read back 2026-10-12 ──────────────
+    //
+    // The submit path checks the claim type, the file fields and the required
+    // documents itself before the transaction opens, so 50151, 50153 and 50154
+    // can only fire in a race: a type or requirement deactivated in the
+    // moments between. Mapped anyway, as 50008 is: they are the database's own
+    // guards on rules we also check.
+
+    // usp_ins_claim. The client or the enrollment is not active.
+    50150: { statusCode: 404, message: 'No active enrollment was found for this account' },
+    50151: { statusCode: 400, message: 'This claim type cannot be filed here' },
+    // The one an employee meets in ordinary use: filing the same type twice
+    // while the first is still pending or returned.
+    50152: { statusCode: 409, message: 'You already have an open claim of this type' },
+
+    // usp_ins_claim_document and usp_chk_claim_requirements.
+    50153: { statusCode: 400, message: 'That document does not belong to this claim' },
+    50154: { statusCode: 400, message: 'A required document is missing' },
+
+    // usp_upd_claim_cancel. One answer for "not yours" and "no longer open",
+    // as the change request cancel gives, so 404 for both.
+    50156: { statusCode: 404, message: 'No open claim found' },
+
     2627: {statusCode: 409, message: 'Duplicate record'},
+
+    // SQL Server's unique-INDEX violation, where 2627 is the unique-CONSTRAINT
+    // one. The filtered indexes that hold "one open at a time" are indexes:
+    // UX_client_change_requests_pending and UX_claims_open. A race that gets
+    // past the procedure's own check meets this, and until 2026-10-12 it
+    // answered 500. Generic for the same reason as 2627. claimService turns
+    // the one it can name into the 50152 sentence.
+    2601: {statusCode: 409, message: 'Duplicate record'},
 }

@@ -4,11 +4,20 @@ import { verifyToken } from '../middlewares/verifyToken.js';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { EMPLOYEE } from '../utils/constants.js';
 import { verifyResetToken } from '../middlewares/verifyResetToken.js';
-import { authIpLimiter, passwordChangeLimiter, strictLimiter } from '../middlewares/rateLimiter.js';
+import { authIpLimiter, claimSubmitLimiter, passwordChangeLimiter, strictLimiter } from '../middlewares/rateLimiter.js';
 import { getMyAgreements, getMySignature } from '../controllers/enrollmentController.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { cancelMyChangeRequest, getMyChangeRequests, submitChangeRequest } from '../controllers/changeRequestController.js';
+import { parseDocuments } from '../middlewares/parseDocuments.js';
+import {
+    cancelMyClaim,
+    getMyClaim,
+    getMyClaimDocument,
+    getMyClaims,
+    getMyClaimTypes,
+    submitMyClaim,
+} from '../controllers/claimController.js';
 
 const router = express.Router();
 
@@ -25,5 +34,16 @@ router.get('/signature', verifyToken, allowedRoles(EMPLOYEE), getMySignature);
 router.post('/change-requests', verifyToken, allowedRoles(EMPLOYEE), validateEnrollmentUpdate, submitChangeRequest);
 router.get('/change-requests', verifyToken, allowedRoles(EMPLOYEE), getMyChangeRequests);
 router.patch('/change-requests/:request_id/cancel', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('request_id', 'Change request not found'), cancelMyChangeRequest);
+
+// Claims, DBA request 20. The client_id always comes from the caller's own
+// user row. The upload is parsed only after the session, the role and the
+// limiter have passed, so nobody unauthenticated gets up to 50MB held in
+// memory.
+router.get('/claim-types', verifyToken, allowedRoles(EMPLOYEE), getMyClaimTypes);
+router.post('/claims', verifyToken, allowedRoles(EMPLOYEE), claimSubmitLimiter, parseDocuments, submitMyClaim);
+router.get('/claims', verifyToken, allowedRoles(EMPLOYEE), getMyClaims);
+router.get('/claims/:claim_id', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('claim_id', 'Claim not found'), getMyClaim);
+router.get('/claims/:claim_id/documents/:document_id', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('claim_id', 'Document not found'), validateIdParam('document_id', 'Document not found'), getMyClaimDocument);
+router.patch('/claims/:claim_id/cancel', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('claim_id', 'No open claim found'), cancelMyClaim);
 
 export default router;

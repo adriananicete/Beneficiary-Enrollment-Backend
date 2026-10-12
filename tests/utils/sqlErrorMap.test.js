@@ -39,6 +39,13 @@ const MUST_BE_MAPPED = [
   [50121, 404, /no pending change request/i],
   [50115, 400, /100%/],
   [50117, 409, /same name/i],
+  // Employee claims, DBA request 20, read back 2026-10-12.
+  [50150, 404, /No active enrollment/i],
+  [50151, 400, /cannot be filed here/i],
+  [50152, 409, /already have an open claim/i],
+  [50153, 400, /does not belong to this claim/i],
+  [50154, 400, /required document is missing/i],
+  [50156, 404, /No open claim found/i],
 ];
 
 describe("sqlErrorMap", () => {
@@ -70,6 +77,14 @@ describe("sqlErrorMap", () => {
     // registered" is the day some unrelated constraint tells that lie.
     assert.equal(sqlErrorMap[2627].statusCode, 409);
     assert.match(sqlErrorMap[2627].message, /^Duplicate record$/);
+  });
+
+  // 2627's sibling, for a unique INDEX rather than a constraint. The filtered
+  // indexes that hold "one open at a time" (change requests, claims) are
+  // indexes, so a race past the procedure's own check raised 2601 and answered
+  // 500. Generic for the same reason as 2627.
+  test("2601 is mapped, and as generically as 2627", () => {
+    assert.deepEqual(sqlErrorMap[2601], sqlErrorMap[2627]);
   });
 
   test("the three fields with a unique index all have a mapped number", () => {
