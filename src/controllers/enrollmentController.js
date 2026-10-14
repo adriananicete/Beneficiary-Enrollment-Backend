@@ -144,6 +144,28 @@ export const getBarangaysByCity = async (req, res, next) => {
   }
 };
 
+// What the public invitation lookup may show, named field by field, as
+// publicEmployer does above. The route needs no account: anybody holding a
+// link gets this answer. It used to send the procedure's row as it came, so a
+// column added to usp_sel_enrollment_invitation_by_token went straight out.
+// Requests 23 and 25 add some (the class, the company's age limit, the
+// affiliate), and none of them leaves unless it is named here.
+//
+// The ten fields are the ones the procedure returns today, read 2026-10-14,
+// and the ones FRONTEND-API.md documents, so the response is unchanged.
+export const publicInvitation = (row) => ({
+  invitation_id: row.invitation_id,
+  employer_id: row.employer_id,
+  company_code: row.company_code,
+  company_name: row.company_name,
+  email_address: row.email_address,
+  sent_date: row.sent_date,
+  expiry_date: row.expiry_date,
+  is_valid: row.is_valid,
+  is_enrolled: row.is_enrolled,
+  client_id: row.client_id,
+});
+
 export const getInvitationByToken = async (req, res, next) => {
   try {
     const { token } = req.query;
@@ -172,7 +194,7 @@ export const getInvitationByToken = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      data: invitation
+      data: publicInvitation(invitation)
     })
   } catch (error) {
     next(error);
