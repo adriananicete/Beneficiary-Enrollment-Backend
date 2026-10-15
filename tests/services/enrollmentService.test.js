@@ -226,6 +226,72 @@ describe("enrollmentService — the company's classifications", () => {
   });
 });
 
+// The company's online age limit, branch 8, on DBA request 23's
+// online_enrollment_max_age. Birthdates are built from today, so the boundary
+// is exact whatever day the suite runs.
+describe("enrollmentService — the company's online age limit", () => {
+  const pad = (n) => String(n).padStart(2, "0");
+  const turning = (age, daysFromToday = 0) => {
+    const day = new Date();
+    day.setDate(day.getDate() + daysFromToday);
+    return `${day.getFullYear() - age}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+  };
+
+  const AGE_REFUSAL = "Your enrollment cannot be completed online. Please contact your HR.";
+
+  // usernameTaken stops a passing submission at the last guard, after the age
+  // check, so "passes" means "reached that 409, not the age one".
+  const submitAt = (birthdate, limit) =>
+    enrol(submission({ birthdate }), {
+      invitation: validInvitation({ online_enrollment_max_age: limit }),
+      usernameTaken: true,
+    }).result;
+
+  test("66 today is refused under a limit of 65", async () => {
+    await assert.rejects(
+      () => submitAt(turning(66), 65),
+      (error) => error.statusCode === 409 && error.message === AGE_REFUSAL,
+    );
+  });
+
+  // The day before the 66th birthday the employee is still 65.
+  test("turning 66 tomorrow is still 65, and passes", async () => {
+    await assert.rejects(
+      () => submitAt(turning(66, 1), 65),
+      (error) => /Employee ID number already exists/.test(error.message),
+    );
+  });
+
+  test("65 exactly passes", async () => {
+    await assert.rejects(
+      () => submitAt(turning(65), 65),
+      (error) => /Employee ID number already exists/.test(error.message),
+    );
+  });
+
+  test("no limit means none, however old", async () => {
+    for (const limit of [null, undefined])
+      await assert.rejects(
+        () => submitAt(turning(90), limit),
+        (error) => /Employee ID number already exists/.test(error.message),
+        String(limit),
+      );
+  });
+
+  // Refused before anything is read or written beyond the invitation.
+  test("the refusal comes before the reference checks and any write", async () => {
+    const { calls, result } = enrol(submission({ birthdate: turning(70) }), {
+      invitation: validInvitation({ online_enrollment_max_age: 65 }),
+    });
+
+    await assert.rejects(() => result, (error) => error.message === AGE_REFUSAL);
+    assert.deepEqual(
+      calls.map((call) => call.procedure ?? "query"),
+      [TOKEN],
+    );
+  });
+});
+
 describe("enrollmentService — reading an enrollment back", () => {
   const DETAILS = "usp_get_insurance_enrollment_by_id";
   const BENEFITS = "usp_get_enrollment_benefits_by_id";

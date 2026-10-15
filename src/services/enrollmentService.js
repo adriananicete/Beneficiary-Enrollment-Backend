@@ -14,6 +14,7 @@ import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
 import { autoCertificateFor } from "./certificateService.js";
 import { AppError } from "../utils/AppError.js";
+import { ageAtLastBirthday } from "../utils/validateBirthdate.js";
 import crypto from "crypto";
 import config from "../config/env.js";
 
@@ -44,7 +45,7 @@ const openInvitation = async (pool, token) => {
 // Takes the pool, like every other service since PR #102. The controller
 // fetches it; this decides.
 //
-// Everything down to `new sql.Transaction(pool)` is a refusal, and all seven of
+// Everything down to `new sql.Transaction(pool)` is a refusal, and all eight of
 // them are tested. The transaction body is not, deliberately — its correctness
 // is about whether the database agrees with us on insert order and procedure
 // contracts, and a fake transaction would agree with whatever we told it. Two
@@ -56,6 +57,16 @@ const createEnrollment = async (pool, enrollmentData) => {
 
   enrollmentData.employer_id = invitation.employer_id;
   enrollmentData.email_address = invitation.email_address;
+
+  // The company's limit on online enrollment, employers.online_enrollment_max_age
+  // (DBA request 23): the oldest age, at last birthday, that may enroll here.
+  // NULL means no limit beyond validateBirthdate's 18–100. ABCC's is 65 until
+  // its age rules are built (branch 9): a full amount the contract would not
+  // pay must not be snapshotted. The limit itself never leaves the backend;
+  // the public invitation lookup answers field by field (branch 0).
+  const maxAge = invitation.online_enrollment_max_age;
+  if (maxAge !== null && maxAge !== undefined && ageAtLastBirthday(enrollmentData.birthdate) > maxAge)
+    throw new AppError("Your enrollment cannot be completed online. Please contact your HR.", 409);
 
   const employers = await ReferenceModel.getEmployers(pool);
 

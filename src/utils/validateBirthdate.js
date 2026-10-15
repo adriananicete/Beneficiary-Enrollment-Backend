@@ -17,6 +17,29 @@ export const MAX_EMPLOYEE_AGE = 100;
 // survived the round trip is what catches that.
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
+// Age at last birthday, on the local calendar. It is the contract's definition
+// of age as well, which is why the company's online age limit (branch 8 of the
+// onboarding effort) uses this and not a second copy. Takes the YYYY-MM-DD
+// string validateBirthdate accepts, and answers null for anything else, so no
+// caller can mistake a bad value for an age.
+export const ageAtLastBirthday = (birthdate, today = new Date()) => {
+  const match = typeof birthdate === "string" ? ISO_DATE.exec(birthdate) : null;
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  const todayMonth = today.getMonth() + 1;
+  const todayDay = today.getDate();
+
+  let age = today.getFullYear() - year;
+  // Their birthday has not come round yet this year.
+  if (todayMonth < month || (todayMonth === month && todayDay < day)) age -= 1;
+
+  return age;
+};
+
 export const validateBirthdate = (birthdate) => {
   if (typeof birthdate !== "string" || !ISO_DATE.test(birthdate))
     return "Birthdate must be a date in YYYY-MM-DD format";
@@ -49,9 +72,7 @@ export const validateBirthdate = (birthdate) => {
 
   if (isFuture) return "Birthdate cannot be in the future";
 
-  let age = todayYear - year;
-  // Their birthday has not come round yet this year.
-  if (todayMonth < month || (todayMonth === month && todayDay < day)) age -= 1;
+  const age = ageAtLastBirthday(birthdate, today);
 
   if (age < MIN_EMPLOYEE_AGE || age > MAX_EMPLOYEE_AGE)
     return `Birthdate must belong to someone between ${MIN_EMPLOYEE_AGE} and ${MAX_EMPLOYEE_AGE} years old`;
