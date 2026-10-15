@@ -70,6 +70,14 @@ const MUST_BE_MAPPED = [
   // Classifications belong to a company, DBA request 23, read back 2026-10-15.
   [50180, 400, /^That classification is not available for your company$/],
   [50181, 400, /^That classification is not available for this company$/],
+  // The Administrator's companies, DBA request 24, read back 2026-10-15.
+  [50182, 403, /Only an Administrator/],
+  [50183, 400, /Company code must be 1 to 20/],
+  [50184, 409, /company code is already used/i],
+  [50185, 400, /Policy number must be 1 to 12/],
+  [50186, 409, /policy number is already used/i],
+  [50187, 404, /^Company not found$/],
+  [50188, 409, /cannot change once the company has an enrollment/],
 ];
 
 describe("sqlErrorMap", () => {

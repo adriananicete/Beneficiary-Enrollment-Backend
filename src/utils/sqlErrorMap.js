@@ -394,6 +394,24 @@ export const sqlErrorMap = {
     50174: { statusCode: 400, message: 'A message cannot be empty' },
     50175: { statusCode: 400, message: 'A message can be at most 2000 characters' },
 
+    // ── The Administrator's companies, DBA request 24, read back 2026-10-15 ──
+    //
+    // The role guard on all twelve of that request's procedures. The routes
+    // allow the Administrator only, so this is the stale-session case.
+    50182: { statusCode: 403, message: 'Only an Administrator can manage companies' },
+    // usp_ins_employer and usp_upd_employer. validateCompany checks the two
+    // lengths first, so 50183 and 50185 are the database's own guards.
+    50183: { statusCode: 400, message: 'Company code must be 1 to 20 characters' },
+    50184: { statusCode: 409, message: 'That company code is already used by another company' },
+    50185: { statusCode: 400, message: 'Policy number must be 1 to 12 characters' },
+    50186: { statusCode: 409, message: 'That policy number is already used by another company' },
+    // An id that matches no company. Also thrown when a class or an HR account
+    // is added to an inactive one (branches 3 and 4).
+    50187: { statusCode: 404, message: 'Company not found' },
+    // The policy number is the prefix of every employee's number, and the
+    // certificate reads it live, so it is fixed once one enrollment exists.
+    50188: { statusCode: 409, message: 'The policy number cannot change once the company has an enrollment' },
+
     2627: {statusCode: 409, message: 'Duplicate record'},
 
     // SQL Server's unique-INDEX violation, where 2627 is the unique-CONSTRAINT
