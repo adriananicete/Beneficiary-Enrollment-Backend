@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   MAX_EMPLOYEE_AGE,
   MIN_EMPLOYEE_AGE,
+  ageAtLastBirthday,
   validateBirthdate,
 } from "../../src/utils/validateBirthdate.js";
 
@@ -95,5 +96,39 @@ describe("validateBirthdate — range", () => {
       ),
       /between 18 and 100/,
     );
+  });
+});
+
+// Age at last birthday, the contract's definition, shared by validateBirthdate
+// and the company's online age limit. A fixed "today" so the boundaries are
+// exact and do not drift.
+describe("ageAtLastBirthday", () => {
+  const today = new Date(2026, 9, 15); // 15 October 2026, local
+
+  test("turns over on the birthday itself, not the day after", () => {
+    assert.equal(ageAtLastBirthday("1960-10-15", today), 66);
+    assert.equal(ageAtLastBirthday("1960-10-16", today), 65);
+    assert.equal(ageAtLastBirthday("1960-10-14", today), 66);
+  });
+
+  test("a birthday later in the year has not come round yet", () => {
+    assert.equal(ageAtLastBirthday("1961-12-31", today), 64);
+    assert.equal(ageAtLastBirthday("1961-01-01", today), 65);
+  });
+
+  // Born on 29 February: in a common year the birthday is reached on 1 March.
+  test("a leap-day birthday in a common year", () => {
+    assert.equal(ageAtLastBirthday("1960-02-29", new Date(2026, 1, 28)), 65);
+    assert.equal(ageAtLastBirthday("1960-02-29", new Date(2026, 2, 1)), 66);
+  });
+
+  test("anything that is not YYYY-MM-DD is null, never an age", () => {
+    for (const value of [undefined, null, "", "15/10/1960", 19601015])
+      assert.equal(ageAtLastBirthday(value, today), null, JSON.stringify(value));
+  });
+
+  test("validateBirthdate still draws its 18 to 100 line with it", () => {
+    assert.equal(validateBirthdate(yearsAgo(40)), null);
+    assert.match(validateBirthdate(yearsAgo(101)), /between 18 and 100/);
   });
 });
