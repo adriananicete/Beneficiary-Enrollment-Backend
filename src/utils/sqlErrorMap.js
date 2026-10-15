@@ -465,6 +465,10 @@ export const sqlErrorMap = {
     // usp_ins_employer and usp_upd_employer (branch 2), from request 25 Part
     // 9c: the other side of 50205.
     50211: { statusCode: 409, message: "That policy number is already used as an affiliate's reference" },
+    // usp_del_employer (branch 10): an employee, invitation, class, affiliate,
+    // conversation or HR account belongs to the company. Only a company
+    // created by mistake or for a test can be deleted.
+    50212: { statusCode: 409, message: 'This company cannot be deleted: it already has employees, invitations, classes, affiliates or an HR account' },
 
     2627: {statusCode: 409, message: 'Duplicate record'},
 

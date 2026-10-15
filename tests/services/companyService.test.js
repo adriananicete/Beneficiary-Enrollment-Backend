@@ -17,6 +17,7 @@ const LIST = "usp_sel_employers_admin";
 const BY_ID = "usp_sel_employer_admin_by_id";
 const INSERT = "usp_ins_employer";
 const UPDATE = "usp_upd_employer";
+const DELETE = "usp_del_employer";
 
 const ADMIN_ID = 1;
 
@@ -207,5 +208,37 @@ describe("CompanyService — a PATCH becomes the whole company", () => {
       (error) => error.statusCode === 404 && error.message === "Company not found",
     );
     assert.equal(callTo(calls, UPDATE), undefined);
+  });
+});
+
+// Branch 10, DBA request 25 Part 10. The procedure decides everything: whether
+// the company exists (50187) and whether anything belongs to it (50212).
+describe("CompanyService — deleting", () => {
+  test("asks the procedure as the caller, for that company", async () => {
+    const { pool, calls } = fakePool({ [DELETE]: [{ employer_id: "9" }] });
+
+    await CompanyService.deleteCompany(pool, ADMIN_ID, "9");
+
+    assert.deepEqual(inputsFor(calls, DELETE), { us01_user_id: ADMIN_ID, employer_id: "9" });
+  });
+
+  // Nothing is read first: a check here would race the procedure's own.
+  test("reads nothing else first", async () => {
+    const { pool, calls } = fakePool({ [DELETE]: [{ employer_id: "9" }] });
+
+    await CompanyService.deleteCompany(pool, ADMIN_ID, "9");
+
+    assert.deepEqual(calls.map((call) => call.procedure), [DELETE]);
+  });
+
+  test("the procedure's refusal reaches the caller as it was thrown", async () => {
+    const refusal = Object.assign(new Error("Company cannot be deleted while anything belongs to it."), { number: 50212 });
+    const { pool } = fakePool({
+      [DELETE]: () => {
+        throw refusal;
+      },
+    });
+
+    await assert.rejects(() => CompanyService.deleteCompany(pool, ADMIN_ID, "1"), (error) => error === refusal);
   });
 });

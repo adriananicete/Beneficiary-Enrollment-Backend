@@ -14,7 +14,7 @@ import { closeDeathClaim, fileDeathClaim, getClaimDetails, getClaimDocument, get
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { getConversation, getConversations, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
-import { createAffiliate, createClassification, createCompany, createHrAccount, getAffiliates, getClassificationSchedule, getCompanies, getCompany, resendHrCredentials, updateAffiliate, updateClassification, updateCompany } from '../controllers/companyController.js';
+import { createAffiliate, createClassification, createCompany, createHrAccount, deleteCompany, getAffiliates, getClassificationSchedule, getCompanies, getCompany, resendHrCredentials, updateAffiliate, updateClassification, updateCompany } from '../controllers/companyController.js';
 import { validateHrAccount } from '../middlewares/validateHrAccount.js';
 import { validateCompanyChanges, validateNewCompany } from '../middlewares/validateCompany.js';
 import { validateClassificationChanges, validateNewClassification } from '../middlewares/validateClassification.js';
@@ -91,6 +91,8 @@ router.get('/companies', verifyToken, allowedRoles(SUPER_ADMIN), getCompanies);
 router.post('/companies', verifyToken, allowedRoles(SUPER_ADMIN), validateNewCompany, createCompany);
 router.get('/companies/:employer_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, getCompany);
 router.patch('/companies/:employer_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateCompanyChanges, updateCompany);
+// Only a company nothing belongs to (DBA request 25 Part 10, branch 10).
+router.delete('/companies/:employer_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, deleteCompany);
 
 // A company's schedule: its classes and their amounts, DBA request 24. The
 // Administrator only. The edit route sits under the company (option A,
