@@ -85,6 +85,8 @@ const MUST_BE_MAPPED = [
   [50193, 400, /amount above zero or a formula/],
   [50194, 409, /already on the classification/],
   [50195, 404, /^Benefit not found$/],
+  [50196, 500, /contact PhilLife/],
+  [50197, 409, /^This company already has an HR account$/],
 ];
 
 describe("sqlErrorMap", () => {

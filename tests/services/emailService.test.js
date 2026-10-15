@@ -7,6 +7,8 @@ const {
   sendInvitationEmail,
   sendChangeRequestDecisionEmail,
   sendConfirmationEmail,
+  sendCredentialsEmail,
+  sendHrAccountEmail,
 } = await import("../../src/services/emailService.js");
 
 // This file was written off as untestable — "Graph over fetch, not reachable by
@@ -264,6 +266,90 @@ describe("emailService — the Certificate of Coverage attachment", () => {
     assert.equal("attachments" in withEmpty, false);
     assert.equal("attachments" in withNone, false);
     assert.match(withNone.body.content, /Temp-Pass-123/);
+  });
+});
+
+// The two senders that carry an HR account's password, branch 4 of the
+// onboarding effort. HR signs in at APP_URL's root and employees at
+// /employee-login, so the link is the caller's to give.
+describe("emailService — the sign-in link comes from the caller", () => {
+  const sentMessage = (calls) =>
+    JSON.parse(calls.find((call) => SEND_URL.test(call.url)).options.body).message;
+
+  test("the credentials email links where it is told to", async () => {
+    const calls = stubFetch();
+
+    await sendCredentialsEmail({
+      to: "hr@abcc.example",
+      firstName: "Maria",
+      username: "hr.abcc",
+      password: "Temp-Pass-123",
+      loginUrl: "https://example.test",
+      issuedBy: "PhilLife",
+      contact: "PhilLife",
+    });
+
+    const body = sentMessage(calls).body.content;
+    assert.match(body, /href="https:\/\/example\.test"/);
+    assert.doesNotMatch(body, /employee-login/);
+    assert.match(body, /PhilLife has issued you a new temporary password/);
+  });
+
+  // The employee's reissue is unchanged by the HR one: HR issued it, and HR is
+  // who to contact.
+  test("without an issuer, the credentials email still says it came from HR", async () => {
+    const calls = stubFetch();
+
+    await sendCredentialsEmail({
+      to: "lorenz@coforge.com",
+      firstName: "Lorenz",
+      username: "EMP-096",
+      password: "Temp-Pass-123",
+      loginUrl: "https://example.test/employee-login",
+    });
+
+    const body = sentMessage(calls).body.content;
+    assert.match(body, /Your HR has issued you a new temporary password/);
+    assert.match(body, /contact your HR straight/);
+    assert.match(body, /href="https:\/\/example\.test\/employee-login"/);
+  });
+
+  test("the new HR account email carries the company, the username and the root link", async () => {
+    const calls = stubFetch();
+
+    await sendHrAccountEmail({
+      to: "hr@abcc.example",
+      firstName: "Maria",
+      companyName: "Abacus Book and Card Corporation",
+      username: "hr.abcc",
+      password: "Temp-Pass-123",
+      loginUrl: "https://example.test",
+    });
+
+    const message = sentMessage(calls);
+    assert.equal(message.subject, "Your HR account is ready");
+    assert.match(message.body.content, /Abacus Book and Card Corporation/);
+    assert.match(message.body.content, /hr\.abcc/);
+    assert.match(message.body.content, /Temp-Pass-123/);
+    assert.match(message.body.content, /href="https:\/\/example\.test"/);
+  });
+
+  // Thrown, not swallowed: the caller reports credentials_emailed from it.
+  test("a failed new-account send reaches the caller with its status", async () => {
+    stubFetch({ send: failedResponse(503) });
+
+    await assert.rejects(
+      () =>
+        sendHrAccountEmail({
+          to: "hr@abcc.example",
+          firstName: "Maria",
+          companyName: "ABCC",
+          username: "hr.abcc",
+          password: "x",
+          loginUrl: "https://example.test",
+        }),
+      (error) => error.status === 503,
+    );
   });
 });
 

@@ -9,6 +9,7 @@ import ClassificationService from "../services/classificationService.js";
 import SignatureModel from "../models/signatureModel.js";
 import { sendSignature } from "../utils/signatureResponse.js";
 import { getPool } from "../config/db.js";
+import config from "../config/env.js";
 import { buildPage, parsePaging, parseSearch } from "../utils/parsePaging.js";
 import { AppError } from "../utils/AppError.js";
 import { localIsoDate } from "../utils/localDate.js";
@@ -120,6 +121,7 @@ export const resendCredentials = async (req, res, next) => {
         firstName: user.us01_first_name,
         username: user.us01_username,
         password: tempPassword,
+        loginUrl: `${config.appUrl}/employee-login`,
       });
     } catch (error) {
       // Caught only to say what is true. graphSendError returns a plain Error,
