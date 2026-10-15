@@ -84,7 +84,7 @@ describe("certificateService — what the certificate says", () => {
     const data = await buildCertificateData(pool, 96);
 
     assert.equal(data.policyNo, "G-TLI-26-136-2600030");
-    assert.equal(data.companyName, "Coforge BPS Philippines, Inc.");
+    assert.equal(data.coveredUnder, "Coforge BPS Philippines, Inc.");
     assert.equal(data.insuredName, "Lorenz Adrian Artillagas");
     assert.equal(
       data.address,
@@ -114,6 +114,63 @@ describe("certificateService — what the certificate says", () => {
 
     assert.equal(data.groupPolicyNo, "G-TLI-26-136");
     assert.notEqual(data.groupPolicyNo, data.policyNo);
+  });
+
+  // Branch 7: an employee of one of ABCC's affiliates (DBA request 25) is
+  // covered under the affiliate, named as one. The Group Policy No. stays the
+  // company's master number.
+  test("an affiliate's employee is covered under the affiliate, an affiliate of the company", async () => {
+    const { pool } = poolFor({
+      details: [
+        enrollmentRow({
+          policy_no: "G-TLI-26-177-1-2600001",
+          group_policy_no: "G-TLI-26-177",
+          company_name: "Abacus Book and Card Corporation",
+          affiliate_id: "7",
+          affiliate_name: "Alakor Corporation",
+        }),
+      ],
+    });
+
+    const data = await buildCertificateData(pool, 96);
+
+    assert.equal(data.coveredUnder, "Alakor Corporation, an affiliate of Abacus Book and Card Corporation,");
+    assert.equal(data.groupPolicyNo, "G-TLI-26-177");
+    assert.equal(data.policyNo, "G-TLI-26-177-1-2600001");
+  });
+
+  // ABCC itself, and every company without affiliates: unchanged.
+  test("an employee of the company itself is covered under the company alone", async () => {
+    for (const affiliate_name of [null, undefined, ""]) {
+      const { pool } = poolFor({ details: [enrollmentRow({ affiliate_id: null, affiliate_name })] });
+
+      assert.equal((await buildCertificateData(pool, 96)).coveredUnder, "Coforge BPS Philippines, Inc.", String(affiliate_name));
+    }
+  });
+
+  test("the printed sentence names the affiliate", async () => {
+    const { pool } = poolFor({
+      details: [
+        enrollmentRow({
+          policy_no: "G-TLI-26-177-1-2600001",
+          group_policy_no: "G-TLI-26-177",
+          company_name: "Abacus Book and Card Corporation",
+          affiliate_name: "Alakor Corporation",
+        }),
+      ],
+    });
+
+    const { content, name } = await buildCertificate(pool, 96);
+
+    assert.ok(
+      pdfText(content).includes(
+        compact(
+          "accepted for coverage under Alakor Corporation, an affiliate of Abacus Book and Card Corporation, with Group Policy No. G-TLI-26-177 (herein referred to as the Policy)",
+        ),
+      ),
+    );
+    // The longer number goes into the filename as it is.
+    assert.equal(name, "G-TLI-26-177-1-2600001-Lorenz-Artillagas.pdf");
   });
 
   // Decided on 2026-09-11: the formula prints as stored, not as the example's

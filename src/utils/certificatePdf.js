@@ -254,7 +254,7 @@ const drawWatermark = (doc) => {
   doc.y = y;
 };
 
-const drawHeader = (doc, { policyNo, companyName, groupPolicyNo }) => {
+const drawHeader = (doc, { policyNo, coveredUnder, groupPolicyNo }) => {
   // Before the text, so a mark with any transparency sits over the page rather
   // than under whatever is drawn next. Nothing shares its band, so the order
   // only matters if the asset is ever replaced with a wider one.
@@ -273,10 +273,12 @@ const drawHeader = (doc, { policyNo, companyName, groupPolicyNo }) => {
     continued: true,
   });
 
+  // coveredUnder is the company's name, or "X, an affiliate of Y," for an
+  // affiliate's employee: certificateService.coveredUnder.
   doc
     .font("italic")
     .text(
-      `(herein called the Insurer), hereby confirms that the Insured named below is accepted for coverage under ${companyName} with Group Policy No. ${groupPolicyNo} (herein referred to as the Policy). The details of the insurance coverage are as specified below:`,
+      `(herein called the Insurer), hereby confirms that the Insured named below is accepted for coverage under ${coveredUnder} with Group Policy No. ${groupPolicyNo} (herein referred to as the Policy). The details of the insurance coverage are as specified below:`,
       { align: "justify" },
     );
 
@@ -469,7 +471,7 @@ const drawFooter = (doc, top) => {
 // wants, base64-encoded by the sender.
 //
 // `data` is fully formatted by certificateService.buildCertificateData:
-//   policyNo, groupPolicyNo, companyName, insuredName, address, coverageDate,
+//   policyNo, groupPolicyNo, coveredUnder, insuredName, address, coverageDate,
 //   premium, coverages [{ label, amount }], dependentColumns [header],
 //   dependents [{ name, relationship, amounts [] }], signatureImage (Buffer|null)
 export const renderCertificate = (data) =>
