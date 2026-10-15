@@ -2,6 +2,7 @@ import { getPool } from "../config/db.js";
 import CompanyService from "../services/companyService.js";
 import ScheduleService from "../services/scheduleService.js";
 import HrAccountService from "../services/hrAccountService.js";
+import AffiliateService from "../services/affiliateService.js";
 
 // The Administrator's companies, branch 2 of the onboarding effort. The routes
 // allow the Administrator only, and the procedures check again.
@@ -162,6 +163,63 @@ export const resendHrCredentials = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: `New sign-in details sent to ${email_address}`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// A company's affiliates, branch 5. Inactive ones are included, marked by
+// is_active.
+export const getAffiliates = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const affiliates = await AffiliateService.getAffiliates(pool, req.user.user_id, req.params.employer_id);
+
+    return res.status(200).json({
+      success: true,
+      data: affiliates,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const createAffiliate = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const affiliate = await AffiliateService.createAffiliate(
+      pool,
+      req.user.user_id,
+      req.params.employer_id,
+      req.body,
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "Affiliate created",
+      data: affiliate,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateAffiliate = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const affiliate = await AffiliateService.updateAffiliate(
+      pool,
+      req.user.user_id,
+      req.params.employer_id,
+      req.params.affiliate_id,
+      req.body,
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Affiliate updated",
+      data: affiliate,
     });
   } catch (error) {
     next(error);

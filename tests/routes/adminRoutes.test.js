@@ -262,6 +262,70 @@ describe("the HR account routes", () => {
   });
 });
 
+// A company's affiliates, DBA request 25, branch 5. The Administrator only.
+// The edit sits under the company (option A, 2026-10-15).
+describe("the affiliate routes", () => {
+  const ROUTES = [
+    ["get", "/companies/:employer_id/affiliates", "getAffiliates", 4],
+    ["post", "/companies/:employer_id/affiliates", "createAffiliate", 5],
+    ["patch", "/companies/:employer_id/affiliates/:affiliate_id", "updateAffiliate", 6],
+  ];
+
+  for (const [method, path, controllerName, length] of ROUTES)
+    test(`${method.toUpperCase()} ${path} is for the Administrator only, behind verifyToken, and reaches its controller`, async () => {
+      const controllers = await import("../../src/controllers/companyController.js");
+      const handlers = handlersFor(method, path);
+
+      assert.equal(handlers[0], verifyToken);
+      assert.equal(handlers.at(-1), controllers[controllerName]);
+      assert.equal(handlers.length, length);
+      assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+      assert.equal(roleAnswer(handlers, "HR"), 403);
+      assert.equal(roleAnswer(handlers, "Employee"), 403);
+    });
+
+  // After the id checks, so a bad id is 404 before the body is looked at.
+  test("the validators run last, before the controllers", async () => {
+    const { validateAffiliateChanges, validateNewAffiliate } = await import(
+      "../../src/middlewares/validateAffiliate.js"
+    );
+
+    assert.equal(handlersFor("post", "/companies/:employer_id/affiliates").at(-2), validateNewAffiliate);
+    assert.equal(
+      handlersFor("patch", "/companies/:employer_id/affiliates/:affiliate_id").at(-2),
+      validateAffiliateChanges,
+    );
+  });
+
+  // Both ids are checked: /companies/5/affiliates/abc is a 404 that names the
+  // affiliate, before anything is read.
+  test("the PATCH checks the affiliate id as well as the company id", () => {
+    const handlers = handlersFor("patch", "/companies/:employer_id/affiliates/:affiliate_id");
+    let answer = null;
+
+    handlers[3]({ params: { employer_id: "5", affiliate_id: "abc" } }, {}, (error) => {
+      answer = error ? { statusCode: error.statusCode, message: error.message } : "passed";
+    });
+
+    assert.deepEqual(answer, { statusCode: 404, message: "Affiliate not found" });
+  });
+});
+
+// HR's own company's affiliates, DBA request 25. HR only, as its classes are:
+// they are what HR writes in its invitation file.
+describe("the HR affiliate route", () => {
+  test("GET /affiliates is for HR only, behind verifyToken, and reaches its controller", async () => {
+    const { getCompanyAffiliates } = await import("../../src/controllers/adminController.js");
+    const handlers = handlersFor("get", "/affiliates");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), getCompanyAffiliates);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
 // HR's own company's classifications, DBA request 23. HR only, like the
 // invitation routes: they are what HR assigns on each invitation.
 describe("the HR classification route", () => {

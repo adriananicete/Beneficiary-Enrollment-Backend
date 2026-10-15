@@ -405,8 +405,8 @@ export const sqlErrorMap = {
     50184: { statusCode: 409, message: 'That company code is already used by another company' },
     50185: { statusCode: 400, message: 'Policy number must be 1 to 12 characters' },
     50186: { statusCode: 409, message: 'That policy number is already used by another company' },
-    // An id that matches no company. Also thrown when a class or an HR account
-    // is added to an inactive one (branches 3 and 4).
+    // An id that matches no company. Also thrown when a class, an HR account
+    // or an affiliate is added to an inactive one (branches 3, 4 and 5).
     50187: { statusCode: 404, message: 'Company not found' },
     // The policy number is the prefix of every employee's number, and the
     // certificate reads it live, so it is fixed once one enrollment exists.
@@ -434,6 +434,31 @@ export const sqlErrorMap = {
     // hrAccountService asks first and answers the same sentence, so this is a
     // race between two creations.
     50197: { statusCode: 409, message: 'This company already has an HR account' },
+
+    // ── Affiliates, DBA request 25, read 2026-10-15 before delivery ──
+    //
+    // usp_ins_employer_affiliate and usp_upd_employer_affiliate, branch 5.
+    // validateAffiliate checks both lengths first, so 50200 and 50204 are the
+    // database's own guards. 50201–50203 and 50205 compare without regard to
+    // case or surrounding spaces.
+    50200: { statusCode: 400, message: 'Affiliate code must be 1 to 20 characters' },
+    50201: { statusCode: 409, message: 'That affiliate code is already used in this company' },
+    // In HR's file the company's own code means the company itself, so an
+    // affiliate cannot carry it.
+    50202: { statusCode: 400, message: "An affiliate's code cannot be the company's own code" },
+    50203: { statusCode: 409, message: 'That affiliate name is already used in this company' },
+    50204: { statusCode: 400, message: 'Affiliate reference must be 1 to 20 characters with no spaces' },
+    // Two equal references would share one series of policy numbers.
+    50205: { statusCode: 409, message: "That reference is already used by another affiliate or as a company's policy number" },
+    // The reference is the prefix of its employees' policy numbers.
+    50206: { statusCode: 409, message: 'The reference cannot change once an employee is numbered under it' },
+    50207: { statusCode: 404, message: 'Affiliate not found' },
+    // usp_sel_employer_affiliates_by_user. The route allows HR only, so this
+    // is the stale-session case.
+    50208: { statusCode: 403, message: 'Only HR users can list affiliates' },
+    // usp_ins_employer and usp_upd_employer (branch 2), from request 25 Part
+    // 9c: the other side of 50205.
+    50211: { statusCode: 409, message: "That policy number is already used as an affiliate's reference" },
 
     2627: {statusCode: 409, message: 'Duplicate record'},
 
