@@ -1,6 +1,7 @@
 import { getPool } from "../config/db.js";
 import CompanyService from "../services/companyService.js";
 import ScheduleService from "../services/scheduleService.js";
+import HrAccountService from "../services/hrAccountService.js";
 
 // The Administrator's companies, branch 2 of the onboarding effort. The routes
 // allow the Administrator only, and the procedures check again.
@@ -119,6 +120,48 @@ export const updateClassification = async (req, res, next) => {
       success: true,
       message: "Classification updated",
       data: classification,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The company's one HR account, branch 4. 201 even when the email fails: the
+// account exists, and credentials_emailed says whether its details went.
+export const createHrAccount = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const account = await HrAccountService.createHrAccount(
+      pool,
+      req.user.user_id,
+      req.params.employer_id,
+      req.body,
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: account.credentials_emailed
+        ? `HR account created. Sign-in details sent to ${account.email_address}`
+        : "HR account created, but the email could not be sent. Reissue the password to send it again.",
+      data: account,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const resendHrCredentials = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const { email_address } = await HrAccountService.resendHrCredentials(
+      pool,
+      req.user.user_id,
+      req.params.employer_id,
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `New sign-in details sent to ${email_address}`,
     });
   } catch (error) {
     next(error);

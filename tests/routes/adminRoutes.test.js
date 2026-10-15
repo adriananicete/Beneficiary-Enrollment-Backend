@@ -230,6 +230,38 @@ describe("the schedule routes", () => {
   });
 });
 
+// The company's one HR account, DBA request 24, branch 4. The Administrator
+// only.
+describe("the HR account routes", () => {
+  test("POST /companies/:employer_id/hr-account checks the id, then the body", async () => {
+    const controllers = await import("../../src/controllers/companyController.js");
+    const { validateHrAccount } = await import("../../src/middlewares/validateHrAccount.js");
+    const handlers = handlersFor("post", "/companies/:employer_id/hr-account");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.length, 5);
+    assert.equal(handlers[3], validateHrAccount);
+    assert.equal(handlers.at(-1), controllers.createHrAccount);
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "HR"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+
+  // It mails a password, as HR's employee resend does, and shares its limit.
+  test("POST …/hr-account/resend-credentials is rate limited", async () => {
+    const controllers = await import("../../src/controllers/companyController.js");
+    const { credentialsResendLimiter } = await import("../../src/middlewares/rateLimiter.js");
+    const handlers = handlersFor("post", "/companies/:employer_id/hr-account/resend-credentials");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers[3], credentialsResendLimiter);
+    assert.equal(handlers.at(-1), controllers.resendHrCredentials);
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "HR"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
 // HR's own company's classifications, DBA request 23. HR only, like the
 // invitation routes: they are what HR assigns on each invitation.
 describe("the HR classification route", () => {

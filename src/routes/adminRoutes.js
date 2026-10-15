@@ -14,7 +14,8 @@ import { closeDeathClaim, fileDeathClaim, getClaimDetails, getClaimDocument, get
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { getConversation, getConversations, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
-import { createClassification, createCompany, getClassificationSchedule, getCompanies, getCompany, updateClassification, updateCompany } from '../controllers/companyController.js';
+import { createClassification, createCompany, createHrAccount, getClassificationSchedule, getCompanies, getCompany, resendHrCredentials, updateClassification, updateCompany } from '../controllers/companyController.js';
+import { validateHrAccount } from '../middlewares/validateHrAccount.js';
 import { validateCompanyChanges, validateNewCompany } from '../middlewares/validateCompany.js';
 import { validateClassificationChanges, validateNewClassification } from '../middlewares/validateClassification.js';
 
@@ -93,6 +94,12 @@ const classificationId = validateIdParam('classification_id', 'Classification no
 router.get('/companies/:employer_id/classifications', verifyToken, allowedRoles(SUPER_ADMIN), companyId, getClassificationSchedule);
 router.post('/companies/:employer_id/classifications', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateNewClassification, createClassification);
 router.patch('/companies/:employer_id/classifications/:classification_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, classificationId, validateClassificationChanges, updateClassification);
+
+// The company's one HR account, DBA request 24, branch 4. The Administrator
+// only. The reissue shares credentialsResendLimiter with HR's employee
+// resend: both send a password by email.
+router.post('/companies/:employer_id/hr-account', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateHrAccount, createHrAccount);
+router.post('/companies/:employer_id/hr-account/resend-credentials', verifyToken, allowedRoles(SUPER_ADMIN), companyId, credentialsResendLimiter, resendHrCredentials);
 
 // Claims, DBA request 20: HR's review. The procedures scope HR to their own
 // companies and let the Administrator see every one, as with change requests.

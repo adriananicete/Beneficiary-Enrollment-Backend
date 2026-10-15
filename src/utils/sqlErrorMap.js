@@ -427,6 +427,14 @@ export const sqlErrorMap = {
     50194: { statusCode: 409, message: 'That benefit is already on the classification' },
     50195: { statusCode: 404, message: 'Benefit not found' },
 
+    // sec.us08_usp_ins_user_employer, branch 4. 50196 means our own code
+    // mapped a user that is not an active HR account: the role is assigned a
+    // line earlier in the same transaction, so this is a fault on our side.
+    50196: { statusCode: 500, message: 'The HR account could not be set up. Please contact PhilLife.' },
+    // hrAccountService asks first and answers the same sentence, so this is a
+    // race between two creations.
+    50197: { statusCode: 409, message: 'This company already has an HR account' },
+
     2627: {statusCode: 409, message: 'Duplicate record'},
 
     // SQL Server's unique-INDEX violation, where 2627 is the unique-CONSTRAINT
