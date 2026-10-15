@@ -78,6 +78,13 @@ const MUST_BE_MAPPED = [
   [50186, 409, /policy number is already used/i],
   [50187, 404, /^Company not found$/],
   [50188, 409, /cannot change once the company has an enrollment/],
+  [50189, 400, /Classification code must be 1 to 20/],
+  [50190, 409, /already used in this company/],
+  [50191, 404, /^Classification not found$/],
+  [50192, 400, /benefit is not available/],
+  [50193, 400, /amount above zero or a formula/],
+  [50194, 409, /already on the classification/],
+  [50195, 404, /^Benefit not found$/],
 ];
 
 describe("sqlErrorMap", () => {
