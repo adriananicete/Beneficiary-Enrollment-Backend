@@ -313,6 +313,37 @@ describe("the affiliate routes", () => {
   });
 });
 
+// The development wipe, DBA request 26. The door comes first, before the
+// session, so in production the path answers like one never declared.
+describe("the development wipe route", () => {
+  test("POST /enrollments/wipe: the door, then the session, then HR or the Administrator", async () => {
+    const { wipeEnrollments } = await import("../../src/controllers/adminController.js");
+    const handlers = handlersFor("post", "/enrollments/wipe");
+
+    assert.equal(handlers.length, 4);
+    assert.equal(handlers[1], verifyToken);
+    assert.equal(handlers.at(-1), wipeEnrollments);
+
+    // The suite runs as "test", so the door is open.
+    let passed = false;
+    handlers[0]({}, {}, (arg) => {
+      passed = arg === undefined;
+    });
+    assert.ok(passed, "the door is shut outside production");
+
+    const roleOf = (role_name) => {
+      let answer = null;
+      handlers[2]({ user: { role_name } }, {}, (error) => {
+        answer = error ? error.statusCode : "passed";
+      });
+      return answer;
+    };
+    assert.equal(roleOf("HR"), "passed");
+    assert.equal(roleOf("Administrator"), "passed");
+    assert.equal(roleOf("Employee"), 403);
+  });
+});
+
 // The invitation template, branch 6. HR only, as the upload it feeds is.
 describe("the invitation template route", () => {
   test("GET /invitations/template is for HR only, behind verifyToken, and reaches its controller", async () => {

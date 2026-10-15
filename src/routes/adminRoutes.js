@@ -1,7 +1,9 @@
 import express from 'express';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
-import { exportEnrollments, getCompanyAffiliates, getCompanyClassifications, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials } from '../controllers/adminController.js';
+import { exportEnrollments, getCompanyAffiliates, getCompanyClassifications, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials, wipeEnrollments } from '../controllers/adminController.js';
+import { developmentOnly } from '../middlewares/developmentOnly.js';
+import config from '../config/env.js';
 import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { cancelInvitationJob, downloadInvitationTemplate, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
@@ -47,6 +49,10 @@ router.get('/classifications', verifyToken, allowedRoles(ADMIN), getCompanyClass
 router.get('/affiliates', verifyToken, allowedRoles(ADMIN), getCompanyAffiliates);
 router.get('/enrollments', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getEnrollment);
 router.get('/enrollments/export', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), exportEnrollments);
+// The development wipe, DBA request 26. HR for its own company, the
+// Administrator for any. In production developmentOnly leaves the router
+// before the session is checked, so the path answers like one never declared.
+router.post('/enrollments/wipe', developmentOnly(config.nodeEnv), verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), wipeEnrollments);
 router.get('/dashboard/stats', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getDashboardStats);
 router.get('/enrollments/:client_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, getEnrollmentDetails);
 router.get('/enrollments/:client_id/agreements',verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, getEnrollmentAgreements);

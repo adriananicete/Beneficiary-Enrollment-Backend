@@ -99,6 +99,9 @@ const MUST_BE_MAPPED = [
   [50208, 403, /Only HR users can list affiliates/],
   [50211, 409, /policy number is already used as an affiliate's reference/],
   [50212, 409, /cannot be deleted/],
+  // The development wipe, DBA request 26, read back 2026-10-15.
+  [50220, 403, /not allowed to wipe/],
+  [50221, 400, /^The confirmation does not match the company code$/],
 ];
 
 describe("sqlErrorMap", () => {
