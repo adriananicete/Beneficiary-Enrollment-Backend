@@ -137,13 +137,18 @@ export const sqlErrorMap = {
     // picked a classification that has since been deactivated, and choosing a
     // different one fixes it.
     //
-    // Nearly unreachable: enrollmentService.js:51 validates the id against the
-    // active list before the transaction opens, so this only fires if the
-    // classification is deactivated in the milliseconds between. Mapped anyway
-    // for the same reason as 50008 — it is the database's own guard on a rule
-    // we also check, and if it ever fires the employee should be told what to
-    // change rather than that the server broke.
+    // Nearly unreachable: enrollmentService validates the id against the
+    // company's active list before the transaction opens, so this only fires
+    // if the classification is deactivated in the milliseconds between.
+    // Mapped anyway for the same reason as 50008 — it is the database's own
+    // guard on a rule we also check, and if it ever fires the employee should
+    // be told what to change rather than that the server broke.
     50018: {statusCode: 400, message: 'That employee classification is no longer available. Please choose another.'},
+
+    // Same procedure, DBA request 23, read back 2026-10-15: the class belongs
+    // to another company. enrollmentService refuses that first with this same
+    // sentence, so the employee hears one answer whichever guard fires.
+    50180: {statusCode: 400, message: 'That classification is not available for your company'},
     50019: {statusCode: 409, message: 'You have already submitted an enrollment'},
     50020: {statusCode: 404, message: 'Beneficiary not found'},
     50021: {statusCode: 409, message: 'This enrollment already has a beneficiary with that name'},
@@ -301,6 +306,12 @@ export const sqlErrorMap = {
     // do nothing, but the next person reading this file should know it is
     // handled rather than missed.
     50063: { statusCode: 409, message: 'This company is no longer active. Please contact PhilLife.' },
+
+    // Same procedure, DBA request 23: the class sent with an invitation is not
+    // the company's, or is retired. Nothing sends a class yet; HR will, per
+    // invitation row, from branch 6 of the onboarding effort. Mapped now so
+    // that branch meets a sentence rather than a 500.
+    50181: { statusCode: 400, message: 'That classification is not available for this company' },
 
     // ── Employee claims, DBA request 20, read back 2026-10-12 ──────────────
     //

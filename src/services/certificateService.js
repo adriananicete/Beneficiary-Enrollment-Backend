@@ -100,10 +100,12 @@ export const buildCertificateData = async (pool, clientId) => {
       409,
     );
 
-  // usp_get_enrollment_benefits_by_id filters on ec.is_active, so a
-  // classification deactivated after enrollment returns nothing here. That is
-  // a certificate with an empty coverage table, and it is refused for the same
-  // reason as the one above.
+  // An enrollment with no active benefit rows would print an empty coverage
+  // table, and it is refused for the same reason as the one above. Until DBA
+  // request 23 (2026-10-15), usp_get_enrollment_benefits_by_id also filtered
+  // on the classification being active, so retiring a class emptied this for
+  // every enrollment in it. It no longer does: the enrollment's own snapshot
+  // is returned whatever became of its class.
   const benefits = await ClientModel.getEnrollmentBenefitsByClientId(pool, clientId);
   if (benefits.length === 0)
     throw new AppError(

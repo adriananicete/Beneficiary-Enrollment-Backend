@@ -1,8 +1,13 @@
 import { sql } from "../config/db.js";
 
-export const getEmployeeClassifications = async (pool) => {
+// One company's active classifications, with no amounts. Classifications
+// belong to a company since DBA request 23. The global list this replaced
+// (usp_sel_employee_classifications) showed every company's classes to every
+// invitee.
+export const getClassificationsByEmployer = async (pool, employerId) => {
     const result = await pool.request()
-    .execute('usp_sel_employee_classifications');
+    .input('employer_id', sql.BigInt, employerId)
+    .execute('usp_sel_classifications_by_employer');
 
     return result.recordset;
 };
@@ -63,7 +68,7 @@ export const barangayExists = async (pool, barangayId) => {
 };
 
 export default {
-    getEmployeeClassifications,
+    getClassificationsByEmployer,
     getEmployers,
     getRegions,
     getProvincesByRegion,

@@ -1,6 +1,7 @@
 import { getPool } from "../config/db.js";
 import ReferenceModel from "../models/referenceModel.js";
 import EnrollmentService from "../services/enrollmentService.js";
+import ClassificationService from "../services/classificationService.js";
 import InvitationModel from '../models/invitationModel.js';
 import UserModel from "../models/userModel.js";
 import { AppError } from "../utils/AppError.js";
@@ -38,14 +39,22 @@ export const submitEnrollment = async (req, res, next) => {
   }
 };
 
+// The invitation's company's classes, and no other company's. Needs the token
+// since DBA request 23: before it, every company's classes were one list and
+// this answered anybody. The token is checked the way GET /invitation checks
+// it, and before the database for the same reason.
 export const getEmployeeClassifications = async (req, res, next) => {
   try {
+    const { token } = req.query;
+    if(!token) throw new AppError('Token is required', 400);
+    if(!isInvitationToken(token)) throw new AppError('Invitation not found', 404);
+
     const pool = await getPool();
-    const employeeClassifications = await ReferenceModel.getEmployeeClassifications(pool);
+    const classifications = await ClassificationService.getForInvitation(pool, token);
 
     return res.status(200).json({
       success: true,
-      data: employeeClassifications,
+      data: classifications,
     })
   } catch (error) {
     next(error);

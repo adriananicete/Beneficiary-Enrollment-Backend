@@ -228,8 +228,9 @@ describe("certificateService — refusing to print a wrong certificate", () => {
     });
   }
 
-  // The benefits procedure filters on the classification being active, so a
-  // classification deactivated after enrollment returns nothing at all.
+  // An enrollment with no active benefit rows. The benefits procedure no longer
+  // filters on the classification being active (DBA request 23), so a retired
+  // class is not what empties it now; an enrollment snapshotted with no rows is.
   test("refuses an enrollment whose benefits came back empty", async () => {
     const { pool } = poolFor({ benefits: [] });
 

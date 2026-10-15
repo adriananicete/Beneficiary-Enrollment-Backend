@@ -7,6 +7,7 @@ import { fakePool, inputsFor } from "../helpers/fakePool.js";
 const { default: EnrollmentService } = await import(
   "../../src/services/enrollmentService.js"
 );
+const { sqlErrorMap } = await import("../../src/utils/sqlErrorMap.js");
 
 // The public enrollment submit path, and the last service to get assertions.
 //
@@ -21,7 +22,7 @@ const { default: EnrollmentService } = await import(
 
 const TOKEN = "usp_sel_enrollment_invitation_by_token";
 const EMPLOYERS = "usp_sel_employers";
-const CLASSIFICATIONS = "usp_sel_employee_classifications";
+const CLASSIFICATIONS = "usp_sel_classifications_by_employer";
 
 const BARANGAY_QUERY = /dbo\.barangay/;
 const USERNAME_QUERY = /us01_users/;
@@ -134,10 +135,12 @@ describe("enrollmentService — the reference guards", () => {
     );
   });
 
-  test("refuses a classification that is not active", async () => {
+  test("refuses a classification that is not in the company's active list", async () => {
     await assert.rejects(
       () => enrol(submission({ classification_id: 99 })).result,
-      (error) => error.statusCode === 400 && /classification/i.test(error.message),
+      (error) =>
+        error.statusCode === 400 &&
+        error.message === "That classification is not available for your company",
     );
   });
 
@@ -168,6 +171,57 @@ describe("enrollmentService — the reference guards", () => {
     await assert.rejects(
       () => enrol(submission(), { usernameTaken: true }).result,
       (error) => error.statusCode === 409 && /already exists/.test(error.message),
+    );
+  });
+});
+
+// Classifications belong to a company since DBA request 23. Coforge keeps
+// 1–10 and HCL has its own copies, 11–20, with the same codes.
+describe("enrollmentService — the company's classifications", () => {
+  const byCompany = ({ employer_id }) => ({
+    recordset:
+      String(employer_id) === "1"
+        ? [{ classification_id: "1" }, { classification_id: "3" }]
+        : [{ classification_id: "11" }, { classification_id: "13" }],
+    output: {},
+  });
+
+  test("asks for the invitation's company's classes, not the form's", async () => {
+    const { calls, result } = enrol(submission({ employer_id: 2 }), {
+      classifications: byCompany,
+      usernameTaken: true,
+    });
+    await assert.rejects(() => result);
+
+    assert.equal(inputsFor(calls, CLASSIFICATIONS).employer_id, 1);
+  });
+
+  // HCL's copy of a class Coforge also has. The id is real and active, which
+  // is exactly what the old global check accepted.
+  test("refuses another company's class, even one with the same code", async () => {
+    await assert.rejects(
+      () => enrol(submission({ classification_id: 11 }), { classifications: byCompany }).result,
+      (error) =>
+        error.statusCode === 400 &&
+        error.message === "That classification is not available for your company",
+    );
+  });
+
+  // The ids come back from the procedure as strings (BigInt) and arrive from
+  // the form as numbers. Both sides are compared as text.
+  test("accepts the company's own class whatever type its id arrives as", async () => {
+    await assert.rejects(
+      () => enrol(submission({ classification_id: 3 }), { classifications: byCompany, usernameTaken: true }).result,
+      (error) => error.statusCode === 409 && /Employee ID number already exists/.test(error.message),
+    );
+  });
+
+  // usp_ins_insurance_enrollment refuses the same case with 50180. One
+  // sentence, whichever guard fires.
+  test("answers the same sentence the procedure's 50180 maps to", async () => {
+    await assert.rejects(
+      () => enrol(submission({ classification_id: 11 }), { classifications: byCompany }).result,
+      (error) => error.message === sqlErrorMap[50180].message,
     );
   });
 });

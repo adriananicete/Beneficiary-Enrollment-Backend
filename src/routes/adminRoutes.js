@@ -1,7 +1,7 @@
 import express from 'express';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
-import { exportEnrollments, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials } from '../controllers/adminController.js';
+import { exportEnrollments, getCompanyClassifications, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials } from '../controllers/adminController.js';
 import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { cancelInvitationJob, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
@@ -31,6 +31,9 @@ router.post('/invitations', verifyToken, allowedRoles(ADMIN), bulkInvitationLimi
 router.post('/invitations/jobs/:job_id/cancel', verifyToken, allowedRoles(ADMIN), cancelInvitationJob);
 router.get('/invitations/jobs/:job_id', verifyToken, allowedRoles(ADMIN), jobStatusLimiter, getInvitationJobStatus);
 router.get('/invitations', verifyToken, allowedRoles(ADMIN), getInvitations);
+// HR's own company's classifications, for assigning one per invitation. HR
+// only, like the invitation routes above, so allowedRoles(ADMIN).
+router.get('/classifications', verifyToken, allowedRoles(ADMIN), getCompanyClassifications);
 router.get('/enrollments', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getEnrollment);
 router.get('/enrollments/export', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), exportEnrollments);
 router.get('/dashboard/stats', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getDashboardStats);
