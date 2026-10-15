@@ -4,7 +4,7 @@ import { verifyToken } from '../middlewares/verifyToken.js';
 import { exportEnrollments, getCompanyAffiliates, getCompanyClassifications, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials } from '../controllers/adminController.js';
 import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
-import { cancelInvitationJob, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
+import { cancelInvitationJob, downloadInvitationTemplate, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
 import { validateInvitations } from '../middlewares/validateInvitations.js';
 import { bulkInvitationLimiter, certificateResendLimiter, claimSubmitLimiter, credentialsResendLimiter, jobStatusLimiter, messageSendLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
 import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
@@ -36,6 +36,9 @@ router.post('/invitations', verifyToken, allowedRoles(ADMIN), bulkInvitationLimi
 router.post('/invitations/jobs/:job_id/cancel', verifyToken, allowedRoles(ADMIN), cancelInvitationJob);
 router.get('/invitations/jobs/:job_id', verifyToken, allowedRoles(ADMIN), jobStatusLimiter, getInvitationJobStatus);
 router.get('/invitations', verifyToken, allowedRoles(ADMIN), getInvitations);
+// The file HR fills: Email, Classification and, for a company with
+// affiliates, Affiliate, with dropdowns of its codes. HR only, as above.
+router.get('/invitations/template', verifyToken, allowedRoles(ADMIN), downloadInvitationTemplate);
 // HR's own company's classifications, for assigning one per invitation. HR
 // only, like the invitation routes above, so allowedRoles(ADMIN).
 router.get('/classifications', verifyToken, allowedRoles(ADMIN), getCompanyClassifications);

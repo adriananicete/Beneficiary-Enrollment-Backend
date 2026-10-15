@@ -1,5 +1,5 @@
 import rateLimit, { ipKeyGenerator } from "express-rate-limit";
-import { MAX_INVITATION_EMAILS } from "../utils/partitionEmails.js";
+import { MAX_INVITATION_EMAILS } from "../utils/partitionInvitations.js";
 
 const isDev = process.env.NODE_ENV !== "production";
 

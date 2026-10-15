@@ -35,8 +35,11 @@ app.use(cors({
     origin: config.corsOrigin,
     credentials: true
 }));
-// A 1,000-address invitation upload is roughly 33KB. The default is 100kb, which
-// would hold, but the limit should be deliberate rather than inherited.
+// The largest body is the invitation upload: 1,000 rows of an email, a class
+// code and an affiliate code since branch 6 of the onboarding effort. Measured
+// 2026-10-15: 122KiB for ordinary rows, 250KiB if every row is the longest
+// valid one (a 150-character email, 20-character codes). The default 100kb
+// would refuse the first; 256kb holds both, with little room for a field more.
 const parseJson = express.json({ limit: '256kb' });
 
 // The enrollment signature is a base64 image in the body — up to 500KB decoded,

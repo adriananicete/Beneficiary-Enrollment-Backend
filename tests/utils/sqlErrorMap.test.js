@@ -279,6 +279,10 @@ describe("the numbers deliberately left unmapped", () => {
     // code and would hide where the handling actually is.
     [50064, "invitationService catches it to mark one recipient already_invited rather than failing the send"],
 
+    // DBA request 25, branch 6 of the onboarding effort.
+    [50209, "invitationService catches it to report that row's affiliate as no longer available"],
+    [50210, "the employee's affiliate comes from the invitation of the same company, so its firing is our fault"],
+
     // Was mapped to "You are not authorized to view employee information",
     // taken from usp_sel_hr_employees. That procedure now throws 50133 for the
     // same check with the same sentence, so the entry was dead — and 50002 is

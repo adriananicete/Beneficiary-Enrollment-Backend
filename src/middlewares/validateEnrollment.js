@@ -52,9 +52,11 @@ export const validateEnrollment = (req, res, next) => {
   req.body.contact_no = normaliseContactNo(req.body.contact_no);
   req.body.sss_gsis_no = normaliseSssGsisNo(req.body.sss_gsis_no);
 
+  // classification_id is not here since branch 6 of the onboarding effort: HR
+  // assigns the class on the invitation, and enrollmentService requires it
+  // from the form only for an older invitation that has none.
   const requiredFields = [
     "employee_id_number",
-    "classification_id",
     "first_name",
     "last_name",
     "address_line",

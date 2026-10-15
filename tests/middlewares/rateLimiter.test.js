@@ -10,7 +10,7 @@ import {
   REFERENCE_BURST,
   REFERENCE_CALLS_PER_FORM,
 } from "../../src/middlewares/rateLimiter.js";
-import { MAX_INVITATION_EMAILS } from "../../src/utils/partitionEmails.js";
+import { MAX_INVITATION_EMAILS } from "../../src/utils/partitionInvitations.js";
 import { makeReq } from "../helpers/http.js";
 
 // The limiters themselves are objects built at import and are not worth

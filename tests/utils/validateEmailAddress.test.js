@@ -2,7 +2,15 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 import { validateEmailAddress } from "../../src/utils/validateEmailAddress.js";
-import { partitionEmails } from "../../src/utils/partitionEmails.js";
+import { partitionInvitations } from "../../src/utils/partitionInvitations.js";
+
+// A row whose class is valid, so only its address decides.
+const invitable = (email) =>
+  partitionInvitations([{ email_address: email, classification_code: "VP" }], {
+    company: { company_code: "COFORGE" },
+    classes: [{ classification_id: "1", classification_code: "VP" }],
+    affiliates: [],
+  }).valid.length === 1;
 
 describe("validateEmailAddress", () => {
   test("accepts ordinary addresses", () => {
@@ -33,10 +41,9 @@ describe("validateEmailAddress", () => {
   // not keep, or the reverse.
   test("agrees with the invitation upload about every case above", () => {
     for (const email of ["angela@example.com", "abc", "a@b", "a b@example.com"]) {
-      const invitable = partitionEmails([email]).valid.length === 1;
       const keepable = validateEmailAddress(email) === null;
 
-      assert.equal(invitable, keepable, email);
+      assert.equal(invitable(email), keepable, email);
     }
   });
 });

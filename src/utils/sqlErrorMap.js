@@ -308,9 +308,15 @@ export const sqlErrorMap = {
     50063: { statusCode: 409, message: 'This company is no longer active. Please contact PhilLife.' },
 
     // Same procedure, DBA request 23: the class sent with an invitation is not
-    // the company's, or is retired. Nothing sends a class yet; HR will, per
-    // invitation row, from branch 6 of the onboarding effort. Mapped now so
-    // that branch meets a sentence rather than a 500.
+    // the company's, or is retired. The bulk send (branch 6) matches the codes
+    // first, so this is a class retired while the job ran, and
+    // invitationService catches it to report that row with a reason. The
+    // mapping stays for any other caller.
+    //
+    // 50209, the same for the affiliate (DBA request 25), is caught there the
+    // same way and NOT mapped. 50210, from usp_ins_client_employer at submit,
+    // is NOT mapped either: the affiliate comes from the invitation of the
+    // same company, so its firing would be a fault on our side.
     50181: { statusCode: 400, message: 'That classification is not available for this company' },
 
     // ── Employee claims, DBA request 20, read back 2026-10-12 ──────────────

@@ -6,7 +6,8 @@
 // spaces. The only real proof of an address is mail arriving at it; this
 // catches the typo and the field filled with something else entirely.
 //
-// Moved out of partitionEmails.js on 2026-09-23, when the change request needed
+// Moved out of partitionEmails.js (partitionInvitations.js since branch 6 of
+// the onboarding effort) on 2026-09-23, when the change request needed
 // it too. Until then an employee could change their email to "abc", and that
 // value is synced to sec.us01_users — where resend-credentials and the
 // Certificate of Coverage are sent.
