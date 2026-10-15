@@ -14,6 +14,8 @@ import { closeDeathClaim, fileDeathClaim, getClaimDetails, getClaimDocument, get
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { getConversation, getConversations, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
+import { createCompany, getCompanies, getCompany, updateCompany } from '../controllers/companyController.js';
+import { validateCompanyChanges, validateNewCompany } from '../middlewares/validateCompany.js';
 
 const router = express.Router();
 
@@ -70,6 +72,16 @@ router.delete('/invitations/:invitation_id', verifyToken, allowedRoles(ADMIN), i
 // Administrator both; the procedures scope HR to their own company.
 router.get('/employers/settings', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getEmployerSettings);
 router.patch('/employers/:employer_id/settings', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), validateIdParam('employer_id', 'Company not found'), updateEmployerSettings);
+
+// Companies, DBA request 24: the Administrator lists, creates and edits them.
+// The Administrator only (SUPER_ADMIN); the procedures refuse anybody else
+// again (50182).
+const companyId = validateIdParam('employer_id', 'Company not found');
+
+router.get('/companies', verifyToken, allowedRoles(SUPER_ADMIN), getCompanies);
+router.post('/companies', verifyToken, allowedRoles(SUPER_ADMIN), validateNewCompany, createCompany);
+router.get('/companies/:employer_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, getCompany);
+router.patch('/companies/:employer_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateCompanyChanges, updateCompany);
 
 // Claims, DBA request 20: HR's review. The procedures scope HR to their own
 // companies and let the Administrator see every one, as with change requests.

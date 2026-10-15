@@ -162,6 +162,39 @@ describe("the death claim routes", () => {
   });
 });
 
+// The Administrator's companies, DBA request 24. The Administrator only; HR
+// keeps its own settings route.
+describe("the company routes", () => {
+  const ROUTES = [
+    ["get", "/companies", "getCompanies", 3],
+    ["post", "/companies", "createCompany", 4],
+    ["get", "/companies/:employer_id", "getCompany", 4],
+    ["patch", "/companies/:employer_id", "updateCompany", 5],
+  ];
+
+  for (const [method, path, controllerName, length] of ROUTES)
+    test(`${method.toUpperCase()} ${path} is for the Administrator only, behind verifyToken, and reaches its controller`, async () => {
+      const controllers = await import("../../src/controllers/companyController.js");
+      const handlers = handlersFor(method, path);
+
+      assert.equal(handlers[0], verifyToken);
+      assert.equal(handlers.at(-1), controllers[controllerName]);
+      assert.equal(handlers.length, length);
+      assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+      assert.equal(roleAnswer(handlers, "HR"), 403);
+      assert.equal(roleAnswer(handlers, "Employee"), 403);
+    });
+
+  // The body is checked before the controller, and on the PATCH after the id
+  // check, so /companies/abc is a 404 before anything is read.
+  test("the validators run before the controllers", async () => {
+    const { validateCompanyChanges, validateNewCompany } = await import("../../src/middlewares/validateCompany.js");
+
+    assert.equal(handlersFor("post", "/companies")[2], validateNewCompany);
+    assert.equal(handlersFor("patch", "/companies/:employer_id")[3], validateCompanyChanges);
+  });
+});
+
 // HR's own company's classifications, DBA request 23. HR only, like the
 // invitation routes: they are what HR assigns on each invitation.
 describe("the HR classification route", () => {
