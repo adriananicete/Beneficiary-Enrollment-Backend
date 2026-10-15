@@ -7,6 +7,7 @@ import DashboardService from "../services/dashboardService.js";
 import CertificateService from "../services/certificateService.js";
 import ClassificationService from "../services/classificationService.js";
 import AffiliateService from "../services/affiliateService.js";
+import EnrollmentWipeService from "../services/enrollmentWipeService.js";
 import SignatureModel from "../models/signatureModel.js";
 import { sendSignature } from "../utils/signatureResponse.js";
 import { getPool } from "../config/db.js";
@@ -67,6 +68,23 @@ export const getCompanyAffiliates = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: affiliates,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The development wipe, DBA request 26: every enrollee of one company, whole.
+// The route exists only where NODE_ENV is not production.
+export const wipeEnrollments = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const result = await EnrollmentWipeService.wipe(pool, req.user, req.body);
+
+    return res.status(200).json({
+      success: true,
+      message: `Deleted ${result.people_deleted} people and ${result.enrollments_deleted} enrollments from ${result.company_code}`,
+      data: result,
     });
   } catch (error) {
     next(error);

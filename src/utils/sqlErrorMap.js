@@ -470,6 +470,15 @@ export const sqlErrorMap = {
     // created by mistake or for a test can be deleted.
     50212: { statusCode: 409, message: 'This company cannot be deleted: it already has employees, invitations, classes, affiliates or an HR account' },
 
+    // ── The development wipe, DBA request 26, read back 2026-10-15 ──
+    //
+    // usp_del_company_enrollees. enrollmentWipeService checks both first: the
+    // route admits HR and the Administrator only, HR is held to its own
+    // company, and the typed code is compared. These are the database's own
+    // guards, and the stale-session case.
+    50220: { statusCode: 403, message: "You are not allowed to wipe this company's enrollments" },
+    50221: { statusCode: 400, message: 'The confirmation does not match the company code' },
+
     2627: {statusCode: 409, message: 'Duplicate record'},
 
     // SQL Server's unique-INDEX violation, where 2627 is the unique-CONSTRAINT
