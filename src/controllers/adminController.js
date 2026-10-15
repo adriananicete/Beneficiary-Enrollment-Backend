@@ -5,6 +5,7 @@ import UserModel from "../models/userModel.js";
 import ExportService from "../services/exportService.js";
 import DashboardService from "../services/dashboardService.js";
 import CertificateService from "../services/certificateService.js";
+import ClassificationService from "../services/classificationService.js";
 import SignatureModel from "../models/signatureModel.js";
 import { sendSignature } from "../utils/signatureResponse.js";
 import { getPool } from "../config/db.js";
@@ -31,6 +32,22 @@ export const getEnrollment = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: buildPage(employees, paging),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// HR's own company's classifications: id, code and name, no amounts. What HR
+// will assign on each invitation (branch 6 of the onboarding effort).
+export const getCompanyClassifications = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const classifications = await ClassificationService.getForUser(pool, req.user.user_id);
+
+    return res.status(200).json({
+      success: true,
+      data: classifications,
     });
   } catch (error) {
     next(error);

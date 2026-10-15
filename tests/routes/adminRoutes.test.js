@@ -162,6 +162,21 @@ describe("the death claim routes", () => {
   });
 });
 
+// HR's own company's classifications, DBA request 23. HR only, like the
+// invitation routes: they are what HR assigns on each invitation.
+describe("the HR classification route", () => {
+  test("GET /classifications is for HR only, behind verifyToken, and reaches its controller", async () => {
+    const { getCompanyClassifications } = await import("../../src/controllers/adminController.js");
+    const handlers = handlersFor("get", "/classifications");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), getCompanyClassifications);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
 // Messaging, DBA request 22. HR only: the Administrator has no access in v1.
 describe("the HR messaging routes", () => {
   const ROUTES = [
