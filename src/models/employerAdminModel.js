@@ -67,6 +67,19 @@ const updateCompany = async (pool, userId, employerId, company) => {
     return result.recordset[0].employer_id;
 };
 
+// Deletes a company nothing belongs to: no employment record, invitation,
+// class, affiliate, conversation or HR mapping (50212), with the
+// Administrators' own mappings, in its own transaction. DBA request 25 Part
+// 10, read back 2026-10-15. THROWs 50187 for an id that matches none.
+const deleteCompany = async (pool, userId, employerId) => {
+    const result = await pool.request()
+    .input('us01_user_id', sql.BigInt, userId)
+    .input('employer_id', sql.BigInt, employerId)
+    .execute('usp_del_employer');
+
+    return result.recordset[0].employer_id;
+};
+
 // Maps a new HR account to its company, inside our transaction with
 // sec.us01_usp_ins_users and sec.us04_usp_assign_role. Opens no transaction.
 // THROWs 50187 (company), 50196 (not an active HR user), 50197 (the company
@@ -96,6 +109,7 @@ export default {
     getCompanyById,
     createCompany,
     updateCompany,
+    deleteCompany,
     mapHrAccount,
     getHrAccount,
 };

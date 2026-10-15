@@ -70,6 +70,21 @@ export const updateCompany = async (req, res, next) => {
   }
 };
 
+// Only a company nothing belongs to, branch 10. Anything else is 409.
+export const deleteCompany = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    await CompanyService.deleteCompany(pool, req.user.user_id, req.params.employer_id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Company deleted",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // A company's schedule: its classes and their amounts, branch 3. Retired
 // classes are included, marked by is_active.
 export const getClassificationSchedule = async (req, res, next) => {

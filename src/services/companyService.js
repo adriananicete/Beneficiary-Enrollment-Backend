@@ -71,9 +71,17 @@ const updateCompany = async (pool, userId, employerId, changes) => {
   return getCompany(pool, userId, employerId);
 };
 
+// A company created by mistake or for a test (branch 10). The procedure
+// decides whether anything belongs to it (50212, 409) and whether it exists
+// (50187, 404); a company with employees is deactivated instead, later.
+const deleteCompany = async (pool, userId, employerId) => {
+  await EmployerAdminModel.deleteCompany(pool, userId, employerId);
+};
+
 export default {
   getCompanies,
   getCompany,
   createCompany,
   updateCompany,
+  deleteCompany,
 };

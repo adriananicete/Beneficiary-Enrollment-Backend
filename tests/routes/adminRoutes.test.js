@@ -170,6 +170,8 @@ describe("the company routes", () => {
     ["post", "/companies", "createCompany", 4],
     ["get", "/companies/:employer_id", "getCompany", 4],
     ["patch", "/companies/:employer_id", "updateCompany", 5],
+    // Branch 10: the id check, then the controller. No body.
+    ["delete", "/companies/:employer_id", "deleteCompany", 4],
   ];
 
   for (const [method, path, controllerName, length] of ROUTES)

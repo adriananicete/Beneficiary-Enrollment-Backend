@@ -98,6 +98,7 @@ const MUST_BE_MAPPED = [
   [50207, 404, /^Affiliate not found$/],
   [50208, 403, /Only HR users can list affiliates/],
   [50211, 409, /policy number is already used as an affiliate's reference/],
+  [50212, 409, /cannot be deleted/],
 ];
 
 describe("sqlErrorMap", () => {
