@@ -87,6 +87,17 @@ const MUST_BE_MAPPED = [
   [50195, 404, /^Benefit not found$/],
   [50196, 500, /contact PhilLife/],
   [50197, 409, /^This company already has an HR account$/],
+  // Affiliates, DBA request 25, read 2026-10-15 before delivery.
+  [50200, 400, /Affiliate code must be 1 to 20/],
+  [50201, 409, /affiliate code is already used in this company/],
+  [50202, 400, /cannot be the company's own code/],
+  [50203, 409, /affiliate name is already used in this company/],
+  [50204, 400, /reference must be 1 to 20 characters with no spaces/],
+  [50205, 409, /reference is already used/],
+  [50206, 409, /cannot change once an employee is numbered under it/],
+  [50207, 404, /^Affiliate not found$/],
+  [50208, 403, /Only HR users can list affiliates/],
+  [50211, 409, /policy number is already used as an affiliate's reference/],
 ];
 
 describe("sqlErrorMap", () => {

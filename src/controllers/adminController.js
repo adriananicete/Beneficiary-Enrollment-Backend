@@ -6,6 +6,7 @@ import ExportService from "../services/exportService.js";
 import DashboardService from "../services/dashboardService.js";
 import CertificateService from "../services/certificateService.js";
 import ClassificationService from "../services/classificationService.js";
+import AffiliateService from "../services/affiliateService.js";
 import SignatureModel from "../models/signatureModel.js";
 import { sendSignature } from "../utils/signatureResponse.js";
 import { getPool } from "../config/db.js";
@@ -49,6 +50,23 @@ export const getCompanyClassifications = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       data: classifications,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// HR's own company's active affiliates: id, code and name. What HR writes in
+// the Affiliate column of its invitation file (branch 6 of the onboarding
+// effort). An empty list means the company has none.
+export const getCompanyAffiliates = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const affiliates = await AffiliateService.getForUser(pool, req.user.user_id);
+
+    return res.status(200).json({
+      success: true,
+      data: affiliates,
     });
   } catch (error) {
     next(error);

@@ -1,7 +1,7 @@
 import express from 'express';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
-import { exportEnrollments, getCompanyClassifications, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials } from '../controllers/adminController.js';
+import { exportEnrollments, getCompanyAffiliates, getCompanyClassifications, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials } from '../controllers/adminController.js';
 import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { cancelInvitationJob, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
@@ -14,10 +14,11 @@ import { closeDeathClaim, fileDeathClaim, getClaimDetails, getClaimDocument, get
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { getConversation, getConversations, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
-import { createClassification, createCompany, createHrAccount, getClassificationSchedule, getCompanies, getCompany, resendHrCredentials, updateClassification, updateCompany } from '../controllers/companyController.js';
+import { createAffiliate, createClassification, createCompany, createHrAccount, getAffiliates, getClassificationSchedule, getCompanies, getCompany, resendHrCredentials, updateAffiliate, updateClassification, updateCompany } from '../controllers/companyController.js';
 import { validateHrAccount } from '../middlewares/validateHrAccount.js';
 import { validateCompanyChanges, validateNewCompany } from '../middlewares/validateCompany.js';
 import { validateClassificationChanges, validateNewClassification } from '../middlewares/validateClassification.js';
+import { validateAffiliateChanges, validateNewAffiliate } from '../middlewares/validateAffiliate.js';
 
 const router = express.Router();
 
@@ -38,6 +39,9 @@ router.get('/invitations', verifyToken, allowedRoles(ADMIN), getInvitations);
 // HR's own company's classifications, for assigning one per invitation. HR
 // only, like the invitation routes above, so allowedRoles(ADMIN).
 router.get('/classifications', verifyToken, allowedRoles(ADMIN), getCompanyClassifications);
+// HR's own company's active affiliates, DBA request 25, for the Affiliate
+// column of its invitation file. HR only, as above.
+router.get('/affiliates', verifyToken, allowedRoles(ADMIN), getCompanyAffiliates);
 router.get('/enrollments', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getEnrollment);
 router.get('/enrollments/export', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), exportEnrollments);
 router.get('/dashboard/stats', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), getDashboardStats);
@@ -100,6 +104,16 @@ router.patch('/companies/:employer_id/classifications/:classification_id', verif
 // resend: both send a password by email.
 router.post('/companies/:employer_id/hr-account', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateHrAccount, createHrAccount);
 router.post('/companies/:employer_id/hr-account/resend-credentials', verifyToken, allowedRoles(SUPER_ADMIN), companyId, credentialsResendLimiter, resendHrCredentials);
+
+// A company's affiliates, DBA request 25, branch 5. The Administrator only.
+// The edit route sits under the company, as the class edit does (option A,
+// 2026-10-15): no procedure reads one affiliate by id, so it is found in its
+// company's list, and an affiliate of another company is 404.
+const affiliateId = validateIdParam('affiliate_id', 'Affiliate not found');
+
+router.get('/companies/:employer_id/affiliates', verifyToken, allowedRoles(SUPER_ADMIN), companyId, getAffiliates);
+router.post('/companies/:employer_id/affiliates', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateNewAffiliate, createAffiliate);
+router.patch('/companies/:employer_id/affiliates/:affiliate_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, affiliateId, validateAffiliateChanges, updateAffiliate);
 
 // Claims, DBA request 20: HR's review. The procedures scope HR to their own
 // companies and let the Administrator see every one, as with change requests.
