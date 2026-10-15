@@ -52,12 +52,18 @@ const getEmployersByUser = async (pool, userId) => {
     return result.recordset;
 };
 
+// The class and the affiliate HR assigned to this row (branch 6). Both are
+// optional in the procedure (= NULL, DBA requests 23 and 25), which checks
+// that each is the company's and active: 50181, 50209. A NULL affiliate is
+// the company itself.
 const createInvitation = async (pool, invitationData) => {
     const result = await pool.request()
     .input('employer_id', sql.BigInt, invitationData.employer_id)
     .input('email_address', sql.VarChar(150), invitationData.email_address)
     .input('token', sql.NVarChar(64), invitationData.token)
     .input('created_by', sql.VarChar(50), invitationData.created_by)
+    .input('classification_id', sql.BigInt, invitationData.classification_id ?? null)
+    .input('affiliate_id', sql.BigInt, invitationData.affiliate_id ?? null)
     .output('invitation_id', sql.BigInt)
     .execute('usp_ins_enrollment_invitation')
 

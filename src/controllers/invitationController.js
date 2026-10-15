@@ -41,17 +41,39 @@ export const getInvitations = async (req, res, next) => {
 export const sendInvitations = async (req, res, next) => {
     try {
         const { user_id } = req.user;
-        const { emails } = req.body;
+        const { invitations } = req.body;
 
         const pool = await getPool();
 
-        const job = await InvitationService.sendInvitations(pool, user_id, emails);
+        const job = await InvitationService.sendInvitations(pool, user_id, invitations);
 
         // 202: the addresses have been accepted, the sending happens behind this.
         return res.status(202).json({
             success: true,
             data: job
         })
+    } catch (error) {
+        next(error);
+    }
+};
+
+// The file HR fills for an upload: its company's codes as they are now, so it
+// is never cached. Built in memory and sent whole, so a failure before the
+// first byte still answers as JSON.
+export const downloadInvitationTemplate = async (req, res, next) => {
+    try {
+        const { user_id } = req.user;
+
+        const pool = await getPool();
+
+        const { fileName, workbook } = await InvitationService.getTemplate(pool, user_id);
+        const buffer = await workbook.xlsx.writeBuffer();
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Cache-Control', 'private, no-store');
+
+        return res.status(200).send(Buffer.from(buffer));
     } catch (error) {
         next(error);
     }

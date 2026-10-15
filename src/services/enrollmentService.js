@@ -42,11 +42,45 @@ const openInvitation = async (pool, token) => {
   return invitation;
 };
 
+// The class and the affiliate the employee is enrolled under. HR assigns both
+// on the invitation (branch 6 of the onboarding effort), so the form's values
+// are ignored, not compared, the same rule as the company and the email.
+//
+// An invitation sent before branch 6 has no class: the employee chooses one,
+// from their company's active list (branch 1). Its affiliate is NULL, the
+// company itself.
+//
+// `activeClasses` is the invitation's company's active list. One sentence for
+// a body class that does not exist, is retired, or is another company's: the
+// employee fixes all three the same way. An assigned class that has been
+// retired since is HR's to fix (Adrian, 2026-10-15).
+export const assignedClassAndAffiliate = (invitation, body, activeClasses) => {
+  const active = new Set(activeClasses.map((c) => String(c.classification_id)));
+  const affiliate_id = invitation.affiliate_id ?? null;
+
+  if (invitation.classification_id != null) {
+    if (!active.has(String(invitation.classification_id)))
+      throw new AppError("Your classification is no longer available. Please contact your HR.", 409);
+
+    return { classification_id: invitation.classification_id, affiliate_id };
+  }
+
+  if (!body.classification_id)
+    throw new AppError("classification_id is required", 400);
+
+  // usp_ins_insurance_enrollment refuses another company's class as well
+  // (50180, DBA request 23), so this is not the only guard.
+  if (!active.has(String(body.classification_id)))
+    throw new AppError("That classification is not available for your company", 400);
+
+  return { classification_id: body.classification_id, affiliate_id };
+};
+
 // Takes the pool, like every other service since PR #102. The controller
 // fetches it; this decides.
 //
-// Everything down to `new sql.Transaction(pool)` is a refusal, and all eight of
-// them are tested. The transaction body is not, deliberately — its correctness
+// Everything down to `new sql.Transaction(pool)` is a refusal, and every one of
+// them is tested. The transaction body is not, deliberately — its correctness
 // is about whether the database agrees with us on insert order and procedure
 // contracts, and a fake transaction would agree with whatever we told it. Two
 // defects on 2026-09-08 were exactly that failure. The rollback itself was
@@ -74,21 +108,21 @@ const createEnrollment = async (pool, enrollmentData) => {
   if (!employerSet.has(String(enrollmentData.employer_id)))
     throw new AppError("Invalid or inactive employer", 400);
 
-  // The invitation's company's classes, never the form's company. One message
-  // for a class that does not exist, is retired, or is another company's: the
-  // employee can fix all three the same way, by choosing from their own list.
-  // usp_ins_insurance_enrollment refuses another company's class as well
-  // (50180, DBA request 23), so this is not the only guard.
+  // The invitation's company's classes, never the form's company.
   const classifications = await ReferenceModel.getClassificationsByEmployer(
     pool,
     invitation.employer_id,
   );
 
-  const classificationSet = new Set(
-    classifications.map((c) => String(c.classification_id)),
+  // Overwritten whatever the form sent, the affiliate included even when it is
+  // null: every model below reads both from enrollmentData.
+  const { classification_id, affiliate_id } = assignedClassAndAffiliate(
+    invitation,
+    enrollmentData,
+    classifications,
   );
-  if (!classificationSet.has(String(enrollmentData.classification_id)))
-    throw new AppError("That classification is not available for your company", 400);
+  enrollmentData.classification_id = classification_id;
+  enrollmentData.affiliate_id = affiliate_id;
 
   // The third reference id, checked the same way as the two above. It was the
   // only one going unvalidated, and six fabricated barangay codes reached the

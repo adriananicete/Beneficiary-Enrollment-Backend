@@ -54,7 +54,6 @@ describe("validateEnrollment", () => {
   test("refuses each required field by name", () => {
     const required = [
       "employee_id_number",
-      "classification_id",
       "first_name",
       "last_name",
       "birthdate",
@@ -73,6 +72,15 @@ describe("validateEnrollment", () => {
       assert.equal(refusal.statusCode, 400, field);
       assert.match(refusal.message, new RegExp(field), field);
     }
+  });
+
+  // Branch 6: HR assigns the class on the invitation. enrollmentService asks
+  // the form for one only when the invitation has none.
+  test("classification_id is not required at the door", () => {
+    const body = validBody();
+    delete body.classification_id;
+
+    assert.ok(run(body).passed());
   });
 
   test("middle_name, suffix and signature_path are optional at submit", () => {

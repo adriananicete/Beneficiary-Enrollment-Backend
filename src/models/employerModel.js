@@ -1,5 +1,8 @@
 import { sql } from '../config/db.js';
 
+// The employee's affiliate is kept on the employment record (DBA request 25):
+// it is the invitation's, never the form's. NULL is the company itself, and
+// the procedure's default, so an older caller without it still works.
 const insertClientEmployer = async (pool, clientEmployerData) => {
     const result =  await pool.request()
     .input('client_id', sql.BigInt, clientEmployerData.client_id)
@@ -7,6 +10,7 @@ const insertClientEmployer = async (pool, clientEmployerData) => {
     .input('position_title', sql.VarChar, clientEmployerData.position_title)
     .input('is_current', sql.Bit, clientEmployerData.is_current)
     .input('created_by', sql.VarChar, clientEmployerData.created_by)
+    .input('affiliate_id', sql.BigInt, clientEmployerData.affiliate_id ?? null)
     .output('client_employer_id', sql.BigInt)
     .execute('usp_ins_client_employer')
 

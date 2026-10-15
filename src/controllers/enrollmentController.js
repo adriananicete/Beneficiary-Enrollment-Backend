@@ -160,8 +160,10 @@ export const getBarangaysByCity = async (req, res, next) => {
 // Requests 23 and 25 add some (the class, the company's age limit, the
 // affiliate), and none of them leaves unless it is named here.
 //
-// The ten fields are the ones the procedure returns today, read 2026-10-14,
-// and the ones FRONTEND-API.md documents, so the response is unchanged.
+// The ten fields are the ones the procedure returned on 2026-10-14 and
+// FRONTEND-API.md documents. Branch 6 of the onboarding effort adds the class
+// and the affiliate HR assigned, each an object or null, for the form to show
+// read-only. The company's age limit still stays out.
 export const publicInvitation = (row) => ({
   invitation_id: row.invitation_id,
   employer_id: row.employer_id,
@@ -173,6 +175,25 @@ export const publicInvitation = (row) => ({
   is_valid: row.is_valid,
   is_enrolled: row.is_enrolled,
   client_id: row.client_id,
+  // null for an invitation sent before branch 6: the form then shows the
+  // class dropdown, as before.
+  classification:
+    row.classification_id == null
+      ? null
+      : {
+          classification_id: row.classification_id,
+          classification_code: row.classification_code,
+          classification_desc: row.classification_desc,
+        },
+  // null when the employee is the company's own, not an affiliate's.
+  affiliate:
+    row.affiliate_id == null
+      ? null
+      : {
+          affiliate_id: row.affiliate_id,
+          affiliate_code: row.affiliate_code,
+          affiliate_name: row.affiliate_name,
+        },
 });
 
 export const getInvitationByToken = async (req, res, next) => {

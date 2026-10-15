@@ -311,6 +311,21 @@ describe("the affiliate routes", () => {
   });
 });
 
+// The invitation template, branch 6. HR only, as the upload it feeds is.
+describe("the invitation template route", () => {
+  test("GET /invitations/template is for HR only, behind verifyToken, and reaches its controller", async () => {
+    const { downloadInvitationTemplate } = await import("../../src/controllers/invitationController.js");
+    const handlers = handlersFor("get", "/invitations/template");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.length, 3);
+    assert.equal(handlers.at(-1), downloadInvitationTemplate);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
 // HR's own company's affiliates, DBA request 25. HR only, as its classes are:
 // they are what HR writes in its invitation file.
 describe("the HR affiliate route", () => {

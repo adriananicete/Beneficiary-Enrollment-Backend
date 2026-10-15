@@ -226,6 +226,95 @@ describe("enrollmentService — the company's classifications", () => {
   });
 });
 
+// Branch 6 of the onboarding effort: HR assigns the class and the affiliate on
+// the invitation, and the form's values are ignored, not compared. usernameTaken
+// stops a passing submission at the last guard, after the assignment, so the
+// test can read what the service decided.
+describe("enrollmentService — the class and the affiliate HR assigned", () => {
+  const COMPANY_CLASSES = [{ classification_id: "1" }, { classification_id: "3" }];
+
+  const submitWith = (data, invitationOverrides) =>
+    enrol(data, {
+      invitation: validInvitation(invitationOverrides),
+      classifications: COMPANY_CLASSES,
+      usernameTaken: true,
+    }).result;
+
+  const PASSED = (error) => /Employee ID number already exists/.test(error.message);
+
+  test("the invitation's class wins over a different one in the body", async () => {
+    const data = submission({ classification_id: 3 });
+
+    await assert.rejects(() => submitWith(data, { classification_id: "1" }), PASSED);
+    assert.equal(data.classification_id, "1");
+  });
+
+  // Not compared: a body class that would be refused on its own does not
+  // matter when the invitation carries one.
+  test("a body class that is not the company's is ignored, not refused", async () => {
+    const data = submission({ classification_id: 999 });
+
+    await assert.rejects(() => submitWith(data, { classification_id: "3" }), PASSED);
+    assert.equal(data.classification_id, "3");
+  });
+
+  test("no class in the body is fine when the invitation has one", async () => {
+    const data = submission();
+    delete data.classification_id;
+
+    await assert.rejects(() => submitWith(data, { classification_id: "3" }), PASSED);
+    assert.equal(data.classification_id, "3");
+  });
+
+  // Adrian, 2026-10-15: the employee cannot change it, so HR must.
+  test("an assigned class retired since the invitation is 409, to contact HR", async () => {
+    await assert.rejects(
+      () => submitWith(submission({ classification_id: 3 }), { classification_id: "2" }),
+      (error) =>
+        error.statusCode === 409 &&
+        error.message === "Your classification is no longer available. Please contact your HR.",
+    );
+  });
+
+  // An invitation sent before branch 6 has no class: the employee chooses.
+  test("an older invitation without a class needs the body's", async () => {
+    const data = submission();
+    delete data.classification_id;
+
+    await assert.rejects(
+      () => submitWith(data, { classification_id: null }),
+      (error) => error.statusCode === 400 && error.message === "classification_id is required",
+    );
+  });
+
+  test("an older invitation without a class takes and checks the body's", async () => {
+    const data = submission({ classification_id: 3 });
+    await assert.rejects(() => submitWith(data, {}), PASSED);
+    assert.equal(data.classification_id, 3);
+
+    await assert.rejects(
+      () => submitWith(submission({ classification_id: 99 }), {}),
+      (error) => error.statusCode === 400 && error.message === "That classification is not available for your company",
+    );
+  });
+
+  // Every model in the transaction reads the affiliate from enrollmentData, so
+  // it is overwritten whatever the body sent, null included.
+  test("the affiliate is the invitation's, overwriting the body's", async () => {
+    const withAffiliate = submission({ affiliate_id: "999" });
+    await assert.rejects(() => submitWith(withAffiliate, { classification_id: "3", affiliate_id: "7" }), PASSED);
+    assert.equal(withAffiliate.affiliate_id, "7");
+
+    const companyItself = submission({ affiliate_id: "999" });
+    await assert.rejects(() => submitWith(companyItself, { classification_id: "3", affiliate_id: null }), PASSED);
+    assert.equal(companyItself.affiliate_id, null);
+
+    const older = submission({ affiliate_id: "999" });
+    await assert.rejects(() => submitWith(older, {}), PASSED);
+    assert.equal(older.affiliate_id, null);
+  });
+});
+
 // The company's online age limit, branch 8, on DBA request 23's
 // online_enrollment_max_age. Birthdates are built from today, so the boundary
 // is exact whatever day the suite runs.

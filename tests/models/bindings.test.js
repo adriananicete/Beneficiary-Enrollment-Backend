@@ -622,3 +622,46 @@ describe("model bindings — messaging", () => {
     assert.equal(await MessageModel.getUnreadCountByUser(pool, 12), 3);
   });
 });
+
+// Branch 6 of the onboarding effort. The class and the affiliate travel as
+// bigint ids, NULL when absent: the procedures default both to NULL (DBA
+// requests 23 and 25), and NULL is what "the company itself" is stored as.
+describe("model bindings — the invitation's class and affiliate", () => {
+  test("createInvitation binds both as BigInt, and NULL when not given", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await InvitationModel.createInvitation(pool, {
+      employer_id: "5", email_address: "juan@alakor.com.ph", token: "a".repeat(64), created_by: 3,
+      classification_id: "54", affiliate_id: "7",
+    });
+    await InvitationModel.createInvitation(pool, {
+      employer_id: "5", email_address: "ana@abcc.com.ph", token: "b".repeat(64), created_by: 3,
+    });
+
+    const [assigned, bare] = calls.filter((call) => call.procedure === "usp_ins_enrollment_invitation");
+
+    for (const field of ["classification_id", "affiliate_id"])
+      assert.equal(declarationOf(assigned.bindings[field].type), declarationOf(sql.BigInt), field);
+    assert.equal(assigned.inputs.classification_id, "54");
+    assert.equal(assigned.inputs.affiliate_id, "7");
+    assert.equal(bare.inputs.classification_id, null);
+    assert.equal(bare.inputs.affiliate_id, null);
+
+    // The id still comes back through the one output, as before.
+    assert.deepEqual(Object.keys(assigned.outputs), ["invitation_id"]);
+  });
+
+  test("insertClientEmployer binds the affiliate as BigInt, and NULL when not given", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await EmployerModel.insertClientEmployer(pool, { client_id: 9, employer_id: "5", position_title: "Clerk", is_current: true, affiliate_id: "7" });
+    await EmployerModel.insertClientEmployer(pool, { client_id: 9, employer_id: "1", position_title: "Clerk", is_current: true });
+
+    const [assigned, bare] = calls.filter((call) => call.procedure === "usp_ins_client_employer");
+
+    assert.equal(declarationOf(assigned.bindings.affiliate_id.type), declarationOf(sql.BigInt));
+    assert.equal(assigned.inputs.affiliate_id, "7");
+    assert.equal(bare.inputs.affiliate_id, null);
+    assert.deepEqual(Object.keys(assigned.outputs), ["client_employer_id"]);
+  });
+});

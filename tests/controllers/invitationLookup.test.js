@@ -25,11 +25,24 @@ const row = {
   client_id: null,
 };
 
+// The class and the affiliate HR assigned, as the procedure returns them
+// since DBA requests 23 and 25.
+const assigned = {
+  classification_id: "54",
+  classification_code: "CLASS 4",
+  classification_desc: "Rank and file",
+  affiliate_id: "7",
+  affiliate_code: "ALAKOR",
+  affiliate_name: "Alakor Corporation",
+};
+
 describe("publicInvitation — what the public lookup may show", () => {
-  // Pinned as a literal: these are the ten FRONTEND-API.md documents, and
-  // changing the list is a change to that contract.
-  test("answers with the ten documented fields", () => {
+  // Pinned as a literal: the ten FRONTEND-API.md documents, and the class and
+  // the affiliate branch 6 adds. Changing the list changes that contract.
+  test("answers with the ten documented fields, the class and the affiliate", () => {
     assert.deepEqual(Object.keys(publicInvitation(row)).sort(), [
+      "affiliate",
+      "classification",
       "client_id",
       "company_code",
       "company_name",
@@ -43,25 +56,52 @@ describe("publicInvitation — what the public lookup may show", () => {
     ]);
   });
 
-  test("passes each value through as it came", () => {
-    assert.deepEqual(publicInvitation(row), row);
+  // An invitation sent before branch 6: the form shows the class dropdown.
+  test("passes each value through as it came, with no class and no affiliate", () => {
+    assert.deepEqual(publicInvitation(row), { ...row, classification: null, affiliate: null });
+    assert.deepEqual(
+      publicInvitation({ ...row, classification_id: null, affiliate_id: null }),
+      { ...row, classification: null, affiliate: null },
+    );
   });
 
-  // The columns DBA requests 23 and 25 add to the procedure, and the token,
-  // which the HR procedures return beside the same names.
-  test("leaves out anything a procedure adds later", () => {
-    const shown = publicInvitation({
-      ...row,
-      token: "a".repeat(64),
-      classification_id: "11",
-      classification_code: "VP",
-      classification_desc: "Vice President",
-      online_enrollment_max_age: 65,
-      affiliate_id: "3",
+  test("the assigned class and affiliate each come as one object", () => {
+    const shown = publicInvitation({ ...row, ...assigned });
+
+    assert.deepEqual(shown.classification, {
+      classification_id: "54",
+      classification_code: "CLASS 4",
+      classification_desc: "Rank and file",
+    });
+    assert.deepEqual(shown.affiliate, {
+      affiliate_id: "7",
+      affiliate_code: "ALAKOR",
       affiliate_name: "Alakor Corporation",
     });
+  });
 
-    assert.deepEqual(shown, row);
+  // The company itself: a class, and no affiliate.
+  test("a class with no affiliate", () => {
+    const shown = publicInvitation({ ...row, ...assigned, affiliate_id: null, affiliate_code: null, affiliate_name: null });
+
+    assert.equal(shown.classification.classification_code, "CLASS 4");
+    assert.equal(shown.affiliate, null);
+  });
+
+  // The company's age limit and the token, which the HR procedures return
+  // beside the same names, stay out; so do the flat columns the two objects
+  // are built from.
+  test("leaves out anything else a procedure returns", () => {
+    const shown = publicInvitation({
+      ...row,
+      ...assigned,
+      token: "a".repeat(64),
+      online_enrollment_max_age: 65,
+      reference_no: "G-TLI-26-177-1",
+    });
+
+    for (const key of ["token", "online_enrollment_max_age", "reference_no", ...Object.keys(assigned)])
+      assert.equal(key in shown, false, key);
   });
 });
 
