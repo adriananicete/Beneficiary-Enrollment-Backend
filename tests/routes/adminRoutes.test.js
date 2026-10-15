@@ -195,6 +195,41 @@ describe("the company routes", () => {
   });
 });
 
+// A company's schedule, DBA request 24, branch 3. The Administrator only.
+describe("the schedule routes", () => {
+  const ROUTES = [
+    ["get", "/companies/:employer_id/classifications", "getClassificationSchedule", 4],
+    ["post", "/companies/:employer_id/classifications", "createClassification", 5],
+    ["patch", "/companies/:employer_id/classifications/:classification_id", "updateClassification", 6],
+  ];
+
+  for (const [method, path, controllerName, length] of ROUTES)
+    test(`${method.toUpperCase()} ${path} is for the Administrator only, behind verifyToken, and reaches its controller`, async () => {
+      const controllers = await import("../../src/controllers/companyController.js");
+      const handlers = handlersFor(method, path);
+
+      assert.equal(handlers[0], verifyToken);
+      assert.equal(handlers.at(-1), controllers[controllerName]);
+      assert.equal(handlers.length, length);
+      assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+      assert.equal(roleAnswer(handlers, "HR"), 403);
+      assert.equal(roleAnswer(handlers, "Employee"), 403);
+    });
+
+  // After the id checks, so a bad id is 404 before the body is looked at.
+  test("the validators run last, before the controllers", async () => {
+    const { validateClassificationChanges, validateNewClassification } = await import(
+      "../../src/middlewares/validateClassification.js"
+    );
+
+    assert.equal(handlersFor("post", "/companies/:employer_id/classifications").at(-2), validateNewClassification);
+    assert.equal(
+      handlersFor("patch", "/companies/:employer_id/classifications/:classification_id").at(-2),
+      validateClassificationChanges,
+    );
+  });
+});
+
 // HR's own company's classifications, DBA request 23. HR only, like the
 // invitation routes: they are what HR assigns on each invitation.
 describe("the HR classification route", () => {

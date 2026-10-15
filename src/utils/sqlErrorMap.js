@@ -412,6 +412,21 @@ export const sqlErrorMap = {
     // certificate reads it live, so it is fixed once one enrollment exists.
     50188: { statusCode: 409, message: 'The policy number cannot change once the company has an enrollment' },
 
+    // The classification procedures, branch 3. validateClassification checks
+    // the code's length and each benefit's value first, so 50189 and 50193 are
+    // the database's own guards. 50190 is the one met in ordinary use.
+    50189: { statusCode: 400, message: 'Classification code must be 1 to 20 characters' },
+    50190: { statusCode: 409, message: 'That classification code is already used in this company' },
+    50191: { statusCode: 404, message: 'Classification not found' },
+    // The plan or rider id comes from usp_sel_benefit_types, read moments
+    // earlier, so this means the catalogue changed in between.
+    50192: { statusCode: 400, message: 'That benefit is not available' },
+    50193: { statusCode: 400, message: 'A benefit needs either an amount above zero or a formula' },
+    // scheduleService only inserts a benefit the class does not have, so this
+    // is a race between two saves of the same class.
+    50194: { statusCode: 409, message: 'That benefit is already on the classification' },
+    50195: { statusCode: 404, message: 'Benefit not found' },
+
     2627: {statusCode: 409, message: 'Duplicate record'},
 
     // SQL Server's unique-INDEX violation, where 2627 is the unique-CONSTRAINT
