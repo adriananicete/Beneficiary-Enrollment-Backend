@@ -168,9 +168,8 @@ describe("the socket handshake", () => {
     assert.equal(await refusalOf(sign({ ...EMPLOYEE, user_id: 14 })), "unauthorized");
   });
 
-  // Decided 2026-10-12: no Administrator access to messaging in v1.
-  test("the Administrator is refused", async () => {
-    assert.equal(await refusalOf(sign(ADMINISTRATOR)), "forbidden");
+  test("the Administrator connects for audit notifications without messaging access", async () => {
+    assert.equal(await refusalOf(sign(ADMINISTRATOR)), "connected");
   });
 
   test("an employee account with no client is refused", async () => {
@@ -205,6 +204,17 @@ describe("the socket handshake", () => {
 });
 
 describe("the rooms a socket is in", () => {
+  test("the Administrator hears audit notifications but not HR conversation events", async () => {
+    const administrator = await connected(client(sign(ADMINISTRATOR)));
+    const hr = await connected(client(sign(HR_COFORGE)));
+    const auditNotification = next(administrator, "audit:new");
+
+    io.to("audit:administrators").emit("audit:new", { audit_id: "19" });
+
+    assert.deepEqual(await auditNotification, { audit_id: "19" });
+    assert.deepEqual(await collect(hr, "audit:new", 50), []);
+  });
+
   test("the employee hears their client room and their user room, and not a company's", async () => {
     const employee = await connected(client(sign(EMPLOYEE)));
 

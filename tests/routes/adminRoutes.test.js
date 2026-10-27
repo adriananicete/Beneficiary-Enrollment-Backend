@@ -8,6 +8,8 @@ const { verifyToken } = await import("../../src/middlewares/verifyToken.js");
 const { getEmployerSettings, updateEmployerSettings } = await import(
   "../../src/controllers/employerSettingsController.js"
 );
+const { getAuditTrail } = await import("../../src/controllers/auditTrailController.js");
+const { getMessagingAvailability } = await import("../../src/controllers/messagingAccessController.js");
 const claims = await import("../../src/controllers/claimController.js");
 const messages = await import("../../src/controllers/messageController.js");
 const deceased = await import("../../src/controllers/deceasedController.js");
@@ -126,6 +128,31 @@ const roleAnswer = (handlers, role_name) => {
 
   return answer;
 };
+
+describe("the audit trail route", () => {
+  test("GET /audit-trail is authenticated, Administrator-only, and reaches its controller", () => {
+    const handlers = handlersFor("get", "/audit-trail");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.length, 3);
+    assert.equal(handlers.at(-1), getAuditTrail);
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "HR"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
+describe("the messaging availability route", () => {
+  test("GET /messaging-access is authenticated and restricted to HR", () => {
+    const handlers = handlersFor("get", "/messaging-access");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), getMessagingAvailability);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
 
 // Deceased status, DBA request 21. HR and the Administrator mark; only the
 // Administrator undoes (decided 2026-10-06).

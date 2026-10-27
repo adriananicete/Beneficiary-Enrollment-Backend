@@ -24,8 +24,13 @@ import { validateHrAccount } from '../middlewares/validateHrAccount.js';
 import { validateCompanyChanges, validateNewCompany } from '../middlewares/validateCompany.js';
 import { validateClassificationChanges, validateNewClassification } from '../middlewares/validateClassification.js';
 import { validateAffiliateChanges, validateNewAffiliate } from '../middlewares/validateAffiliate.js';
+import { getAuditTrail } from '../controllers/auditTrailController.js';
+import { getMessagingAvailability } from '../controllers/messagingAccessController.js';
 
 const router = express.Router();
+
+router.get('/audit-trail', verifyToken, allowedRoles(SUPER_ADMIN), getAuditTrail);
+router.get('/messaging-access', verifyToken, allowedRoles(ADMIN), getMessagingAvailability);
 
 // Shared by the three routes that take a change request id. Declared once so
 // the message cannot drift between them — it is the same 404 the controllers

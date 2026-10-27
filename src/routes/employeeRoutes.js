@@ -27,6 +27,7 @@ import {
     resubmitMyClaim,
     submitMyClaim,
 } from '../controllers/claimController.js';
+import { getMessagingAvailability } from '../controllers/messagingAccessController.js';
 
 const router = express.Router();
 
@@ -40,6 +41,7 @@ router.get('/agreements', verifyToken, allowedRoles(EMPLOYEE), getMyAgreements);
 // No id in the path and nothing to scope: the client_id comes from the
 // caller's own user row.
 router.get('/signature', verifyToken, allowedRoles(EMPLOYEE), getMySignature);
+router.get('/messaging-access', verifyToken, allowedRoles(EMPLOYEE), getMessagingAvailability);
 router.post('/change-requests', verifyToken, allowedRoles(EMPLOYEE), validateEnrollmentUpdate, submitChangeRequest);
 router.get('/change-requests', verifyToken, allowedRoles(EMPLOYEE), getMyChangeRequests);
 router.patch('/change-requests/:request_id/cancel', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('request_id', 'Change request not found'), cancelMyChangeRequest);

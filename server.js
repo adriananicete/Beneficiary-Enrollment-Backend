@@ -4,7 +4,8 @@ import config from './src/config/env.js';
 import { getPool } from './src/config/db.js';
 import AuthService from './src/services/authService.js';
 import { createSocketServer } from './src/realtime/socketServer.js';
-import { setRealtimeServer } from './src/realtime/realtime.js';
+import { emitAuditLogged, setRealtimeServer } from './src/realtime/realtime.js';
+import { createAuditTrailWatcher } from './src/realtime/auditTrailWatcher.js';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import authRoutes from './src/routes/authRoutes.js';
@@ -131,6 +132,10 @@ const server = http.createServer(app);
 setRealtimeServer(
     createSocketServer({ httpServer: server, getPool, verifySession: AuthService.verifySession }),
 );
+createAuditTrailWatcher({
+    getPool,
+    publish: emitAuditLogged,
+});
 
 // While developing, a port that is taken is not fatal: the next free one is used and said out
 // loud, so a second `npm run dev` comes up beside the first instead of crashing. In production

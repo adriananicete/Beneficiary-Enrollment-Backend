@@ -9,6 +9,7 @@ const { parseDocuments } = await import("../../src/middlewares/parseDocuments.js
 const { claimSubmitLimiter, messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
 const claims = await import("../../src/controllers/claimController.js");
 const messages = await import("../../src/controllers/messageController.js");
+const { getMessagingAvailability } = await import("../../src/controllers/messagingAccessController.js");
 
 const handlersFor = (method, path) => {
   const layer = router.stack.find(
@@ -18,6 +19,16 @@ const handlersFor = (method, path) => {
   assert.ok(layer, `${method.toUpperCase()} ${path} is not on the router`);
   return layer.route.stack.map((entry) => entry.handle);
 };
+
+describe("the employee messaging availability route", () => {
+  test("GET /messaging-access is authenticated, restricted to employees, and reaches the controller", () => {
+    const handlers = handlersFor("get", "/messaging-access");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), getMessagingAvailability);
+    assert.equal(handlers.length, 3);
+  });
+});
 
 // The employee's claim routes, branch 3. Each is behind the session check,
 // and each ends in its own controller.

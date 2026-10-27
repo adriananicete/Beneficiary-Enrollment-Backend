@@ -2,7 +2,7 @@ import { Server } from "socket.io";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
 import config from "../config/env.js";
-import { ADMIN, EMPLOYEE } from "../utils/constants.js";
+import { ADMIN, EMPLOYEE, SUPER_ADMIN } from "../utils/constants.js";
 import EmployerModel from "../models/employerModel.js";
 import MessageModel from "../models/messageModel.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
@@ -72,14 +72,26 @@ export const createSocketServer = ({
       return next(refusal("unauthorized"));
     }
 
-    // Messaging is the employee's and HR's. The Administrator has no access
-    // in v1 (decided 2026-10-12). ADMIN is 'HR'.
-    if (session.role_name !== EMPLOYEE && session.role_name !== ADMIN)
+    if (
+      session.role_name !== EMPLOYEE &&
+      session.role_name !== ADMIN &&
+      session.role_name !== SUPER_ADMIN
+    )
       return next(refusal("forbidden"));
 
     try {
       const pool = await getPool();
       const user = await verifySession(pool, session);
+
+      if (session.role_name === SUPER_ADMIN) {
+        socket.data.session = session;
+        socket.data.rooms = [
+          rooms.user(session.user_id),
+          rooms.auditAdministrators(),
+        ];
+        return next();
+      }
+
       const access = await getMessagingAccessByUser(pool, session.user_id);
       const enabled = access.filter((company) =>
         company.messages_enabled === true ||
@@ -113,6 +125,7 @@ export const createSocketServer = ({
   io.on("connection", (socket) => {
     const { session } = socket.data;
     const isEmployee = session.role_name === EMPLOYEE;
+    const isAdministrator = session.role_name === SUPER_ADMIN;
 
     socket.join(socket.data.rooms);
 
@@ -120,6 +133,8 @@ export const createSocketServer = ({
       try {
         const pool = await getPool();
         await verifySession(pool, session);
+        if (isAdministrator) return;
+
         const access = await getMessagingAccessByUser(pool, session.user_id);
         const enabled = access.filter((company) =>
           company.messages_enabled === true ||
@@ -172,6 +187,8 @@ export const createSocketServer = ({
 
     socket.on("typing", async (payload) => {
       try {
+        if (isAdministrator) return;
+
         const raw = payload?.conversation_id;
 
         if (!(typeof raw === "string" || typeof raw === "number") || !isNumericId(raw)) return;
