@@ -1,0 +1,319 @@
+import { describe, test } from "node:test";
+import assert from "node:assert/strict";
+
+import { validateEnrollmentUpdate } from "../../src/middlewares/validateEnrollmentUpdate.js";
+import { makeNext, makeReq, makeRes } from "../helpers/http.js";
+
+// The frontend sends the full personal payload from the pre-filled form, not
+// just the changed field. That is the direct consequence of usp_upd_client
+// having no ISNULL coalescing — a partial payload would blank out every field
+// it left out.
+const validBody = () => ({
+  first_name: "Angela",
+  middle_name: "Reyes",
+  last_name: "Bautista",
+  suffix: "",
+  signature_path: "",
+  birthdate: "1994-03-11",
+  birthplace: "Quezon City",
+  nationality: "Filipino",
+  civil_status: "Single",
+  gender: "F",
+  height: 163.5,
+  weight: 54.2,
+  tin_id: "123-456-789",
+  sss_gsis_no: "34-1234567-8",
+  contact_no: "09171234567",
+  email_address: "angela@example.com",
+  occupation: "Analyst",
+  source_of_income: "Employment",
+});
+
+const run = (body) => {
+  const next = makeNext();
+  validateEnrollmentUpdate(makeReq({ body }), makeRes(), next);
+  return next;
+};
+
+describe("validateEnrollmentUpdate", () => {
+  test("lets a full personal payload through", () => {
+    assert.ok(run(validBody()).passed());
+  });
+
+  test("middle_name, suffix and signature_path must be present but may be empty", () => {
+    // The distinction that matters: absent means "the form did not send it",
+    // which would clear a real value. Empty means "the employee cleared it",
+    // which is a legitimate edit.
+    for (const field of ["middle_name", "suffix", "signature_path"]) {
+      const body = validBody();
+      delete body[field];
+
+      const refusal = run(body).refusal();
+
+      assert.equal(refusal.statusCode, 400, field);
+      assert.match(refusal.message, /must be included in the update/, field);
+
+      assert.ok(run({ ...validBody(), [field]: "" }).passed(), `${field} empty`);
+    }
+  });
+
+  test("refuses each required personal field", () => {
+    for (const field of ["first_name", "last_name", "birthdate", "email_address", "tin_id"]) {
+      const body = validBody();
+      delete body[field];
+
+      const refusal = run(body).refusal();
+
+      assert.equal(refusal.statusCode, 400, field);
+      assert.match(refusal.message, new RegExp(field), field);
+    }
+  });
+
+  test("the address block is only required when an address is being changed", () => {
+    // No client_address_id means the employee is not touching their address,
+    // so barangay_id and the rest are not expected.
+    assert.ok(run(validBody()).passed());
+
+    const withAddress = {
+      ...validBody(),
+      client_address_id: "71",
+    };
+
+    const refusal = run(withAddress).refusal();
+
+    assert.equal(refusal.statusCode, 400);
+    assert.match(refusal.message, /barangay_id|address_line|zip_code/);
+  });
+
+  test("a complete address block passes", () => {
+    assert.ok(
+      run({
+        ...validBody(),
+        client_address_id: "71",
+        barangay_id: "012801001",
+        address_line: "12 Mabini St",
+        zip_code: "1100",
+      }).passed(),
+    );
+  });
+
+  test("beneficiaries are optional, but validated when sent", () => {
+    assert.ok(run(validBody()).passed());
+
+    const refusal = run({
+      ...validBody(),
+      beneficiaries: [
+        { full_name: "A", relationship: "Son", age: 10, coverage_percent: 50 },
+      ],
+    }).refusal();
+
+    assert.match(refusal.message, /exactly 100%/);
+  });
+
+  test("an empty beneficiary list is allowed — removing everyone is a real edit", () => {
+    assert.ok(run({ ...validBody(), beneficiaries: [] }).passed());
+  });
+
+  test("refuses a height or weight outside its range", () => {
+    assert.match(run({ ...validBody(), height: 5.8 }).refusal().message, /centimetres/);
+    assert.match(run({ ...validBody(), weight: 400 }).refusal().message, /kilogrammes/);
+  });
+
+  test("a missing height is reported as missing, not as out of range", () => {
+    // The height check runs after the required-field loop for exactly this
+    // reason. "height is required" is actionable; "must be between 100 and 250"
+    // in front of an empty box is not.
+    const body = validBody();
+    delete body.height;
+
+    assert.match(run(body).refusal().message, /height is required/);
+  });
+});
+
+// The change request path gets the same two rules as the submit path. An
+// employee proposing a change is the only way a birthdate or a beneficiary age
+// moves after enrollment, so a rule enforced on one door and not the other is
+// not a rule.
+describe("validateEnrollmentUpdate — gender, civil status and zip code", () => {
+  test("normalises here as well as at submit", () => {
+    const body = { ...validBody(), gender: "female", civil_status: "WIDOWED" };
+    const req = makeReq({ body });
+    const next = makeNext();
+
+    validateEnrollmentUpdate(req, makeRes(), next);
+
+    assert.ok(next.passed());
+    assert.equal(req.body.gender, "F");
+    assert.equal(req.body.civil_status, "Widowed");
+  });
+
+  test("refuses a civil status outside the six", () => {
+    const body = { ...validBody(), civil_status: "Separated" };
+
+    assert.match(run(body).refusal().message, /must be one of/);
+  });
+
+  test("checks the zip code only when the address is being changed", () => {
+    // zip_code is not part of the base payload on this path — it joins the
+    // required list alongside barangay_id and address_line when
+    // client_address_id is present. Checking it unconditionally would refuse
+    // every personal-details-only change request.
+    assert.ok(run(validBody()).passed());
+
+    const withAddress = {
+      ...validBody(),
+      client_address_id: 5,
+      barangay_id: "012801001",
+      address_line: "12 Mabini St",
+      zip_code: "11A0",
+    };
+
+    assert.match(run(withAddress).refusal().message, /exactly 4 digits/);
+  });
+});
+
+describe("validateEnrollmentUpdate — contact number and SSS/GSIS here too", () => {
+  test("normalises both", () => {
+    const body = {
+      ...validBody(),
+      contact_no: "+639181234567",
+      sss_gsis_no: "4567890123",
+    };
+    const req = makeReq({ body });
+    const next = makeNext();
+
+    validateEnrollmentUpdate(req, makeRes(), next);
+
+    assert.ok(next.passed());
+    assert.equal(req.body.contact_no, "09181234567");
+    assert.equal(req.body.sss_gsis_no, "45-6789012-3");
+  });
+
+  test("refuses a malformed contact number", () => {
+    assert.match(
+      run({ ...validBody(), contact_no: "543453566" }).refusal().message,
+      /starting with 09/,
+    );
+  });
+});
+
+describe("validateEnrollmentUpdate — TIN is normalised here too", () => {
+  test("adds the dashes", () => {
+    const body = { ...validBody(), tin_id: "543453566" };
+    const req = makeReq({ body });
+    const next = makeNext();
+
+    validateEnrollmentUpdate(req, makeRes(), next);
+
+    assert.ok(next.passed());
+    assert.equal(req.body.tin_id, "543-453-566");
+  });
+
+  test("refuses a malformed TIN", () => {
+    assert.match(
+      run({ ...validBody(), tin_id: "147-852-96" }).refusal().message,
+      /9 or 12 digits/,
+    );
+  });
+});
+
+describe("validateEnrollmentUpdate — birthdate and age are applied here too", () => {
+  test("refuses a malformed birthdate", () => {
+    const body = validBody();
+    body.birthdate = "11/03/1994";
+
+    assert.match(run(body).refusal().message, /YYYY-MM-DD/);
+  });
+
+  test("refuses a birthdate in the future", () => {
+    const body = validBody();
+    body.birthdate = `${new Date().getFullYear() + 1}-03-11`;
+
+    assert.match(run(body).refusal().message, /cannot be in the future/);
+  });
+
+  test("ACCEPTS a beneficiary aged 0", () => {
+    const body = validBody();
+    body.beneficiaries = [
+      { full_name: "Baby Bautista", relationship: "Son", age: 0, coverage_percent: 100 },
+    ];
+
+    assert.ok(run(body).passed());
+  });
+
+  test("refuses a non-numeric beneficiary age", () => {
+    // Beneficiaries are optional on this path, so the fixture has none. They
+    // are supplied here rather than added to validBody, which would change
+    // what every other test in this file is sending.
+    const body = {
+      ...validBody(),
+      beneficiaries: [
+        { full_name: "Marco Bautista", relationship: "Son", age: "twelve", coverage_percent: 100 },
+      ],
+    };
+
+    assert.match(run(body).refusal().message, /whole number/);
+  });
+});
+
+// Added 2026-09-23, the same rules as the submit path, plus the email address,
+// which only this path takes from the person typing it.
+describe("validateEnrollmentUpdate — what text may contain", () => {
+  const refusalFor = (overrides) => run({ ...validBody(), ...overrides }).refusal();
+
+  // The live data on 2026-09-23 held two clients with a last name of "2", both
+  // test records. A change request carries the whole pre-filled record, so
+  // theirs is refused until the name is corrected in the same request.
+  test("refuses the last name the live test rows carry", () => {
+    const refusal = refusalFor({ last_name: "2" });
+
+    assert.equal(refusal.statusCode, 400);
+    assert.match(refusal.message, /^last_name may only contain/);
+  });
+
+  test("a missing name is still reported as missing, not as malformed", () => {
+    assert.equal(refusalFor({ first_name: "   " }).message, "first_name is required");
+  });
+
+  test("checks every beneficiary in the payload, edited or not", () => {
+    const body = {
+      ...validBody(),
+      beneficiaries: [
+        { full_name: "TEST USER2", relationship: "Son", age: 12, coverage_percent: 100 },
+      ],
+    };
+
+    assert.match(run(body).refusal().message, /^Beneficiary 1: full_name may only contain/);
+  });
+
+  test("trims before comparing, so a pre-filled trailing space is not an error", () => {
+    const body = { ...validBody(), first_name: "Angela ", email_address: " angela@example.com " };
+
+    assert.ok(run(body).passed());
+    assert.equal(body.first_name, "Angela");
+    assert.equal(body.email_address, "angela@example.com");
+  });
+});
+
+describe("validateEnrollmentUpdate — the email address", () => {
+  const refusalFor = (email_address) => run({ ...validBody(), email_address }).refusal();
+
+  // Synced to sec.us01_users on approval, which is where resend-credentials and
+  // the Certificate of Coverage are sent. "abc" used to be accepted.
+  test("refuses an address that is not one", () => {
+    for (const email of ["abc", "angela@", "angela@example", "angela @example.com"]) {
+      const refusal = refusalFor(email);
+
+      assert.equal(refusal?.statusCode, 400, email);
+      assert.match(refusal.message, /valid email address/, email);
+    }
+  });
+
+  test("an empty address is reported as missing", () => {
+    assert.equal(refusalFor("  ").message, "email_address is required");
+  });
+
+  test("accepts an ordinary address", () => {
+    assert.equal(refusalFor("angela.bautista@coforge.com"), null);
+  });
+});

@@ -1,0 +1,242 @@
+import { getPool } from "../config/db.js";
+import ReferenceModel from "../models/referenceModel.js";
+import EnrollmentService from "../services/enrollmentService.js";
+import InvitationModel from '../models/invitationModel.js';
+import UserModel from "../models/userModel.js";
+import { AppError } from "../utils/AppError.js";
+import { isInvitationToken } from "../middlewares/validateIdParam.js";
+import AgreementModel from "../models/agreementModel.js"
+import SignatureModel from "../models/signatureModel.js";
+import { sendSignature } from "../utils/signatureResponse.js";
+
+export const submitEnrollment = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    // The raw base64 is dropped here and the decoded form takes its name. It
+    // has no business travelling any further as a string: the last time an
+    // image did that it reached an NVarChar(500) and was cut to fit.
+    const { signature, ...body } = req.body;
+
+    const { enrollmentId, policyNo } = await EnrollmentService.createEnrollment(
+      pool,
+      {
+        ...body,
+        ip_address: req.ip,
+        user_agent: req.headers["user-agent"]?.slice(0,500),
+        signature: req.signature ?? null,
+      },
+    );
+
+    return res.status(201).json({
+      success: true,
+      data: { enrollmentId, policyNo },
+      message: "Enrollment submitted successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// export const getEmployeeClassifications = async (req, res, next) => {
+//   try {
+//     const pool = await getPool();
+//     const employeeClassifications = await ReferenceModel.getEmployeeClassifications(pool);
+
+//     return res.status(200).json({
+//       success: true,
+//       data: employeeClassifications,
+//     })
+//   } catch (error) {
+//     next(error);
+//   }
+// };
+
+
+export const getEmployeeClassifications = async (req, res, next) => {
+  try {
+    const employerId = req.query.employer_id;
+
+    if (
+      typeof employerId !== "string" ||
+      !/^[1-9]\d*$/.test(employerId) ||
+      employerId.length > 19 ||
+      BigInt(employerId) > 9223372036854775807n
+    ) {
+      throw new AppError("Valid employer_id is required", 400);
+    }
+
+    const pool = await getPool();
+    const employeeClassifications =
+      await ReferenceModel.getEmployeeClassifications(pool, employerId);
+
+    return res.status(200).json({
+      success: true,
+      data: employeeClassifications,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+export const publicEmployer = (row) => ({
+  employer_id: row.employer_id,
+  company_code: row.company_code,
+  company_name: row.company_name,
+  status: row.status,
+});
+
+export const getEmployers = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const employers = await ReferenceModel.getEmployers(pool);
+
+    return res.status(200).json({
+      success: true,
+      data: employers.map(publicEmployer)
+    })
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getRegions = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const regions = await ReferenceModel.getRegions(pool);
+
+    return res.status(200).json({
+      success: true,
+      data: regions
+    })
+  } catch (error) {
+    next(error)
+  }
+};
+
+export const getProvincesByRegion = async (req, res, next) => {
+  try {
+    const { region_code } = req.params;
+
+    const pool = await getPool();
+    const provincesByRegion = await ReferenceModel.getProvincesByRegion(pool, region_code);
+
+    return res.status(200).json({
+      success: true,
+      data: provincesByRegion
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getCitiesByProvince = async (req, res, next) => {
+  try {
+    const { province_code } = req.params;
+
+    const pool = await getPool();
+    const citiesByProvince = await ReferenceModel.getCitiesByProvince(pool, province_code);
+
+    return res.status(200).json({
+      success: true,
+      data: citiesByProvince
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getBarangaysByCity = async (req, res, next) => {
+  try {
+    const { city_code } = req.params;
+
+    const pool = await getPool();
+    const barangaysByCity = await ReferenceModel.getBarangaysByCity(pool, city_code);
+
+    return res.status(200).json({
+      success: true,
+      data: barangaysByCity
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getInvitationByToken = async (req, res, next) => {
+  try {
+    const { token } = req.query;
+    if(!token) throw new AppError('Token is required', 400);
+
+    // Checked before the token reaches NVarChar(64) in the model. Without this
+    // a string longer than 64 characters is refused by the driver, and that
+    // error is neither an AppError nor a mapped SQL number — so this public
+    // endpoint answers 500 and writes a stack trace, for anyone, with no
+    // account. The same rule already guards the submit path.
+    //
+    // 404, the same answer a token that does not exist gets. A caller trying
+    // tokens learns nothing from the difference.
+    if(!isInvitationToken(token)) throw new AppError('Invitation not found', 404);
+
+    const pool = await getPool();
+
+    const invitation = await InvitationModel.getInvitationByToken(pool, token)
+    if(!invitation) throw new AppError('Invitation not found', 404);
+    // Truthiness rather than === 0 and === 1, for the reason set out at the
+    // same two checks in enrollmentService.js: the two invitation procedures
+    // return these computed columns as different types, and a strict
+    // comparison is silently false against one of them.
+    if(!invitation.is_valid) throw new AppError('This invitation has expired. Please ask your HR to resend it.', 410);
+    if(invitation.is_enrolled) throw new AppError('You have already submitted an enrollment', 409);
+
+    return res.status(200).json({
+      success: true,
+      data: invitation
+    })
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The employee's own signature. Same shape as getMyAgreements below: the
+// client_id comes from their own user row rather than from anything they sent,
+// so there is no id to scope and nothing to check beyond who they are.
+export const getMySignature = async (req, res, next) => {
+  try {
+    const { user_id } = req.user;
+    const pool = await getPool();
+
+    const user = await UserModel.findUserById(pool, user_id);
+    if (!user?.client_id)
+      throw new AppError("No enrollment found for this account", 404);
+
+    const signature = await SignatureModel.getSignatureByClient(pool, user.client_id);
+    if (!signature)
+      throw new AppError("No signature on file for this enrollment", 404);
+
+    return sendSignature(res, signature);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getMyAgreements = async (req, res, next) => {
+  try {
+    const { user_id } = req.user;
+    const pool = await getPool();
+
+    const user = await UserModel.findUserById(pool, user_id);
+    if(!user?.client_id) throw new AppError('No enrollment found for this account', 404);
+
+    const agreements = await AgreementModel.getClientAgreements(pool, user.client_id);
+
+    return res.status(200).json({
+      success: true,
+      data: agreements
+    });
+  } catch (error) {
+    next(error);
+  }
+}

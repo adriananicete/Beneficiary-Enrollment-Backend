@@ -1,0 +1,204 @@
+import { sql } from '../config/db.js';
+
+const createUser = async (pool, userData) => {
+    const result = await pool.request()
+    .input('us01_username', sql.VarChar, userData.us01_username)
+    .input('us01_password', sql.VarChar, userData.us01_password)
+    .input('us01_first_name', sql.VarChar, userData.us01_first_name)
+    .input('us01_middle_name', sql.VarChar, userData.us01_middle_name)
+    .input('us01_last_name', sql.VarChar, userData.us01_last_name)
+    .input('us01_email_address', sql.VarChar, userData.us01_email_address)
+    .input('us01_created_by', sql.VarChar, userData.us01_created_by)
+    .input("us01_must_change_password", sql.Bit, userData.us01_must_change_password)
+    .input('client_id', sql.BigInt, userData.client_id)
+    .output('us01_user_id', sql.BigInt)
+    .execute('sec.us01_usp_ins_users')
+
+    return result.output.us01_user_id
+};
+
+const assignRole = async (pool, userId, assignRoleData) => {
+    await pool.request()
+    .input('us01_user_id', sql.BigInt, userId)
+    .input('us02_role_id', sql.BigInt, assignRoleData.us02_role_id)
+    .input('us04_assigned_by', sql.VarChar, assignRoleData.us04_assigned_by)
+    .execute('sec.us04_usp_assign_role')
+};
+
+const findUserByUsername = async (pool, username) => {
+    const result = await pool.request()
+    .input('us01_username', sql.VarChar, username)
+    .execute('sec.us01_usp_login');
+
+    return result.recordset[0];
+};
+
+const findUserById = async (pool, userId) => {
+    const result = await pool.request()
+    .input('us01_user_id', sql.BigInt, userId)
+    .execute('sec.us01_usp_sel_user_by_id');
+
+    return result.recordset[0];
+};
+
+// The output parameter is declared because the procedure requires it, and the
+// value it carries is ignored because it means nothing. Those are two separate
+// facts and PR #90 collapsed them into one, which broke every forced password
+// change on main until 2026-09-08.
+//
+// sec.us01_usp_first_login declares `@us01_user_id bigint output` with no
+// default. **An OUTPUT parameter without a default is mandatory** — SQL Server
+// refuses the call outright with error 201, "expects parameter '@us01_user_id',
+// which was not supplied", before a line of the body runs. So the parameter has
+// to be supplied whether or not anybody wants what comes back.
+//
+// What comes back is nothing useful, and that half of PR #90 was right and
+// stands. Nothing inside the procedure assigns it; it is echoed into the final
+// SELECT and arrives NULL. The id is already in hand anyway — passwordService
+// calls findUserByUsername immediately above this and that row carries
+// us01_user_id, the same value the JWT is built from.
+//
+// So: declare it, and still return nothing. Returning it would restore the
+// original trap, where `const userId = await UserModel.changePassword(...)`
+// reads null with no error and no throw — the shape of the PR #77 bug.
+//
+// → If the parameter is ever dropped from the procedure, or given a default,
+//   this line can go. That is `DBA-REQUESTS.md` item 14.
+const changePassword = async (pool, userData) => {
+    await pool.request()
+    .input('us01_username', sql.VarChar, userData.us01_username)
+    .input('oldpass', sql.VarChar, userData.oldpass)
+    .input('newpass', sql.VarChar, userData.newpass)
+    .output('us01_user_id', sql.BigInt)
+    .execute('sec.us01_usp_first_login')
+};
+
+// After a wrong password. sec.us01_usp_login_failed, DBA request 18, read back
+// 2026-10-06: it adds one to the count, locks the account for @lock_minutes
+// once the count reaches @max_attempts, and starts the count again at 1 when an
+// earlier lock has expired. It answers the new count and the seconds left on
+// the lock, worked out against the database's own clock.
+//
+// No output parameters. All three are plain inputs, read from sys.parameters
+// on the same day, so the item 14 trap is not here.
+const recordFailedLogin = async (pool, userId, { maxAttempts, lockMinutes }) => {
+    const result = await pool.request()
+    .input('us01_user_id', sql.BigInt, userId)
+    .input('max_attempts', sql.Int, maxAttempts)
+    .input('lock_minutes', sql.Int, lockMinutes)
+    .execute('sec.us01_usp_login_failed');
+
+    return result.recordset[0];
+};
+
+// After a successful sign-in or password change: the count goes to 0, the lock
+// is cleared, and the login is recorded. It replaces a raw UPDATE that set
+// us01_last_login alone, which would have left a failed count standing after
+// the person had proved their password.
+const recordSuccessfulLogin = async (pool, userId) => {
+    await pool.request()
+    .input('us01_user_id', sql.BigInt, userId)
+    .execute('sec.us01_usp_login_succeeded');
+};
+
+// Every token issued to this user before the call stops working: it raises
+// us01_token_version, which verifySession checks on every request.
+// sec.us01_usp_end_sessions, DBA request 18, read back 2026-10-06. One plain
+// input, no output.
+const endSessions = async (pool, userId) => {
+    await pool.request()
+    .input('us01_user_id', sql.BigInt, userId)
+    .execute('sec.us01_usp_end_sessions');
+};
+
+// Raw query, following checkUsernameExists below. There is no procedure that
+// reaches a user by client_id.
+const findUserByClientId = async (pool, clientId) => {
+  const result = await pool
+    .request()
+    .input("client_id", sql.BigInt, clientId)
+    .query(`SELECT us01_user_id, us01_username, us01_email_address,
+                   us01_first_name, us01_last_name
+            FROM sec.us01_users
+            WHERE client_id = @client_id AND us01_is_active = 1`);
+
+  return result.recordset[0];
+};
+
+// Issues a new temporary password. There is no procedure for this:
+// us01_usp_first_login requires the old password, which is exactly what has been
+// lost, and us01_usp_upd_user does not touch credentials. Raw, like the
+// queries around it.
+//
+// The lock and the failed-attempt counter are cleared alongside the password.
+// Since PR #58 those two block a login, so leaving them set would hand the
+// employee a working password and still refuse them at the door — with
+// everything appearing to have worked. The temporary lock from DBA request 18
+// is cleared for the same reason, which also makes this HR's way to unlock
+// somebody at once rather than in fifteen minutes.
+//
+// The token version goes up in the same statement, so every session the
+// employee had ends with the old password. Whoever was using those
+// credentials is signed out. In the raw UPDATE rather than a call to
+// endSessions, so the two cannot come apart.
+const resetPassword = async (pool, resetData) => {
+  const result = await pool
+    .request()
+    .input("us01_user_id", sql.BigInt, resetData.us01_user_id)
+    .input("us01_password", sql.VarChar, resetData.us01_password)
+    .input("us01_modified_by", sql.VarChar(50), resetData.us01_modified_by)
+    .query(`UPDATE sec.us01_users
+            SET us01_password = @us01_password,
+                us01_must_change_password = 1,
+                us01_is_locked = 0,
+                us01_failed_login_attempts = 0,
+                us01_locked_until = NULL,
+                us01_token_version = us01_token_version + 1,
+                us01_modified_by = @us01_modified_by,
+                us01_modified_date = GETDATE()
+            WHERE us01_user_id = @us01_user_id AND us01_is_active = 1`);
+
+  return result.rowsAffected[0];
+};
+
+// Keeps sec.us01_users in step with dbo.clients after an approved change.
+//
+// The procedure COALESCEs every field, so NULL means "leave alone" rather than
+// "clear". A middle name the employee cleared cannot be cleared here — see the
+// note in the caller.
+const updateUserRecord = async (pool, userData) => {
+  const result = await pool
+    .request()
+    .input("us01_user_id", sql.BigInt, userData.us01_user_id)
+    .input("us01_first_name", sql.VarChar(100), userData.us01_first_name)
+    .input("us01_middle_name", sql.VarChar(100), userData.us01_middle_name)
+    .input("us01_last_name", sql.VarChar(100), userData.us01_last_name)
+    .input("us01_email_address", sql.VarChar(150), userData.us01_email_address)
+    .input("us01_modified_by", sql.VarChar(50), userData.us01_modified_by)
+    .execute("sec.us01_usp_upd_user");
+
+  return result.recordset[0];
+};
+
+const checkUsernameExists = async (pool, username) => {
+    const result = await pool.request()
+    .input('username', sql.NVarChar, username)
+    .query(`SELECT 1 FROM sec.us01_users WHERE us01_username = @username`);
+
+    return result.recordset.length > 0
+}
+
+export default {
+    createUser,
+    assignRole,
+    findUserByUsername,
+    findUserById,
+    changePassword,
+    recordFailedLogin,
+    recordSuccessfulLogin,
+    endSessions,
+    checkUsernameExists,
+    findUserByClientId,
+    updateUserRecord,
+    resetPassword
+}

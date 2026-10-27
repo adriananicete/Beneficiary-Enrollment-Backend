@@ -1,0 +1,113 @@
+import { describe, test } from "node:test";
+import assert from "node:assert/strict";
+
+import { changeRequestEmailTemplate } from "../../src/utils/changeRequestEmailTemplate.js";
+
+const build = (overrides = {}) =>
+  changeRequestEmailTemplate({
+    firstName: "Angela",
+    approved: true,
+    reviewRemarks: null,
+    loginUrl: "https://example.com/login",
+    ...overrides,
+  });
+
+describe("changeRequestEmailTemplate", () => {
+  test("returns the shape the Graph sender expects", () => {
+    const body = build();
+
+    assert.equal(body.contentType, "HTML");
+    assert.equal(typeof body.content, "string");
+    assert.ok(body.content.length > 0);
+  });
+
+  test("an approval and a rejection do not read the same", () => {
+    assert.match(build({ approved: true }).content, /approved/i);
+    assert.match(build({ approved: false }).content, /another look/i);
+  });
+
+  test("the remarks block is absent when there are no remarks", () => {
+    // A rejection requires remarks, an approval usually has none. An empty
+    // bordered box in the email would look like something failed to load.
+    const content = build({ approved: true, reviewRemarks: null }).content;
+
+    assert.ok(!content.includes("border-left"));
+  });
+
+  // The line is a promise that a file is attached. It is made only when the
+  // sender says one is, and never on a rejection, which changed nothing.
+  test("mentions the certificate only on an approval that carries one", () => {
+    assert.match(build({ approved: true, certificateAttached: true }).content, /Certificate of Coverage is attached/);
+    assert.doesNotMatch(build({ approved: true, certificateAttached: false }).content, /Certificate of Coverage/);
+    assert.doesNotMatch(build({ approved: false, certificateAttached: true }).content, /Certificate of Coverage/);
+  });
+
+  test("the remarks are shown when they exist", () => {
+    const content = build({
+      approved: false,
+      reviewRemarks: "Please attach your marriage certificate.",
+    }).content;
+
+    assert.match(content, /marriage certificate/);
+  });
+});
+
+describe("escaping — the only guard on HR's free text", () => {
+  // reviewRemarks is written by HR and rendered into an email the employee
+  // opens. It is the one place in this system where one user's text reaches
+  // another user's inbox, and the only field in any template that does.
+  //
+  // All four templates escape now — the shared escapeHtml and the cases
+  // covering the other three are in escapeHtml.test.js. These stay here
+  // because this is the field that actually needs them.
+
+  test("a script tag arrives escaped, not as markup", () => {
+    const content = build({
+      approved: false,
+      reviewRemarks: "<script>alert('x')</script>",
+    }).content;
+
+    assert.ok(
+      !content.includes("<script>"),
+      "a raw <script> tag reached the email body",
+    );
+    assert.match(content, /&lt;script&gt;/);
+  });
+
+  test("an attribute break-out is escaped", () => {
+    // Both assertions here used to be unfailable, found 2026-09-07 by stripping
+    // the escaping and watching this stay green. The first looked for a closing
+    // quote the payload never had; the second matched /&quot;/, which the
+    // template's own `&quot;Segoe UI&quot;` font stack satisfies on every
+    // render. Now it asserts on the payload as it would survive unescaped.
+    const content = build({
+      approved: false,
+      reviewRemarks: `" onmouseover="alert(1)`,
+    }).content;
+
+    assert.ok(
+      !content.includes(`" onmouseover="`),
+      "the quote closed the attribute and a handler was injected",
+    );
+    assert.match(content, /&quot; onmouseover=&quot;/);
+  });
+
+  test("an ampersand is escaped first, so escaping is not double-applied", () => {
+    const content = build({
+      approved: false,
+      reviewRemarks: "Tom & Jerry",
+    }).content;
+
+    assert.match(content, /Tom &amp; Jerry/);
+    assert.ok(!content.includes("&amp;amp;"));
+  });
+
+  test("the recipient's own name is escaped too", () => {
+    // Lower risk — a name is text the recipient supplied about themselves — but
+    // it is interpolated into the same document and costs nothing to cover.
+    const content = build({ firstName: "<b>Angela</b>" }).content;
+
+    assert.ok(!content.includes("<b>Angela</b>"));
+    assert.match(content, /&lt;b&gt;Angela/);
+  });
+});

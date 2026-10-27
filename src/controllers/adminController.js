@@ -1,0 +1,289 @@
+import EnrollmentService from "../services/enrollmentService.js";
+import AgreementModel from "../models/agreementModel.js";
+import ClientModel from "../models/clientModel.js";
+import UserModel from "../models/userModel.js";
+import ExportService from "../services/exportService.js";
+import DashboardService from "../services/dashboardService.js";
+import CertificateService from "../services/certificateService.js";
+import SignatureModel from "../models/signatureModel.js";
+import { sendSignature } from "../utils/signatureResponse.js";
+import { getPool } from "../config/db.js";
+import { buildPage, parsePaging, parseSearch } from "../utils/parsePaging.js";
+import { AppError } from "../utils/AppError.js";
+import { localIsoDate } from "../utils/localDate.js";
+import { sendCredentialsEmail } from "../services/emailService.js";
+import { endUserSessions } from "../realtime/realtime.js";
+import bcrypt from "bcrypt";
+import crypto from "crypto";
+
+export const getEnrollment = async (req, res, next) => {
+  try {
+    const { user_id } = req.user;
+    const paging = parsePaging(req.query);
+
+    const pool = await getPool();
+
+    const employees = await ClientModel.getHrEmployees(pool, user_id, {
+      ...paging,
+      search: parseSearch(req.query.search),
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: buildPage(employees, paging),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getEnrollmentDetails = async (req, res, next) => {
+  try {
+    const { client_id } = req.params;
+
+    const pool = await getPool();
+
+    const enrollmentData = await EnrollmentService.getFullEnrollmentDetails(
+      pool,
+      client_id,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: enrollmentData,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// HR reissues an employee's credentials. The employee cannot start this
+// themselves on purpose: the failure that matters is a wrong or unreachable
+// email address, and a self-service page would send the message to the same
+// address that already failed. HR can confirm who they are speaking to first.
+//
+// This exists because the employee is now the only person who can propose a
+// change to their own record. An employee who cannot sign in has a record
+// nobody can correct — see PARK.md.
+export const resendCredentials = async (req, res, next) => {
+  try {
+    const { client_id } = req.params;
+    const { user_id } = req.user;
+
+    const pool = await getPool();
+
+    const user = await UserModel.findUserByClientId(pool, client_id);
+    if (!user)
+      throw new AppError("No active account found for this employee", 404);
+
+    if (!user.us01_email_address)
+      throw new AppError(
+        "This account has no email address on file. Correct it before resending.",
+        409,
+      );
+
+    const tempPassword = crypto.randomBytes(9).toString("base64").slice(0, 12);
+    const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+    // Send before writing. The order is the whole design of this endpoint.
+    //
+    // Every other sender in this codebase swallows its failures, because there
+    // the record is what matters and the email is a courtesy. Here the email IS
+    // the delivery — it carries the only copy of the password. Changing the
+    // password first and then failing to send would lock the employee out
+    // harder than before, with a credential nobody knows.
+    //
+    // So the send goes first and a failure means nothing was changed. The cost
+    // is the opposite risk: mail accepted, write fails, and the employee holds a
+    // password that was never stored. That case is logged loudly below, and it
+    // is recoverable by resending — the reverse is not.
+    try {
+      await sendCredentialsEmail({
+        to: user.us01_email_address,
+        firstName: user.us01_first_name,
+        username: user.us01_username,
+        password: tempPassword,
+      });
+    } catch (error) {
+      // Caught only to say what is true. graphSendError returns a plain Error,
+      // which errorHandler renders as "Server Error" — leaving HR unable to tell
+      // whether the password changed. They would either pass on a password that
+      // does not exist, or press resend until something gives.
+      console.error(
+        `Credentials email failed for user ${user.us01_user_id} (client ${client_id}). ` +
+          `Nothing was changed.`,
+        error,
+      );
+      throw new AppError(
+        "The email could not be sent, so nothing was changed. The employee's current password still works. Please try again.",
+        502,
+      );
+    }
+
+    const rowsUpdated = await UserModel.resetPassword(pool, {
+      us01_user_id: user.us01_user_id,
+      us01_password: hashedPassword,
+      us01_modified_by: String(user_id),
+    });
+
+    if (rowsUpdated === 0) {
+      console.error(
+        `Credentials email SENT but password NOT stored for user ${user.us01_user_id} ` +
+          `(client ${client_id}). The employee has a password that does not work. Resend.`,
+      );
+      throw new AppError(
+        "The email was sent but the password could not be saved. Please resend.",
+        500,
+      );
+    }
+
+    // resetPassword raised the token version, which ends the employee's
+    // sessions at verifySession. This closes their open sockets too.
+    endUserSessions(user.us01_user_id);
+
+    return res.status(200).json({
+      success: true,
+      message: `New sign-in details sent to ${user.us01_email_address}`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// HR resends the Certificate of Coverage — for when it did not go out with the
+// confirmation email, or the employee has lost it. certificateService decides
+// everything; the refusals it raises are AppErrors and reach the caller as they
+// are: 404 no enrollment, 409 nothing to certify or nowhere to send it, 502
+// the email failed and nothing was sent.
+export const resendCertificate = async (req, res, next) => {
+  try {
+    const { client_id } = req.params;
+
+    const pool = await getPool();
+
+    const { to } = await CertificateService.resendCertificate(pool, client_id);
+
+    return res.status(200).json({
+      success: true,
+      message: `Certificate of Coverage sent to ${to}`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The signature, as an image. It is not folded into getEnrollmentDetails on
+// purpose: that response is opened every time HR looks at a record, and the
+// bytes would ride along whether or not anything displayed them.
+//
+// Company scoping is verifyClientAccess in front of this route and nothing
+// else — usp_sel_client_signature_by_client takes a client_id and trusts it,
+// exactly like usp_sel_hr_employees. That middleware is the whole of the rule.
+export const downloadCertificate = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const certificate = await CertificateService.buildCertificate(pool, req.params.client_id);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.attachment(certificate.name);
+    return res.status(200).send(certificate.content);
+  } catch (error) { next(error); }
+};
+
+export const getEnrollmentSignature = async (req, res, next) => {
+  try {
+    const { client_id } = req.params;
+
+    const pool = await getPool();
+
+    const signature = await SignatureModel.getSignatureByClient(pool, client_id);
+
+    // 404 rather than an empty 200. Most enrollments have no signature — every
+    // one taken before this feature existed — and "there isn't one" is a
+    // different answer from "here is nothing".
+    if (!signature)
+      throw new AppError("No signature on file for this enrollment", 404);
+
+    return sendSignature(res, signature);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const exportEnrollments = async (req, res, next) => {
+  try {
+    const { user_id } = req.user;
+    const { from, to } = req.query;
+
+    const pool = await getPool();
+
+    const { workbook } = await ExportService.buildEnrollmentReport(pool, user_id, {
+      from,
+      to,
+    });
+
+    // The filename carries the period when there is one, so a folder of these
+    // can be told apart without opening them. Otherwise the date it was run,
+    // so two downloads in the same week do not silently overwrite each other.
+    //
+    // The Philippine date, not toISOString's UTC one, which before eight in
+    // the morning still reads yesterday.
+    const stamp =
+      from || to
+        ? `${from ?? "start"}-to-${to ?? "today"}`
+        : localIsoDate(new Date());
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="enrollments-${stamp}.xlsx"`,
+    );
+
+    await workbook.xlsx.write(res);
+    return res.end();
+  } catch (error) {
+    // Anything thrown before the first byte is written still reaches the error
+    // handler as JSON. Once writing has started the response is already a
+    // spreadsheet and cannot become an error object, so the only honest thing
+    // left is to stop.
+    if (res.headersSent) {
+      console.error("Enrollment export failed mid-stream:", error);
+      return res.end();
+    }
+
+    return next(error);
+  }
+};
+
+export const getDashboardStats = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    const stats = await DashboardService.getStats(pool, req.user);
+
+    return res.status(200).json({ success: true, data: stats });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getEnrollmentAgreements = async (req, res, next) => {
+  try {
+    const { client_id } = req.params;
+    const pool = await getPool();
+    const agreements = await AgreementModel.getClientAgreements(
+      pool,
+      client_id,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: agreements,
+    });
+  } catch (error) {
+    next(error);
+  }
+};

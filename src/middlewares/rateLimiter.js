@@ -1,0 +1,344 @@
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { MAX_INVITATION_EMAILS } from "../utils/partitionEmails.js";
+
+const isDev = process.env.NODE_ENV !== "production";
+
+// ── What the IP-keyed limits in this file can and cannot do ─────────────────
+//
+// They exist to refuse a flood from one address. But an employee enrols from
+// their company's office and an HR user works from that same office, so **the
+// legitimate users all share one address too.** That tension does not resolve
+// into a better number; it resolves into knowing which limit is doing the work.
+//
+// The limits that actually bound abuse are the ones keyed on an IDENTITY — the
+// invitation token below, `ip:username` on strictLimiter, `user_id` on the four
+// HR limiters. Those bound one caller no matter where they call from.
+//
+// The IP ceilings are a crude backstop, set high enough that they can never
+// catch legitimate traffic. **Volumetric defence belongs at the proxy in front
+// of this app**, which is one of the deployment questions still open.
+//
+// So the numbers below are derived from the largest burst this system can
+// legitimately produce, not chosen for how strict they feel.
+
+// One HR upload creates up to MAX_INVITATION_EMAILS invitations, and every one
+// of those employees may enrol the same day from the same office.
+//
+// Each costs at least two requests against the shared enrollment limiter — the
+// lookup when they open the link, and the submit — plus refreshes and any
+// submission refused by validation. Three times the cap is the honest figure.
+export const ENROLLMENT_BURST = MAX_INVITATION_EMAILS * 3;
+
+// Per fifteen minutes, so a full company's worth of first logins fits inside an
+// hour. Exported for the same reason as the one above: the relationship to the
+// invitation cap is the thing worth pinning, and a limiter object does not
+// expose its own ceiling to a test.
+export const AUTH_IP_BURST = MAX_INVITATION_EMAILS / 4;
+
+// A body field goes into a key only when it is a non-empty string. The body is
+// whatever JSON the caller sent, and an object such as {"toString": 1} cannot
+// be turned into text: the template literal throws, and the limiter answered
+// 500 before the route ever ran. Found 2026-10-06, ahead of a pentest.
+const asKeyText = (value) =>
+  typeof value === "string" && value !== "" ? value : null;
+
+// Exported, like enrollmentTokenKey below, because who a request counts against
+// is the part worth testing and a limiter object does not expose it.
+export const loginAttemptKey = (req) =>
+  `${ipKeyGenerator(req.ip)}:${asKeyText(req.body?.username) ?? "unknown"}`;
+
+// The two logins. Not the change-password routes: their body carries no
+// username, which is the defect passwordChangeLimiter below exists to fix.
+export const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 100 : 10, // 100 sa dev, 10 sa prod
+  keyGenerator: loginAttemptKey,
+  message: {
+    success: false,
+    message: "Too many attempts, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// The two change-password routes used strictLimiter until 2026-10-06. It keys
+// on req.body.username, and a change-password body is { oldPassword,
+// newPassword }: the username comes from the reset token. So every change from
+// one address keyed as "<ip>:unknown", ten per fifteen minutes for a whole
+// office. On the first morning the eleventh new employee changing a temporary
+// password would have been refused, with a fifteen-minute reset token running
+// out while they waited. Not visible on UAT, where the limit is 100.
+//
+// Keyed on the username inside the reset token, so verifyResetToken has to
+// run first. The username alone, without the address: the token is signed, so
+// nobody can spend another person's budget, and the bound holds however many
+// addresses the token's holder uses.
+export const passwordChangeKey = (req) => {
+  const username = asKeyText(req.resetUser?.username);
+
+  return username ? `reset:${username}` : ipKeyGenerator(req.ip);
+};
+
+export const passwordChangeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 100 : 10,
+  keyGenerator: passwordChangeKey,
+  message: {
+    success: false,
+    message: "Too many attempts, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// The IP-side guard on the two public enrollment routes, and volumetric only.
+//
+// It was 20 an hour, then 300, and both were wrong for the same reason: they
+// were chosen for how strict they felt rather than measured against what this
+// system can legitimately produce. **HR can create a thousand invitations in
+// one action**, and every one of those people may enrol the same day from the
+// same office. Three hundred refuses that at a tenth of the way through.
+//
+// Sized from the invitation cap now, so raising `MAX_INVITATION_EMAILS` carries
+// this with it instead of leaving two numbers to be kept in step by memory.
+//
+// The per-invitation limit below is what actually bounds one caller.
+export const mediumLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? ENROLLMENT_BURST * 5 : ENROLLMENT_BURST,
+  message: {
+    success: false,
+    message: "Too many requests, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// The invitation token is the per-employee identity on a public route, exactly
+// as user_id is on the authenticated ones — one token belongs to one person and
+// can complete one enrollment.
+//
+// Falls back to the IP when there is no token, which is the only case this
+// endpoint should ever see without one: a malformed request.
+export const enrollmentTokenKey = (req) => {
+  const token = asKeyText(req.body?.token) ?? asKeyText(req.query?.token);
+
+  return token ? `token:${token}` : ipKeyGenerator(req.ip);
+};
+
+// Stacked with mediumLimiter rather than replacing it, and the stacking is the
+// point. Keyed on the token ALONE, a caller sending random tokens would open a
+// fresh bucket on every request — unlimited traffic and an unbounded store,
+// which is a worse hole than the one being fixed. The IP ceiling above closes
+// it; this bounds what one real invitation can do.
+//
+// Fifteen an hour covers opening the link, a few refreshes, and several
+// submissions refused by validation before one succeeds.
+export const enrollmentTokenLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? 200 : 15,
+  keyGenerator: enrollmentTokenKey,
+  message: {
+    success: false,
+    message: "Too many attempts for this invitation, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// The six reference routes behind the enrollment form: classifications,
+// employers, and the region → province → city → barangay cascade. Public, and
+// until 2026-10-06 they had no limit at all, which a pentest reports.
+//
+// Volumetric only, like mediumLimiter, and sized the same way: a full
+// invitation upload, every employee filling the form the same hour from one
+// office. One form makes about six of these calls, one per dropdown. Twenty
+// allows for picking the wrong province and going back, a refresh, and the
+// change request form, which uses the same cascade. That figure is an
+// estimate, not a measurement of the frontend, so it lives in one constant.
+//
+// Not keyed on anything but the address: these routes carry no token and no
+// session, so there is nothing else to key on.
+export const REFERENCE_CALLS_PER_FORM = 20;
+
+export const REFERENCE_BURST = MAX_INVITATION_EMAILS * REFERENCE_CALLS_PER_FORM;
+
+export const referenceLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? REFERENCE_BURST * 5 : REFERENCE_BURST,
+  message: {
+    success: false,
+    message: "Too many requests, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Keyed on the HR user rather than the IP. A 1,000-address upload is a rare,
+// deliberate act, and keying on the user survives a reverse proxy collapsing
+// every caller into one address.
+export const bulkInvitationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? 100 : 10, // 100 sa dev, 10 sa prod
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many invitation uploads, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Reissuing credentials sends mail and replaces a password, so it is throttled —
+// but it is a deliberate act HR performs a handful of times, not a loop.
+//
+// Keyed on the HR user rather than the IP, like the bulk upload above. Keying on
+// the IP would put every HR user in an office behind one bucket, and strictLimiter
+// cannot be reused here: it keys on req.body.username, which this endpoint does
+// not carry, so every caller would collapse into "unknown".
+export const credentialsResendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? 100 : 20,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many credential resets, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Resending a Certificate of Coverage: the same shape as the one above, keyed
+// on the HR user for the same reasons, but its own budget rather than a share
+// of it. An HR who has resent a handful of certificates should not find they
+// can no longer reissue a locked-out employee's password, which is the more
+// urgent of the two.
+export const certificateResendLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? 100 : 20,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many certificate resends, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Filing a claim uploads up to ten files of 5MB, held in memory while they
+// are read. Keyed on the employee, like the HR limiters above, and it runs
+// after verifyToken and before parseDocuments, so a caller over the limit is
+// refused before any file is buffered. An employee files a claim a handful of
+// times in their life; twenty an hour leaves room for refusals and retries.
+export const claimSubmitLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? 100 : 20,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many claim submissions, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Sending a message. Keyed on the account. Decided 2026-10-12 at 300 per 15
+// minutes, higher than the other limiters: HR is one shared account, possibly
+// used by several people at once, talking to many employees. It still stops a
+// script flooding a conversation, which is what it is for.
+export const messageSendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 1000 : 300,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many messages, please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// The HR screen polls the pending count every ~30s to drive a badge, so a
+// 15-minute window holds about 30 requests from one correctly behaving client.
+// Several HR users on one shared account, and a tab left open in more than one
+// browser, are both normal — the ceiling allows for that rather than throttling
+// the ordinary case.
+export const pendingCountLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 1000 : 300,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many status requests, please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// GET /auth/me runs on every page load and every reload, in every tab, for all
+// three roles. The same ceiling as the pending count, counted separately so
+// that one never uses up the other.
+export const sessionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 1000 : 300,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many requests, please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Polling runs every ~2s while a job is in flight, so a 15-minute window can
+// legitimately hold around 450 requests. The ceiling sits above that rather
+// than throttling a client that is behaving correctly.
+export const jobStatusLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 2000 : 600,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many status requests, please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// The IP side of the login pair. Its job is a caller trying many DIFFERENT
+// usernames from one machine; a single username is already capped at ten per
+// fifteen minutes by strictLimiter, which keys on ip:username.
+//
+// It was 30, and that is the same mistake as the enrollment one: a whole office
+// signs in from one address. A batch of new employees receiving credentials on
+// the same morning would have exhausted it before the thirty-first of them got
+// in, and the failure reads as "too many requests" to somebody on their first
+// attempt.
+//
+// It was raised to 100, and that was still measured against nothing. A
+// thousand invited employees enrol and are then sent credentials, and a batch
+// of them signing in on one morning from one office is the ordinary case, not
+// the abusive one.
+//
+// A quarter of the invitation cap per fifteen minutes — a full company's worth
+// of first logins inside an hour. It still refuses a username sweep long before
+// one is useful, because the sweep has to get past strictLimiter — ten per
+// fifteen minutes, keyed on ip:username — one username at a time regardless.
+export const authIpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? AUTH_IP_BURST * 4 : AUTH_IP_BURST,
+  message: {
+    success: false,
+    message: "Too many requests from this IP address, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

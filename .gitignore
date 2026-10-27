@@ -1,0 +1,11 @@
+node_modules/
+.env
+src/uploads/
+
+md
+
+test.html
+.env.*
+!.env.example
+*.bak
+*.log
