@@ -5,6 +5,7 @@ import AffiliateModel from "../models/affiliateModel.js";
 import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
 import { partitionInvitations } from "../utils/partitionInvitations.js";
+import { creditCompanyOf } from "../gcli/companies.js";
 import { buildInvitationTemplate, invitationTemplateFileName } from "../utils/invitationTemplate.js";
 import { chunk, delay, runWithConcurrency } from "../utils/concurrency.js";
 import { buildPage } from "../utils/parsePaging.js";
@@ -257,7 +258,13 @@ const sendInvitations = async (pool, userId, rows) => {
 
   // Rejected rows need no I/O, so they are known now and returned with the
   // acknowledgement — HR sees the bad rows while still looking at the upload.
-  const { valid, rejected } = partitionInvitations(rows, { company, classes, affiliates });
+  // A company on the credit plan has borrowers, who are not classified (src/gcli).
+  const { valid, rejected } = partitionInvitations(rows, {
+    company,
+    classes,
+    affiliates,
+    classified: !creditCompanyOf(company.employer_id),
+  });
 
   const job = InvitationJobStore.createJob(userId, valid.length);
 

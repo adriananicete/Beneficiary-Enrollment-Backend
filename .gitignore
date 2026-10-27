@@ -5,3 +5,7 @@ src/uploads/
 md
 
 test.html
+
+# Group Credit Life dev store (src/gcli/devStore.js): test data, never committed
+.gcli-dev-store.json
+.gcli-dev-store.json.tmp

@@ -181,9 +181,10 @@ describe("the death claim routes", () => {
 describe("the company routes", () => {
   const ROUTES = [
     ["get", "/companies", "getCompanies", 3],
-    ["post", "/companies", "createCompany", 4],
+    // takePlanFields (src/gcli) sits in front of the validator on the two routes that take a body.
+    ["post", "/companies", "createCompany", 5],
     ["get", "/companies/:employer_id", "getCompany", 4],
-    ["patch", "/companies/:employer_id", "updateCompany", 5],
+    ["patch", "/companies/:employer_id", "updateCompany", 6],
     // Branch 10: the id check, then the controller. No body.
     ["delete", "/companies/:employer_id", "deleteCompany", 4],
   ];
@@ -206,8 +207,20 @@ describe("the company routes", () => {
   test("the validators run before the controllers", async () => {
     const { validateCompanyChanges, validateNewCompany } = await import("../../src/middlewares/validateCompany.js");
 
-    assert.equal(handlersFor("post", "/companies")[2], validateNewCompany);
-    assert.equal(handlersFor("patch", "/companies/:employer_id")[3], validateCompanyChanges);
+    assert.equal(handlersFor("post", "/companies")[3], validateNewCompany);
+    assert.equal(handlersFor("patch", "/companies/:employer_id")[4], validateCompanyChanges);
+  });
+
+  // The plan and loan limits are taken off the body before the company rules, which
+  // refuse any field a company does not have. With the dev store off it does nothing.
+  test("the plan fields are taken off the body before the validators read it", () => {
+    for (const handlers of [handlersFor("post", "/companies"), handlersFor("patch", "/companies/:employer_id")]) {
+      const takePlan = handlers.at(-3);
+
+      assert.equal(typeof takePlan, "function");
+      assert.equal(takePlan.length, 3, "a middleware: (req, res, next)");
+      assert.notEqual(takePlan, handlers.at(-2));
+    }
   });
 });
 

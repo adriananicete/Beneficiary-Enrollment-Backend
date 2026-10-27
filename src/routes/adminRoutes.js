@@ -4,6 +4,8 @@ import { verifyToken } from '../middlewares/verifyToken.js';
 import { exportEnrollments, getCompanyAffiliates, getCompanyClassifications, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials, wipeEnrollments } from '../controllers/adminController.js';
 import { developmentOnly } from '../middlewares/developmentOnly.js';
 import config from '../config/env.js';
+import { getPool } from '../config/db.js';
+import { takePlanFields } from '../gcli/companies.js';
 import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { cancelInvitationJob, downloadInvitationTemplate, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
@@ -97,9 +99,12 @@ router.patch('/employers/:employer_id/settings', verifyToken, allowedRoles(ADMIN
 const companyId = validateIdParam('employer_id', 'Company not found');
 
 router.get('/companies', verifyToken, allowedRoles(SUPER_ADMIN), getCompanies);
-router.post('/companies', verifyToken, allowedRoles(SUPER_ADMIN), validateNewCompany, createCompany);
+// takePlanFields is the plan and loan limits of Group Credit Life (src/gcli): it does
+// nothing unless the dev store is on, and then takes the two fields off the body before
+// the company rules, which would refuse them.
+router.post('/companies', verifyToken, allowedRoles(SUPER_ADMIN), takePlanFields(getPool), validateNewCompany, createCompany);
 router.get('/companies/:employer_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, getCompany);
-router.patch('/companies/:employer_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateCompanyChanges, updateCompany);
+router.patch('/companies/:employer_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, takePlanFields(getPool), validateCompanyChanges, updateCompany);
 // Only a company nothing belongs to (DBA request 25 Part 10, branch 10).
 router.delete('/companies/:employer_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, deleteCompany);
 

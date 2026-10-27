@@ -1,6 +1,8 @@
 import EmployerAdminModel from "../models/employerAdminModel.js";
 import { COMPANY_FIELDS } from "../utils/validateCompany.js";
 import { AppError } from "../utils/AppError.js";
+import { assertPlanChange, planFieldsOf, savePlan } from "../gcli/companies.js";
+import { devStoreOn } from "../gcli/devStore.js";
 
 // The Administrator lists, creates and edits companies. Branch 2 of
 // md/COMPANY-ONBOARDING-DECISIONS.md, on DBA request 24. The procedures refuse
@@ -35,6 +37,9 @@ export const companyOf = (row) => ({
   created_date: row.created_date,
   modified_by: row.modified_by,
   modified_date: row.modified_date,
+  // The plan and the loan limits, while the dev store is on (src/gcli): the database
+  // has neither yet.
+  ...(devStoreOn() ? planFieldsOf(row.employer_id, row.policy_no_locked) : {}),
 });
 
 const getCompanies = async (pool, userId) => {
@@ -50,24 +55,37 @@ const getCompany = async (pool, userId, employerId) => {
 };
 
 // Answers the company as stored, read back, rather than echoing what was
-// sent.
-const createCompany = async (pool, userId, company) => {
+// sent. `plan` is the plan and loan limits taken off the request (src/gcli), only
+// with the dev store on.
+const createCompany = async (pool, userId, company, plan) => {
+  if (plan) assertPlanChange(null, plan);
+
   const employerId = await EmployerAdminModel.createCompany(pool, userId, company);
+  if (plan) savePlan(employerId, plan);
+
   return getCompany(pool, userId, employerId);
 };
 
 // A PATCH carries only what changed. The procedure replaces the whole row, so
 // the changes are laid over the stored company first. Two Administrators
 // saving the same company at once: the later save wins (accepted 2026-10-15).
-const updateCompany = async (pool, userId, employerId, changes) => {
+// A change of plan alone (`plan`, src/gcli) leaves the row as it is.
+const updateCompany = async (pool, userId, employerId, changes, plan) => {
   const current = await EmployerAdminModel.getCompanyById(pool, userId, employerId);
   if (!current) throw new AppError("Company not found", 404);
 
-  const merged = {};
-  for (const field of COMPANY_FIELDS)
-    merged[field] = field in changes ? changes[field] : current[field];
+  if (plan) assertPlanChange(employerId, plan, current.policy_no_locked);
 
-  await EmployerAdminModel.updateCompany(pool, userId, employerId, merged);
+  if (!plan || Object.keys(changes).length > 0) {
+    const merged = {};
+    for (const field of COMPANY_FIELDS)
+      merged[field] = field in changes ? changes[field] : current[field];
+
+    await EmployerAdminModel.updateCompany(pool, userId, employerId, merged);
+  }
+
+  if (plan) savePlan(employerId, plan);
+
   return getCompany(pool, userId, employerId);
 };
 

@@ -2,6 +2,9 @@ import express from 'express';
 import { getBarangaysByCity, getCitiesByProvince, getEmployeeClassifications, getEmployers, getInvitationByToken, getProvincesByRegion, getRegions, submitEnrollment } from '../controllers/enrollmentController.js';
 import { validateEnrollment } from '../middlewares/validateEnrollment.js';
 import { enrollmentTokenLimiter, mediumLimiter, referenceLimiter } from '../middlewares/rateLimiter.js';
+import { getPool } from '../config/db.js';
+import { createCreditSubmission } from '../gcli/creditSubmission.js';
+import { devStoreOn } from '../gcli/devStore.js';
 
 const router = express.Router();
 
@@ -18,6 +21,12 @@ router.get('/regions', referenceLimiter, getRegions);
 router.get('/regions/:region_code/provinces', referenceLimiter, getProvincesByRegion);
 router.get('/provinces/:province_code/cities', referenceLimiter, getCitiesByProvince);
 router.get('/cities/:city_code/barangays', referenceLimiter, getBarangaysByCity)
-router.post('/submit', mediumLimiter, enrollmentTokenLimiter, validateEnrollment, submitEnrollment);
+// A borrower of a company on the credit plan (src/gcli) is answered by creditSubmission,
+// which stores an application and passes any other request on to the usual submit. It does
+// nothing unless the dev store is on.
+router.post('/submit', mediumLimiter, enrollmentTokenLimiter, createCreditSubmission({ getPool }), validateEnrollment, submitEnrollment);
+// A returned application, corrected on the same link. A route only while the dev store is on.
+if (devStoreOn())
+    router.put('/application', mediumLimiter, enrollmentTokenLimiter, createCreditSubmission({ getPool, resubmit: true }));
 
 export default router;

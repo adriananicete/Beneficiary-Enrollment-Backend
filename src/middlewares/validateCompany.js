@@ -25,8 +25,10 @@ export const validateCompanyChanges = (req, res, next) => {
   const problem = normaliseCompany(req.body);
   if (problem) return next(new AppError(problem, 400));
 
+  // `req.plan` is a change of plan or loan limits that src/gcli took off the body
+  // first; a request with only that has nothing left in the body.
   const sent = Object.keys(req.body);
-  if (sent.length === 0) return next(new AppError("Nothing to change", 400));
+  if (sent.length === 0 && !req.plan) return next(new AppError("Nothing to change", 400));
 
   const invalid = companyProblem(req.body, sent);
   if (invalid) return next(new AppError(invalid, 400));

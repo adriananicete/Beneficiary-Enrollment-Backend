@@ -9,6 +9,7 @@ import { isInvitationToken } from "../middlewares/validateIdParam.js";
 import AgreementModel from "../models/agreementModel.js"
 import SignatureModel from "../models/signatureModel.js";
 import { sendSignature } from "../utils/signatureResponse.js";
+import { invitationExtras } from "../gcli/creditSubmission.js";
 
 export const submitEnrollment = async (req, res, next) => {
   try {
@@ -224,7 +225,8 @@ export const getInvitationByToken = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      data: publicInvitation(invitation)
+      // The company's plan and loan limits, while the dev store is on (src/gcli).
+      data: { ...publicInvitation(invitation), ...invitationExtras(invitation, token) }
     })
   } catch (error) {
     next(error);

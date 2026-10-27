@@ -3,6 +3,7 @@ import AuthService from "../services/authService.js";
 import PasswordService from "../services/passwordService.js";
 import { getPool } from "../config/db.js";
 import { cookieOptions } from "../utils/cookieConfig.js";
+import { withPlans } from "../gcli/companies.js";
 
 export const login = async (req, res, next) => {
   try {
@@ -44,7 +45,8 @@ export const login = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: "Login successfully",
-      data: { user: result.user },
+      // withPlans adds each company's plan while the dev store is on (src/gcli).
+      data: { user: withPlans(result.user) },
     });
   } catch (error) {
     next(error);
@@ -65,7 +67,7 @@ export const getMe = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      data: { user },
+      data: { user: withPlans(user) },
     });
   } catch (error) {
     if (error.statusCode === 401) res.clearCookie("token", cookieOptions);

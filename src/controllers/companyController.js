@@ -38,7 +38,7 @@ export const getCompany = async (req, res, next) => {
 export const createCompany = async (req, res, next) => {
   try {
     const pool = await getPool();
-    const company = await CompanyService.createCompany(pool, req.user.user_id, req.body);
+    const company = await CompanyService.createCompany(pool, req.user.user_id, req.body, req.plan);
 
     return res.status(201).json({
       success: true,
@@ -58,6 +58,7 @@ export const updateCompany = async (req, res, next) => {
       req.user.user_id,
       req.params.employer_id,
       req.body,
+      req.plan,
     );
 
     return res.status(200).json({

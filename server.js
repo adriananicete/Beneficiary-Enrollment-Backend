@@ -11,6 +11,9 @@ import authRoutes from './src/routes/authRoutes.js';
 import enrollmentRoutes from './src/routes/enrollmentRoutes.js';
 import adminRoutes from './src/routes/adminRoutes.js';
 import employeeRoutes from './src/routes/employeeRoutes.js';
+import { verifyToken } from './src/middlewares/verifyToken.js';
+import { createGcliRoutes } from './src/gcli/routes.js';
+import { assertDevStoreAllowed, devStoreOn } from './src/gcli/devStore.js';
 import {errorHandler} from './src/middlewares/errorHandler.js';
 import helmet from 'helmet';
 
@@ -53,9 +56,13 @@ const parseJson = express.json({ limit: '256kb' });
 const parseEnrollmentJson = express.json({ limit: '1mb' });
 
 const SUBMIT_PATH = `${API_PREFIX}/enrollment/submit`;
+// A returned Group Credit Life application is corrected with the same body, signature and
+// all (src/gcli); that route exists only while the dev store is on.
+const CORRECT_PATH = `${API_PREFIX}/enrollment/application`;
 
 app.use((req, res, next) =>
-    req.method === 'POST' && req.path === SUBMIT_PATH
+    (req.method === 'POST' && req.path === SUBMIT_PATH) ||
+    (req.method === 'PUT' && req.path === CORRECT_PATH && devStoreOn())
         ? parseEnrollmentJson(req, res, next)
         : parseJson(req, res, next),
 );
@@ -70,6 +77,15 @@ app.use(cookieParser());
 app.get('/', (req, res) => {
     res.send('Beneficiary Enrollment API v1');
 });
+
+// Group Credit Life before the database has it (src/gcli/devStore.js): its routes come
+// first, so a request for an application is answered here and anything else falls
+// through to the routes below. Off unless GCLI_DEV_STORE=true, and never in production.
+assertDevStoreAllowed();
+if (devStoreOn()) {
+    console.warn('GCLI_DEV_STORE is on: plans, loan applications and approvals are kept in a file, not in the database. That file holds borrowers\' personal details in plain text: use it on your own machine only.');
+    app.use(`${API_PREFIX}/admin`, createGcliRoutes({ verifyToken, getPool }));
+}
 
 app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/enrollment`, enrollmentRoutes);

@@ -25,7 +25,7 @@ const keyOf = (code) => code.toUpperCase();
 // read once before the job starts. The company's own code in the Affiliate
 // column means the company itself, with or without affiliates (Adrian,
 // 2026-10-15), and is kept as no affiliate.
-export const partitionInvitations = (rows, { company, classes, affiliates }) => {
+export const partitionInvitations = (rows, { company, classes, affiliates, classified = true }) => {
   const classIds = new Map(classes.map((c) => [keyOf(c.classification_code), c.classification_id]));
   const affiliateIds = new Map(affiliates.map((a) => [keyOf(a.affiliate_code), a.affiliate_id]));
   const ownCode = keyOf(codeText(company.company_code));
@@ -84,16 +84,21 @@ export const partitionInvitations = (rows, { company, classes, affiliates }) => 
     }
 
     // The reasons quote the code as HR wrote it, so HR can find it in the file.
-    const classCode = codeText(row.classification_code);
-    if (classCode === "") {
-      rejected.push({ email, status: "invalid", reason: "Classification is required" });
-      continue;
-    }
+    // A borrower of a credit company is not classified (`classified` false, src/gcli),
+    // so a class code in the row is not asked for and not read.
+    let classificationId = null;
+    if (classified) {
+      const classCode = codeText(row.classification_code);
+      if (classCode === "") {
+        rejected.push({ email, status: "invalid", reason: "Classification is required" });
+        continue;
+      }
 
-    const classificationId = classIds.get(keyOf(classCode));
-    if (classificationId === undefined) {
-      rejected.push({ email, status: "invalid", reason: `Unknown classification code "${classCode}"` });
-      continue;
+      classificationId = classIds.get(keyOf(classCode));
+      if (classificationId === undefined) {
+        rejected.push({ email, status: "invalid", reason: `Unknown classification code "${classCode}"` });
+        continue;
+      }
     }
 
     const affiliateCode = codeText(row.affiliate_code);
