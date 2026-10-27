@@ -150,6 +150,20 @@ describe("the death claim routes", () => {
     assert.equal(handlers.at(-1), claims.fileDeathClaim);
   });
 
+  // The same chain as the death claim, ending in the general controller.
+  test("POST /enrollments/:client_id/claims checks the company and the limiter before reading the upload", () => {
+    const handlers = handlersFor("post", "/enrollments/:client_id/claims");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+    assert.equal(handlers[2], verifyClientAccess);
+    assert.equal(handlers[3], claimSubmitLimiter);
+    assert.equal(handlers[4], parseDocuments);
+    assert.equal(handlers.at(-1), claims.fileClaimForEmployee);
+  });
+
   test("PATCH /claims/:claim_id/close checks the id, for HR and the Administrator", () => {
     const handlers = handlersFor("patch", "/claims/:claim_id/close");
 

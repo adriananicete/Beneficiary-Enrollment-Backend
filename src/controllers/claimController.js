@@ -144,8 +144,30 @@ const claimTypesFor = (filedBy) => async (req, res, next) => {
 
 export const getMyClaimTypes = claimTypesFor("EMPLOYEE");
 
-// HR's types: the death claim, today. Branch 6.
-export const getHrClaimTypes = claimTypesFor("HR");
+// What HR may file: the death claim (HR's own type) and every claim an employee
+// may file, which HR files for them. `filed_by` says which is which, so the
+// frontend sends a death claim to its own route and the rest to the general one.
+export const hrClaimTypesOf = (own, general) => {
+  const listed = (found, filedBy) =>
+    found.types.map((type) => ({ ...claimTypeOf(type, found.requirements), filed_by: filedBy }));
+
+  return [...listed(own, "HR"), ...listed(general, "EMPLOYEE")];
+};
+
+export const getHrClaimTypes = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    const [own, general] = await Promise.all([
+      ClaimModel.getClaimTypes(pool, "HR"),
+      ClaimModel.getClaimTypes(pool, "EMPLOYEE"),
+    ]);
+
+    return res.status(200).json({ success: true, data: hrClaimTypesOf(own, general) });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // multipart/form-data, the same as an employee's claim: claim_type_id, and
 // one field per requirement. The employee must already be marked deceased.
@@ -165,6 +187,30 @@ export const fileDeathClaim = async (req, res, next) => {
       success: true,
       data: { claim_id: claimId, claim_status: "APPROVED" },
       message: "Death claim filed",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// multipart/form-data, as for the death claim. Any type an employee may file,
+// filed by HR or the Administrator for an employee who is alive.
+export const fileClaimForEmployee = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    const { claimId } = await ClaimService.fileClaimForEmployee(pool, {
+      userId: req.user.user_id,
+      roleName: req.user.role_name,
+      clientId: req.params.client_id,
+      claimTypeId: req.body?.claim_type_id,
+      documents: req.documents ?? [],
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: { claim_id: claimId, claim_status: "PENDING" },
+      message: "Claim filed",
     });
   } catch (error) {
     next(error);
@@ -359,6 +405,13 @@ export const getPendingClaimCount = async (req, res, next) => {
   }
 };
 
+// A death claim is a claim of HR's own type (the one HR files for a deceased
+// employee). `filedBy` is the claim type's, from getClaimTypeFiler. When it is
+// not known (the type was not found) nothing is said, and the screen keeps its
+// older rule rather than being told a death claim is not one.
+export const deathClaimFlagOf = (filedBy) =>
+  filedBy ? { is_death_claim: String(filedBy).toUpperCase() === "HR" } : {};
+
 export const getClaimDetails = async (req, res, next) => {
   try {
     const pool = await getPool();
@@ -373,10 +426,15 @@ export const getClaimDetails = async (req, res, next) => {
     // one that does not exist.
     if (!claim) throw new AppError("Claim not found", 404);
 
+    // Only a death claim can be closed (usp_upd_claim_close refuses the rest
+    // with 50167), and HR also files employee types now, so the screen is told
+    // which this is rather than guessing from who filed it.
+    const filedBy = await ClaimModel.getClaimTypeFiler(pool, claim.claim_type_id);
+
     return res.status(200).json({
       success: true,
       data: {
-        claim: hrClaimOf(claim),
+        claim: { ...hrClaimOf(claim), ...deathClaimFlagOf(filedBy) },
         documents: documents.map(claimDocumentOf),
         requirements: requirements.map(requirementOf),
       },

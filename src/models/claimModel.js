@@ -205,8 +205,23 @@ const cancelClaim = async (pool, cancelData) => {
     .execute("usp_upd_claim_cancel");
 };
 
+// Who files a claim type: 'HR' for the death claim, 'EMPLOYEE' for the rest, and
+// undefined for a type that is not there. Read from the table rather than from
+// usp_sel_claim_types, which lists active types only: a claim of a type since
+// retired is still the kind of claim it was, and usp_upd_claim_close does not
+// ask whether its type is active.
+const getClaimTypeFiler = async (pool, claimTypeId) => {
+  const result = await pool
+    .request()
+    .input("claim_type_id", sql.BigInt, claimTypeId)
+    .query("SELECT filed_by FROM dbo.claim_types WHERE claim_type_id = @claim_type_id");
+
+  return result.recordset[0]?.filed_by;
+};
+
 export default {
   getClaimTypes,
+  getClaimTypeFiler,
   insertClaim,
   insertClaimDocument,
   checkClaimRequirements,

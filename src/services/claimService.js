@@ -42,14 +42,15 @@ const claimTypeIdOf = (value) =>
     ? String(value)
     : null;
 
-// UX_claims_open is a unique INDEX, so a second claim of the same type that
-// races past the procedure's 50152 check fails with 2601. That is the only
-// unique index these transactions write against, so here it can be named.
-// The sentence depends on who is filing.
+// A second open claim of the same type is the procedure's own 50152, and, when
+// two race past that check, UX_claims_open's 2601 (a unique INDEX, the only one
+// these transactions write against, so here it can be named). Both are the same
+// refusal, and the sentence depends on who is filing: the error map's 50152 is
+// worded for the employee, and HR filing for one must not be told "you".
 export const asOpenClaimConflict = (error, message = "You already have an open claim of this type") => {
   const number = error?.number ?? error?.originalError?.number;
 
-  return number === 2601 ? new AppError(message, 409) : error;
+  return number === 2601 || number === 50152 ? new AppError(message, 409) : error;
 };
 
 // The claim type, checked against the filer's active list before its id is
@@ -161,6 +162,37 @@ const fileDeathClaim = async (pool, { userId, roleName, clientId, claimTypeId, d
 
     return newClaimId;
   });
+
+  return { claimId };
+};
+
+// HR files an employee's ordinary claim for them, when they cannot file it
+// themselves (in hospital, say). The same types and documents the employee
+// would use, so the type is checked against the EMPLOYEE list: a death claim is
+// the other route's, and the employee must be alive. It is filed as HR, so
+// `roleName` is HR's or the Administrator's, and it is created PENDING, to be
+// reviewed like any other claim.
+//
+// usp_ins_claim must let an HR filer file an employee type for this to work;
+// until it does, it answers 50151 here. See docs/backend-handoff.md.
+const fileClaimForEmployee = async (pool, { userId, roleName, clientId, claimTypeId, documents }) => {
+  const typeId = claimTypeIdOf(claimTypeId);
+  if (!typeId) throw new AppError("claim_type_id is required", 400);
+
+  const [enrollment] = await ClientModel.getEnrollmentByClientId(pool, clientId);
+
+  if (!enrollment) throw new AppError("Enrollment not found", 404);
+  if (enrollment.date_of_death)
+    throw new AppError("This employee is marked deceased. File a death claim instead", 409);
+
+  const matched = await matchedForType(pool, EMPLOYEE_FILER, typeId, documents);
+
+  const claimId = await inClaimTransaction(
+    pool,
+    "Claim",
+    "This employee already has an open claim of this type",
+    (transaction) => insertClaimWithDocuments(transaction, { clientId, typeId, userId, roleName, matched }),
+  );
 
   return { claimId };
 };
@@ -339,4 +371,4 @@ const reviewClaim = async (pool, { userId, claimId, status, remarks }) => {
   return { accountClosed };
 };
 
-export default { submitClaim, cancelClaim, resubmitClaim, reviewClaim, fileDeathClaim, closeDeathClaim };
+export default { submitClaim, cancelClaim, resubmitClaim, reviewClaim, fileDeathClaim, fileClaimForEmployee, closeDeathClaim };
