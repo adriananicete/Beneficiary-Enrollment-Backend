@@ -32,6 +32,7 @@ export const sqlErrorMap = {
     // changing a company they are not mapped to.
     50140: { statusCode: 404, message: 'Company not found' },
     50141: { statusCode: 403, message: 'You can only change the settings of your own company' },
+    50199: { statusCode: 403, message: 'Messaging is disabled for this company.' },
 
     // Thrown by usp_ins_beneficiary, on the public enrollment submit path. Its
     // only caller is enrollmentService.js:107, once per beneficiary, inside the

@@ -54,6 +54,10 @@ const UNKNOWN_USERNAME = 50037;
 
 // The answer while an account is locked out. Only called with time left, and
 // the minutes are rounded up, so the least it ever says is "1 minute".
+// LOCAL ONLY, not for commit: no sign-in lockout while NODE_ENV is "development".
+// Tests leave NODE_ENV unset, so they still see the lock.
+const LOCKOUT_OFF = process.env.NODE_ENV === "development";
+
 const lockedOut = (secondsRemaining) => {
   const minutes = Math.ceil(secondsRemaining / 60);
 
@@ -249,12 +253,15 @@ const login = async (
   // The procedure works out the seconds left against its own clock. GETDATE()
   // is local time and the driver labels it UTC, so comparing us01_locked_until
   // with Date.now() here would be eight hours off.
-  if (user.lock_seconds_remaining > 0)
+  if (!LOCKOUT_OFF && user.lock_seconds_remaining > 0)
     throw lockedOut(user.lock_seconds_remaining);
 
   const isPasswordMatch = await bcrypt.compare(password, user.us01_password);
 
   if (!isPasswordMatch) {
+    // LOCAL ONLY: in development a wrong password locks nothing.
+    if (LOCKOUT_OFF) throw new AppError(INVALID_CREDENTIALS, 401);
+
     // Only an account that exists can be locked. sec.us01_usp_login throws
     // 50037 for an unknown username before this line, so nothing is recorded
     // for one.

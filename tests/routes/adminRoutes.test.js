@@ -14,6 +14,7 @@ const deceased = await import("../../src/controllers/deceasedController.js");
 const { verifyClientAccess } = await import("../../src/middlewares/verifyClientAccess.js");
 const { claimSubmitLimiter, messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
 const { parseDocuments } = await import("../../src/middlewares/parseDocuments.js");
+const { requireCompanyMessaging } = await import("../../src/middlewares/requireCompanyMessaging.js");
 
 const handlersFor = (method, path) => {
   const layer = router.stack.find(
@@ -43,6 +44,34 @@ describe("the employer settings routes", () => {
     assert.equal(handlers[0], verifyToken);
     assert.equal(handlers.length, 4);
     assert.equal(handlers.at(-1), updateEmployerSettings);
+  });
+
+  describe("company messaging enforcement", () => {
+    test("every HR and employee messaging route checks the company setting", async () => {
+      const adminRouter = (await import("../../src/routes/adminRoutes.js")).default;
+      const employeeRouter = (await import("../../src/routes/employeeRoutes.js")).default;
+      const routes = [
+        [adminRouter, "get", "/conversations"],
+        [adminRouter, "post", "/conversations"],
+        [adminRouter, "get", "/conversations/unread-count"],
+        [adminRouter, "get", "/conversations/:conversation_id"],
+        [adminRouter, "post", "/conversations/:conversation_id/messages"],
+        [adminRouter, "post", "/conversations/:conversation_id/read"],
+        [employeeRouter, "post", "/conversation"],
+        [employeeRouter, "get", "/conversations/unread-count"],
+        [employeeRouter, "get", "/conversations/:conversation_id"],
+        [employeeRouter, "post", "/conversations/:conversation_id/messages"],
+        [employeeRouter, "post", "/conversations/:conversation_id/read"],
+      ];
+
+      for (const [router, method, path] of routes) {
+        const layer = router.stack.find(
+          (candidate) => candidate.route?.path === path && candidate.route.methods[method],
+        );
+        assert.ok(layer, `${method.toUpperCase()} ${path} is not registered`);
+        assert.ok(layer.route.stack.some((entry) => entry.handle === requireCompanyMessaging), path);
+      }
+    });
   });
 });
 
@@ -463,7 +492,8 @@ describe("the HR messaging routes", () => {
   test("sending is rate limited, after the id check", () => {
     const handlers = handlersFor("post", "/conversations/:conversation_id/messages");
 
-    assert.equal(handlers.length, 5);
-    assert.equal(handlers.indexOf(messageSendLimiter), 3);
+    assert.equal(handlers.length, 6);
+    assert.equal(handlers.indexOf(requireCompanyMessaging), 3);
+    assert.equal(handlers.indexOf(messageSendLimiter), 4);
   });
 });

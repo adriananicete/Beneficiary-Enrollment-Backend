@@ -229,7 +229,11 @@ const config = {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     encrypt: process.env.DB_ENCRYPT === 'true',
-    trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true'
+    trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE === 'true',
+    // The name sent in the TLS handshake. Node 26 refuses an IP address there,
+    // so when DB_SERVER is an IP this must be a hostname. Unset, the driver
+    // falls back to DB_SERVER.
+    tlsServerName: process.env.DB_TLS_SERVER_NAME || undefined
   },
   jwtSecret: process.env.JWT_SECRET,
   corsOrigin: process.env.CORS_ORIGIN,

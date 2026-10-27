@@ -335,7 +335,8 @@ describe("model bindings — output parameters", () => {
   for (const [name, call] of [
     ["getCocEmailSetting", (pool) => EmployerModel.getCocEmailSetting(pool, 96)],
     ["getEmployerSettings", (pool) => EmployerModel.getEmployerSettings(pool, 3)],
-    ["updateEmployerSettings", (pool) => EmployerModel.updateEmployerSettings(pool, { employerId: 1, sendCocEmail: false, userId: 3 })],
+    ["getMessagingAccessByUser", (pool) => EmployerModel.getMessagingAccessByUser(pool, 3)],
+    ["updateEmployerSettings", (pool) => EmployerModel.updateEmployerSettings(pool, { employerId: 1, sendCocEmail: false, messagesEnabled: true, userId: 3 })],
   ])
     test(`${name} declares no output at all`, async () => {
       const { pool, calls } = anyProcedure();
@@ -349,12 +350,14 @@ describe("model bindings — output parameters", () => {
   test("updateEmployerSettings binds the setting as a bit and the ids as BigInt", async () => {
     const { pool, calls } = anyProcedure();
 
-    await EmployerModel.updateEmployerSettings(pool, { employerId: 1, sendCocEmail: false, userId: 3 });
+    await EmployerModel.updateEmployerSettings(pool, { employerId: 1, sendCocEmail: false, messagesEnabled: true, userId: 3 });
 
     const { bindings } = callTo(calls, "usp_upd_employer_settings");
 
     assert.equal(declarationOf(bindings.send_coc_email.type), declarationOf(sql.Bit));
     assert.equal(bindings.send_coc_email.value, false);
+    assert.equal(declarationOf(bindings.messages_enabled.type), declarationOf(sql.Bit));
+    assert.equal(bindings.messages_enabled.value, true);
     assert.equal(declarationOf(bindings.employer_id.type), declarationOf(sql.BigInt));
     assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
   });

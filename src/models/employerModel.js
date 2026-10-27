@@ -41,12 +41,24 @@ const getEmployerSettings = async (pool, userId) => {
     return result.recordset;
 };
 
+// Companies the signed-in employee or HR account can message. The procedure
+// returns one row per company with its current setting; an employee gets their
+// current company and HR gets its mapped company or companies.
+const getMessagingAccessByUser = async (pool, userId) => {
+    const result = await pool.request()
+    .input('us01_user_id', sql.BigInt, userId)
+    .execute('usp_sel_messaging_access_by_user');
+
+    return result.recordset;
+};
+
 // THROWs 50140 for a company that does not exist or is inactive, and 50141
 // for HR changing a company that is not theirs. Answers the updated row.
-const updateEmployerSettings = async (pool, { employerId, sendCocEmail, userId }) => {
+const updateEmployerSettings = async (pool, { employerId, sendCocEmail, messagesEnabled, userId }) => {
     const result = await pool.request()
     .input('employer_id', sql.BigInt, employerId)
     .input('send_coc_email', sql.Bit, sendCocEmail)
+    .input('messages_enabled', sql.Bit, messagesEnabled)
     .input('us01_user_id', sql.BigInt, userId)
     .execute('usp_upd_employer_settings');
 
@@ -57,5 +69,6 @@ export default {
     insertClientEmployer,
     getCocEmailSetting,
     getEmployerSettings,
+    getMessagingAccessByUser,
     updateEmployerSettings,
-}
+};

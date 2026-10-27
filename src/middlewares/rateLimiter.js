@@ -1,7 +1,12 @@
-import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import baseRateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { MAX_INVITATION_EMAILS } from "../utils/partitionInvitations.js";
 
 const isDev = process.env.NODE_ENV !== "production";
+
+// LOCAL ONLY, not for commit: no limits while NODE_ENV is "development". Tests
+// leave NODE_ENV unset, so they still see the limits.
+const rateLimit = (options) =>
+  baseRateLimit({ skip: () => process.env.NODE_ENV === "development", ...options });
 
 // ── What the IP-keyed limits in this file can and cannot do ─────────────────
 //

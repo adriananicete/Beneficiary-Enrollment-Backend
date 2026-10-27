@@ -20,6 +20,7 @@ export const companyOf = (row) => ({
   policy_no: row.policy_no,
   status: row.status,
   send_coc_email: row.send_coc_email,
+  messages_enabled: row.messages_enabled,
   online_enrollment_max_age: row.online_enrollment_max_age,
   hr_account: row.hr_user_id
     ? {

@@ -42,7 +42,11 @@ const fakeVerifySession = async (pool, session) => {
   return { us01_user_id: session.user_id, client_id: isEmployee && session.user_id !== 13 ? "75" : null };
 };
 
-const EMPLOYERS = { 3: [{ employer_id: "1" }], 4: [{ employer_id: "2" }] };
+const MESSAGING_ACCESS = {
+  12: [{ employer_id: "1", messages_enabled: true }],
+  3: [{ employer_id: "1", messages_enabled: true }],
+  4: [{ employer_id: "2", messages_enabled: true }],
+};
 
 // Conversation 7 is Coforge's with client 75, and open. Conversation 8 is
 // read-only. Anything else is not the caller's.
@@ -64,7 +68,8 @@ before(async () => {
     httpServer,
     getPool: async () => ({}),
     verifySession: fakeVerifySession,
-    getEmployersByUser: async (pool, userId) => EMPLOYERS[userId] ?? [],
+    getMessagingAccessByUser: async (pool, userId) =>
+      MESSAGING_ACCESS[userId] ?? (userId === 13 ? [] : [{ employer_id: "1", messages_enabled: true }]),
     getConversationById: async (pool, conversationId) => {
       lookups.push(conversationId);
       return { conversation: CONVERSATIONS[conversationId] ?? null, messages: [], hasMore: false };
@@ -186,6 +191,16 @@ describe("the socket handshake", () => {
   test("an employee and HR with live sessions connect", async () => {
     assert.equal(await refusalOf(sign(EMPLOYEE)), "connected");
     assert.equal(await refusalOf(sign(HR_COFORGE)), "connected");
+  });
+
+  test("a company with messaging disabled cannot establish a socket", async () => {
+    MESSAGING_ACCESS[12] = [{ employer_id: "1", messages_enabled: false }];
+
+    try {
+      assert.equal(await refusalOf(sign(EMPLOYEE)), "forbidden");
+    } finally {
+      MESSAGING_ACCESS[12] = [{ employer_id: "1", messages_enabled: true }];
+    }
   });
 });
 
@@ -315,6 +330,18 @@ describe("the session re-check", () => {
     assert.equal(socket.connected, true);
 
     outages.delete(16);
+  });
+
+  test("a socket is disconnected after its company disables messaging", async () => {
+    const socket = await connected(client(sign(EMPLOYEE)));
+    const dropped = next(socket, "disconnect", 1000);
+    MESSAGING_ACCESS[12] = [{ employer_id: "1", messages_enabled: false }];
+
+    try {
+      assert.equal(await dropped, "io server disconnect");
+    } finally {
+      MESSAGING_ACCESS[12] = [{ employer_id: "1", messages_enabled: true }];
+    }
   });
 });
 

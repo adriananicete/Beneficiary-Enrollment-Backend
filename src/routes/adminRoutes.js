@@ -14,6 +14,7 @@ import { bulkInvitationLimiter, certificateResendLimiter, claimSubmitLimiter, cr
 import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { getEmployerSettings, updateEmployerSettings } from '../controllers/employerSettingsController.js';
+import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
 import { closeDeathClaim, fileClaimForEmployee, fileDeathClaim, getClaimDetails, getClaimDocument, getClaims, getHrClaimTypes, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { getConversation, getConversations, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
@@ -157,12 +158,12 @@ router.patch('/claims/:claim_id/close', verifyToken, allowedRoles(ADMIN, SUPER_A
 // is declared before /conversations/:conversation_id for the reason above.
 const conversationId = validateIdParam('conversation_id', 'Conversation not found');
 
-router.get('/conversations', verifyToken, allowedRoles(ADMIN), getConversations);
-router.post('/conversations', verifyToken, allowedRoles(ADMIN), openConversation);
-router.get('/conversations/unread-count', verifyToken, allowedRoles(ADMIN), pendingCountLimiter, getUnreadMessageCount);
-router.get('/conversations/:conversation_id', verifyToken, allowedRoles(ADMIN), conversationId, getConversation);
-router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(ADMIN), conversationId, messageSendLimiter, sendMessage);
-router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(ADMIN), conversationId, markConversationRead);
+router.get('/conversations', verifyToken, allowedRoles(ADMIN), requireCompanyMessaging, getConversations);
+router.post('/conversations', verifyToken, allowedRoles(ADMIN), requireCompanyMessaging, openConversation);
+router.get('/conversations/unread-count', verifyToken, allowedRoles(ADMIN), requireCompanyMessaging, pendingCountLimiter, getUnreadMessageCount);
+router.get('/conversations/:conversation_id', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, getConversation);
+router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, messageSendLimiter, sendMessage);
+router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, markConversationRead);
 
 
 export default router;

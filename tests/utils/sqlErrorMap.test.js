@@ -9,6 +9,7 @@ import { sqlErrorMap } from "../../src/utils/sqlErrorMap.js";
 const MUST_BE_MAPPED = [
   [50001, 403, /no longer active/i],
   [50133, 403, /not authorized/i],
+  [50199, 403, /Messaging is disabled/i],
   [50007, 409, /same name/i],
   [50008, 400, /cannot exceed 100/i],
   [50019, 409, /already submitted/i],

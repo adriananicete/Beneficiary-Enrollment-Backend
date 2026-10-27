@@ -15,6 +15,7 @@ import {
 import { getMyAgreements, getMySignature } from '../controllers/enrollmentController.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
+import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
 import { cancelMyChangeRequest, getMyChangeRequests, submitChangeRequest } from '../controllers/changeRequestController.js';
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import {
@@ -64,10 +65,10 @@ router.post('/claims/:claim_id/resubmit', verifyToken, allowedRoles(EMPLOYEE), v
 // so the badge is never read as an id.
 const conversationId = validateIdParam('conversation_id', 'Conversation not found');
 
-router.post('/conversation', verifyToken, allowedRoles(EMPLOYEE), openMyConversation);
-router.get('/conversations/unread-count', verifyToken, allowedRoles(EMPLOYEE), pendingCountLimiter, getUnreadMessageCount);
-router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, getConversation);
-router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, sendMessage);
-router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, markConversationRead);
+router.post('/conversation', verifyToken, allowedRoles(EMPLOYEE), requireCompanyMessaging, openMyConversation);
+router.get('/conversations/unread-count', verifyToken, allowedRoles(EMPLOYEE), requireCompanyMessaging, pendingCountLimiter, getUnreadMessageCount);
+router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, getConversation);
+router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, messageSendLimiter, sendMessage);
+router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, markConversationRead);
 
 export default router;

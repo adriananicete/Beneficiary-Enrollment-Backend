@@ -32,6 +32,7 @@ const stored = (overrides = {}) => ({
   policy_no: "G-TLI-26-136",
   status: "A",
   send_coc_email: true,
+  messages_enabled: true,
   online_enrollment_max_age: null,
   created_by: "SYSTEM",
   created_date: new Date("2026-07-14T00:00:00Z"),
@@ -58,6 +59,7 @@ describe("companyOf — what leaves", () => {
       "created_date",
       "employer_id",
       "hr_account",
+      "messages_enabled",
       "modified_by",
       "modified_date",
       "office_no",
@@ -179,9 +181,11 @@ describe("CompanyService — a PATCH becomes the whole company", () => {
     assert.equal(sent.online_enrollment_max_age, null);
   });
 
-  // Only the seven company fields are sent; the counts and the HR account
+  // Only the seven editable company fields are sent; the settings extension
+  // is saved through the dedicated settings route, not the company form.
+  // The counts and the HR account
   // from the stored row are not the procedure's business.
-  test("sends the seven company fields and nothing read alongside them", async () => {
+  test("sends company form fields and nothing read alongside them", async () => {
     const { pool, calls } = editing();
 
     await CompanyService.updateCompany(pool, ADMIN_ID, "1", { company_name: "Coforge" });
