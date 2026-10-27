@@ -6,6 +6,14 @@ import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
 import { partitionInvitations } from "../utils/partitionInvitations.js";
 import { creditCompanyOf } from "../gcli/companies.js";
+import { devStoreOn } from "../gcli/devStore.js";
+import {
+  clearInvitedEmployeeId,
+  employeeIdGivenToSomeoneElse,
+  setInvitedEmployeeId,
+  supersedeInvitedEmployeeIds,
+} from "../gcli/invitedEmployeeId.js";
+import UserModel from "../models/userModel.js";
 import { buildInvitationTemplate, invitationTemplateFileName } from "../utils/invitationTemplate.js";
 import { chunk, delay, runWithConcurrency } from "../utils/concurrency.js";
 import { buildPage } from "../utils/parsePaging.js";
@@ -67,10 +75,27 @@ const NO_LONGER_AVAILABLE = {
 // Returns the status it recorded so the caller can judge the run as a whole.
 // Never throws — a failure here is one address, not the job.
 const processAddress = async (pool, jobId, userId, employer, invitee) => {
-  const { email, classificationId, affiliateId } = invitee;
+  const { email, classificationId, affiliateId, employeeId } = invitee;
   const token = crypto.randomBytes(32).toString("hex");
 
   try {
+    // An employee ID HR gave that is a login already, or that another person's invitation carries
+    // (any company: a login name is shared by all), would fill the employee's form with a number
+    // they cannot register under. It may be the employee's own login, if they enrolled already.
+    if (employeeId && (employeeIdGivenToSomeoneElse({ employeeId, email }) || (await UserModel.checkUsernameExists(pool, employeeId)))) {
+      InvitationJobStore.appendResult(jobId, {
+        email,
+        status: "invalid",
+        reason: "Employee ID is already a login, or given to another invitation",
+      });
+
+      return "invalid";
+    }
+
+    // Kept before the invitation is made, with the token it will have: if keeping it fails, no
+    // invitation exists without its ID; if the invitation is refused, the ID is taken back below.
+    if (employeeId) setInvitedEmployeeId({ token, employeeId, employerId: employer.employer_id, email });
+
     const invitationId = await InvitationModel.createInvitation(pool, {
       employer_id: employer.employer_id,
       email_address: email,
@@ -79,6 +104,16 @@ const processAddress = async (pool, jobId, userId, employer, invitee) => {
       classification_id: classificationId,
       affiliate_id: affiliateId,
     });
+
+    // A person invited again leaves their old invitation's ID behind: let it go. Nothing depends
+    // on it, so a failure here is not the invitation's.
+    if (employeeId) {
+      try {
+        supersedeInvitedEmployeeIds({ token, employerId: employer.employer_id, email });
+      } catch (error) {
+        console.error("Could not release an earlier invitation's employee ID:", { email, error });
+      }
+    }
 
     try {
       await sendWithRetry({
@@ -108,6 +143,9 @@ const processAddress = async (pool, jobId, userId, employer, invitee) => {
       return "email_failed";
     }
   } catch (error) {
+    // the invitation was not made (or the check before it failed): its ID, if kept, goes back
+    if (employeeId) clearInvitedEmployeeId(token);
+
     const number = error.number ?? error.originalError?.number;
 
     if (number === 50064) {
@@ -264,6 +302,7 @@ const sendInvitations = async (pool, userId, rows) => {
     classes,
     affiliates,
     classified: !creditCompanyOf(company.employer_id),
+    employeeIds: devStoreOn(),
   });
 
   const job = InvitationJobStore.createJob(userId, valid.length);
@@ -289,7 +328,8 @@ const getTemplate = async (pool, userId) => {
 
   return {
     fileName: invitationTemplateFileName(codes.company),
-    workbook: buildInvitationTemplate(codes),
+    // an Employee ID column only where the server can keep what HR writes in it
+    workbook: buildInvitationTemplate({ ...codes, employeeIds: devStoreOn() }),
   };
 };
 
@@ -398,6 +438,9 @@ const revokeInvitation = async (pool, userId, invitationId) => {
     throw new AppError("Invitation does not belong to your company", 403);
 
   await InvitationModel.revokeInvitation(pool, invitationId, userId)
+
+  // the employee ID HR gave it is free again
+  clearInvitedEmployeeId(invitation.token);
 };
 
 const resendInvitation = async (pool, userId, invitationId) => {

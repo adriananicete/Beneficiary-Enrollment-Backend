@@ -4,6 +4,7 @@ import { validateEnrollment } from '../middlewares/validateEnrollment.js';
 import { enrollmentTokenLimiter, mediumLimiter, referenceLimiter } from '../middlewares/rateLimiter.js';
 import { getPool } from '../config/db.js';
 import { createCreditSubmission } from '../gcli/creditSubmission.js';
+import { applyInvitedEmployeeId } from '../gcli/invitedEmployeeId.js';
 import { devStoreOn } from '../gcli/devStore.js';
 
 const router = express.Router();
@@ -24,9 +25,10 @@ router.get('/cities/:city_code/barangays', referenceLimiter, getBarangaysByCity)
 // A borrower of a company on the credit plan (src/gcli) is answered by creditSubmission,
 // which stores an application and passes any other request on to the usual submit. It does
 // nothing unless the dev store is on.
-router.post('/submit', mediumLimiter, enrollmentTokenLimiter, createCreditSubmission({ getPool }), validateEnrollment, submitEnrollment);
+// applyInvitedEmployeeId first: the employee ID HR gave in the invitation file is the enrollment's.
+router.post('/submit', mediumLimiter, enrollmentTokenLimiter, applyInvitedEmployeeId, createCreditSubmission({ getPool }), validateEnrollment, submitEnrollment);
 // A returned application, corrected on the same link. A route only while the dev store is on.
 if (devStoreOn())
-    router.put('/application', mediumLimiter, enrollmentTokenLimiter, createCreditSubmission({ getPool, resubmit: true }));
+    router.put('/application', mediumLimiter, enrollmentTokenLimiter, applyInvitedEmployeeId, createCreditSubmission({ getPool, resubmit: true }));
 
 export default router;

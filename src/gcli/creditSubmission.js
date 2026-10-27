@@ -17,6 +17,7 @@ import { validateZipCode } from "../utils/validateZipCode.js";
 import { applicationOfToken, submitApplication } from "./applications.js";
 import { creditCompanyOf, isCreditTemplate, planFieldsOf } from "./companies.js";
 import { devStoreOn } from "./devStore.js";
+import { invitedEmployeeId } from "./invitedEmployeeId.js";
 import { parseDay, wholeNumber } from "./loanRules.js";
 
 // The borrower's side of Group Credit Life (docs/backend-handoff.md 2.12 B): what the
@@ -119,8 +120,11 @@ export const invitationExtras = (invitation, token) => {
   if (!devStoreOn()) return {};
 
   const plan = planFieldsOf(invitation.employer_id);
+  // the employee ID HR gave in the invitation file, for the form to show filled in (null if none)
+  const employee_id_number = invitedEmployeeId(token);
+
   if (!isCreditTemplate(plan.plan_template))
-    return { plan_template: plan.plan_template, loan_limits: null };
+    return { plan_template: plan.plan_template, loan_limits: null, employee_id_number };
 
   const sent = applicationOfToken(token);
   if (sent && sent.status !== "returned") throw new AppError("You have already submitted an enrollment", 409);
@@ -129,6 +133,7 @@ export const invitationExtras = (invitation, token) => {
     plan_template: plan.plan_template,
     loan_limits: plan.loan_limits,
     creditor_name: invitation.company_name,
+    employee_id_number,
   };
 };
 

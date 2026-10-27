@@ -28,7 +28,9 @@ const dropdown = (column, count, what) => ({
 // Text, so Excel keeps a code like "1" or an email as typed.
 const TEXT = { numFmt: "@" };
 
-export const buildInvitationTemplate = ({ company, classes, affiliates }) => {
+// `employeeIds` adds an optional Employee ID column, for a server that keeps what is written in
+// it (src/gcli/invitedEmployeeId.js): the employee then finds it filled in on their form.
+export const buildInvitationTemplate = ({ company, classes, affiliates, employeeIds = false }) => {
   const workbook = new ExcelJS.Workbook();
   const hasAffiliates = affiliates.length > 0;
 
@@ -43,6 +45,11 @@ export const buildInvitationTemplate = ({ company, classes, affiliates }) => {
     { header: "Classification", key: "classification", width: 20, style: TEXT },
     ...(hasAffiliates
       ? [{ header: "Affiliate", key: "affiliate", width: 20, style: TEXT }]
+      : []),
+    // Last, so the columns the dropdowns below are drawn on keep their places. Text, so an ID
+    // like 00123 keeps its zeros.
+    ...(employeeIds
+      ? [{ header: "Employee ID", key: "employee_id", width: 20, style: TEXT }]
       : []),
   ];
   sheet.getRow(1).font = { bold: true };

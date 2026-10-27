@@ -43,7 +43,7 @@ describe("the store", () => {
   const store = useDevStore();
 
   test("starts empty when there is no file, and writes none until something changes", () => {
-    assert.deepEqual(readStore(), { lastApplication: 0, companies: {}, applications: [] });
+    assert.deepEqual(readStore(), { lastApplication: 0, companies: {}, applications: [], invitedEmployeeIds: {} });
     assert.equal(fs.existsSync(store.file), false);
   });
 

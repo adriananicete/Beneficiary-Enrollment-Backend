@@ -124,7 +124,7 @@ describe("what the invitation lookup adds", () => {
   });
 
   test("a standard company says so, with no limits", () => {
-    assert.deepEqual(invitationExtras(invitationRow({ employer_id: "9" }), TOKEN), { plan_template: "G-TLI", loan_limits: null });
+    assert.deepEqual(invitationExtras(invitationRow({ employer_id: "9" }), TOKEN), { plan_template: "G-TLI", loan_limits: null, employee_id_number: null });
   });
 
   test("a credit company gives its limits and the creditor", () => {
@@ -134,6 +134,7 @@ describe("what the invitation lookup adds", () => {
       plan_template: "G-CLI",
       loan_limits: LIMITS,
       creditor_name: "Bluepoint Lending Corporation",
+      employee_id_number: null,
     });
   });
 

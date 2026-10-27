@@ -38,6 +38,9 @@ const emptyStore = () => ({
   // employer_id -> { plan_code, plan_desc, plan_template, loan_limits }
   companies: {},
   applications: [],
+  // invitation token (lower case) -> { employee_id_number, employer_id, email }: the employee ID
+  // HR gave in the invitation file, which the enrollment form then shows filled in.
+  invitedEmployeeIds: {},
 });
 
 let loaded = null;
