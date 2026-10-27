@@ -11,6 +11,7 @@ import authRoutes from './src/routes/authRoutes.js';
 import enrollmentRoutes from './src/routes/enrollmentRoutes.js';
 import adminRoutes from './src/routes/adminRoutes.js';
 import employeeRoutes from './src/routes/employeeRoutes.js';
+import { listenOnFreePort } from './src/utils/listenOnFreePort.js';
 import { verifyToken } from './src/middlewares/verifyToken.js';
 import { createGcliRoutes } from './src/gcli/routes.js';
 import { assertDevStoreAllowed, devStoreOn } from './src/gcli/devStore.js';
@@ -131,4 +132,18 @@ setRealtimeServer(
     createSocketServer({ httpServer: server, getPool, verifySession: AuthService.verifySession }),
 );
 
-server.listen(config.PORT, "0.0.0.0", () => console.log(`Server is running on port ${config.PORT}`));
+// While developing, a port that is taken is not fatal: the next free one is used and said out
+// loud, so a second `npm run dev` comes up beside the first instead of crashing. In production
+// it stays the error it was, because the proxy in front expects this port.
+const port = await listenOnFreePort(server, {
+    port: config.PORT,
+    host: "0.0.0.0",
+    fallback: config.nodeEnv !== 'production',
+});
+
+if (port === Number(config.PORT)) console.log(`Server is running on port ${port}`);
+else
+    console.warn(
+        `Port ${config.PORT} is already in use, so the server is running on port ${port} instead. ` +
+        `Point the frontend at it with VITE_API_PROXY_TARGET=http://127.0.0.1:${port}.`,
+    );
