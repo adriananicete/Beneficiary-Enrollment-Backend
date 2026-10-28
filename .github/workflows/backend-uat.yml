@@ -27,3 +27,28 @@ jobs:
 
       - name: Run backend checks
         run: npm run verify
+
+  runner-check:
+    needs: verify
+    if: github.ref == 'refs/heads/uat-deployed'
+    runs-on: [self-hosted, Windows, X64, bes-backend-uat]
+
+    steps:
+      - name: Check deployment runner
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          whoami
+          Get-Service -Name 'BES-API-UAT' |
+            Select-Object Name, Status
+
+          if (-not (Test-Path 'F:\bes_backend_uat\server.js')) {
+            throw 'UAT backend server.js was not found.'
+          }
+
+          $probe = 'F:\Fixes\BES_Backend_CICD_Backups\runner-write-test.txt'
+          Set-Content -Path $probe -Value 'Runner write test'
+          Remove-Item -Path $probe
+
+          Write-Host 'Runner checks passed.'
