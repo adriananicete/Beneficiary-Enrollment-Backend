@@ -14,9 +14,9 @@ const { default: ScheduleService, scheduleOf, benefitChanges, classFieldsAfter }
 // transaction opens: how the rows become classes, which writes a change
 // means, and the refusals.
 
-const COMPANY = "usp_sel_employer_admin_by_id";
-const SCHEDULE = "usp_sel_classifications_admin";
-const TYPES = "usp_sel_benefit_types";
+const COMPANY = "bes.usp_sel_employer_admin_by_id";
+const SCHEDULE = "bes.usp_sel_classifications_admin";
+const TYPES = "bes.usp_sel_benefit_types";
 
 const ADMIN_ID = 1;
 
@@ -220,7 +220,7 @@ describe("ScheduleService — refusals before anything is written", () => {
     });
 
     assert.equal(result.classification_id, "1");
-    assert.ok(!calls.some((call) => /^usp_(ins|upd)_/.test(call.procedure ?? "")));
+    assert.ok(!calls.some((call) => /^bes\.usp_(ins|upd)_/.test(call.procedure ?? "")));
     assert.ok(!calls.some((call) => call.procedure === TYPES));
   });
 });

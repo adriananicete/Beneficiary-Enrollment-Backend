@@ -13,8 +13,8 @@ const { default: ClassificationService, classificationOf } = await import(
 // 11–20, with the same codes. Both lists here are one company's and nothing
 // else, and neither may carry an amount.
 
-const TOKEN = "usp_sel_enrollment_invitation_by_token";
-const CLASSES = "usp_sel_classifications_by_employer";
+const TOKEN = "bes.usp_sel_enrollment_invitation_by_token";
+const CLASSES = "bes.usp_sel_classifications_by_employer";
 const EMPLOYERS_BY_USER = "sec.us08_usp_sel_employers_by_user";
 
 const LINK = "a".repeat(64);

@@ -161,7 +161,7 @@ const resetPassword = async (pool, resetData) => {
   return result.rowsAffected[0];
 };
 
-// Keeps sec.us01_users in step with dbo.clients after an approved change.
+// Keeps sec.us01_users in step with bes.clients after an approved change.
 //
 // The procedure COALESCEs every field, so NULL means "leave alone" rather than
 // "clear". A middle name the employee cleared cannot be cleared here — see the

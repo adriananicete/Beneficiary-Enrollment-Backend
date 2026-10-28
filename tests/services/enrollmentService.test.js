@@ -20,11 +20,11 @@ const { sqlErrorMap } = await import("../../src/utils/sqlErrorMap.js");
 // end to end on 2026-09-04, when a duplicate beneficiary name answered 409 and
 // left nothing behind.
 
-const TOKEN = "usp_sel_enrollment_invitation_by_token";
-const EMPLOYERS = "usp_sel_employers";
-const CLASSIFICATIONS = "usp_sel_classifications_by_employer";
+const TOKEN = "bes.usp_sel_enrollment_invitation_by_token";
+const EMPLOYERS = "bes.usp_sel_employers";
+const CLASSIFICATIONS = "bes.usp_sel_classifications_by_employer";
 
-const BARANGAY_QUERY = /dbo\.barangay/;
+const BARANGAY_QUERY = /bes\.barangay/;
 const USERNAME_QUERY = /us01_users/;
 
 const validInvitation = (overrides = {}) => ({
@@ -382,8 +382,8 @@ describe("enrollmentService — the company's online age limit", () => {
 });
 
 describe("enrollmentService — reading an enrollment back", () => {
-  const DETAILS = "usp_get_insurance_enrollment_by_id";
-  const BENEFITS = "usp_get_enrollment_benefits_by_id";
+  const DETAILS = "bes.usp_get_insurance_enrollment_by_id";
+  const BENEFITS = "bes.usp_get_enrollment_benefits_by_id";
 
   test("returns the enrollment and its benefits together", async () => {
     const { pool, calls } = fakePool({

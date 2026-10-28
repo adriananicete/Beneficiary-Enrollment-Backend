@@ -145,7 +145,7 @@ describe("what the invitation lookup adds", () => {
 
   test("a link whose application was sent is 409, and a returned one opens again", async () => {
     savePlan("2", { plan: CREDIT_PLAN, loan_limits: LIMITS });
-    const { pool } = fakePool({ usp_sel_enrollment_invitation_by_token: [invitationRow()], usp_sel_employers: [{ employer_id: "2" }] }, [[/dbo\.barangay/, [{ one: 1 }]]]);
+    const { pool } = fakePool({ usp_sel_enrollment_invitation_by_token: [invitationRow()], usp_sel_employers: [{ employer_id: "2" }] }, [[/bes\.barangay/, [{ one: 1 }]]]);
     const next = makeNext();
     await createCreditSubmission({ getPool: async () => pool })(makeReq({ body: body() }), makeRes(), next);
 
@@ -166,7 +166,7 @@ describe("the submit of a credit company's borrower", () => {
         usp_sel_employers: employerActive ? [{ employer_id: "2" }, { employer_id: "9" }] : [{ employer_id: "9" }],
       },
       [
-        [/dbo\.barangay/, barangay ? [{ one: 1 }] : []],
+        [/bes\.barangay/, barangay ? [{ one: 1 }] : []],
         [/sec\.us01_users/, existingUser ? [{ one: 1 }] : []],
       ],
     );
@@ -188,9 +188,9 @@ describe("the submit of a credit company's borrower", () => {
     assert.deepEqual(res.body.data, { application_no: "GCLI-" + new Date().getFullYear() + "-0001", status: "pending" });
     assert.equal(readStore().applications.length, 1);
 
-    const written = calls.filter((call) => call.procedure && /^(usp_ins|usp_upd|usp_del|sec\.us01_usp_ins)/.test(call.procedure));
+    const written = calls.filter((call) => call.procedure && /^(bes\.usp_ins|bes\.usp_upd|bes\.usp_del|sec\.us01_usp_ins)/.test(call.procedure));
     assert.deepEqual(written, [], "no insert or update was sent");
-    for (const call of calls) assert.ok(/^usp_sel_/.test(call.procedure ?? "") || /^SELECT/.test(call.query ?? ""), `only reads: ${JSON.stringify(call)}`);
+    for (const call of calls) assert.ok(/^bes\.usp_sel_/.test(call.procedure ?? "") || /^SELECT/.test(call.query ?? ""), `only reads: ${JSON.stringify(call)}`);
   });
 
   test("passes a standard company's submit on to the usual enrollment", async () => {
@@ -286,7 +286,7 @@ describe("the submit of a credit company's borrower", () => {
     savePlan("2", { plan: CREDIT_PLAN, loan_limits: LIMITS });
     const { calls } = await run({ sent: body({ employer_id: "9" }) });
 
-    assert.equal(callTo(calls, "usp_sel_enrollment_invitation_by_token").inputs.token, TOKEN);
+    assert.equal(callTo(calls, "bes.usp_sel_enrollment_invitation_by_token").inputs.token, TOKEN);
     assert.equal(readStore().applications[0].employer_id, "2");
   });
 });

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { normaliseTinId, validateTinId } from "../../src/utils/validateTinId.js";
 
-// Taken from the 42 TINs in dbo.clients, read 2026-09-07. Both lengths were
+// Taken from the 42 TINs in bes.clients, read 2026-09-07. Both lengths were
 // already in use, so both have to keep working — this is not a new rule being
 // imposed on a clean column, it is a rule being fitted to data that exists.
 const NINE_DIGIT = ["147-852-963", "927-461-583", "543-453-566"];
@@ -16,7 +16,7 @@ describe("normaliseTinId", () => {
   });
 
   test("adds the dashes to a bare nine-digit TIN", () => {
-    // The one real row this fixes. `543453566` sits in dbo.clients today, and
+    // The one real row this fixes. `543453566` sits in bes.clients today, and
     // under the exact-string check behind 50009 it does not collide with
     // `543-453-566` — the same taxpayer could hold two client rows.
     assert.equal(normaliseTinId("543453566"), "543-453-566");

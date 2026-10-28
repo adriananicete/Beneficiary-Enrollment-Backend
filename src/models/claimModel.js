@@ -17,7 +17,7 @@ const getClaimTypes = async (pool, filedBy) => {
   const result = await pool
     .request()
     .input("filed_by", sql.VarChar(10), filedBy)
-    .execute("usp_sel_claim_types");
+    .execute("bes.usp_sel_claim_types");
 
   const [types = [], requirements = []] = result.recordsets ?? [];
 
@@ -37,7 +37,7 @@ const insertClaim = async (transaction, claim) => {
     .input("claim_type_id", sql.BigInt, claim.claim_type_id)
     .input("filed_by", sql.VarChar(50), claim.filed_by)
     .input("filed_by_role", sql.VarChar(20), claim.filed_by_role)
-    .execute("usp_ins_claim");
+    .execute("bes.usp_ins_claim");
 
   return result.recordset[0];
 };
@@ -57,7 +57,7 @@ const insertClaimDocument = async (transaction, document) => {
     .input("byte_size", sql.Int, document.byte_size)
     .input("sha256", sql.Char(64), document.sha256)
     .input("uploaded_by", sql.VarChar(50), document.uploaded_by)
-    .execute("usp_ins_claim_document");
+    .execute("bes.usp_ins_claim_document");
 
   return result.recordset[0]?.claim_document_id;
 };
@@ -68,7 +68,7 @@ const checkClaimRequirements = async (transaction, claimId) => {
   await transaction
     .request()
     .input("claim_id", sql.BigInt, claimId)
-    .execute("usp_chk_claim_requirements");
+    .execute("bes.usp_chk_claim_requirements");
 };
 
 // No role check and no scoping in the procedure. The caller passes the
@@ -77,7 +77,7 @@ const getClaimsByClient = async (pool, clientId) => {
   const result = await pool
     .request()
     .input("client_id", sql.BigInt, clientId)
-    .execute("usp_sel_claims_by_client");
+    .execute("bes.usp_sel_claims_by_client");
 
   return result.recordset;
 };
@@ -95,7 +95,7 @@ const getClaimById = async (pool, claimId, userId) => {
     .request()
     .input("claim_id", sql.BigInt, claimId)
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_sel_claim_by_id");
+    .execute("bes.usp_sel_claim_by_id");
 
   const [header = [], documents = [], requirements = []] = result.recordsets ?? [];
 
@@ -108,7 +108,7 @@ const getClaimDocument = async (pool, documentId, userId) => {
     .request()
     .input("claim_document_id", sql.BigInt, documentId)
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_sel_claim_document");
+    .execute("bes.usp_sel_claim_document");
 
   return result.recordset[0];
 };
@@ -122,7 +122,7 @@ const resubmitClaim = async (transaction, claimId, clientId) => {
     .request()
     .input("claim_id", sql.BigInt, claimId)
     .input("client_id", sql.BigInt, clientId)
-    .execute("usp_upd_claim_resubmit");
+    .execute("bes.usp_upd_claim_resubmit");
 };
 
 // HR's list. The procedure checks the role (50157), lets an Administrator
@@ -135,7 +135,7 @@ const getClaimsByUser = async (pool, userId, claimStatus, paging = {}) => {
     .input("claim_status", sql.VarChar(20), claimStatus ?? null)
     .input("page", sql.Int, paging.page)
     .input("page_size", sql.Int, paging.pageSize)
-    .execute("usp_sel_claims_by_user");
+    .execute("bes.usp_sel_claims_by_user");
 
   return result.recordset;
 };
@@ -146,7 +146,7 @@ const getPendingCountByUser = async (pool, userId) => {
   const result = await pool
     .request()
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_sel_claims_pending_count_by_user");
+    .execute("bes.usp_sel_claims_pending_count_by_user");
 
   return result.recordset[0]?.pending_count ?? 0;
 };
@@ -162,7 +162,7 @@ const reviewClaim = async (pool, reviewData) => {
     .input("us01_user_id", sql.BigInt, reviewData.us01_user_id)
     .input("decision", sql.VarChar(20), reviewData.decision)
     .input("review_remarks", sql.VarChar(500), reviewData.review_remarks)
-    .execute("usp_upd_claim_review");
+    .execute("bes.usp_upd_claim_review");
 
   return result.recordset[0];
 };
@@ -177,7 +177,7 @@ const fileDeathClaim = async (transaction, claimId, userId) => {
     .request()
     .input("claim_id", sql.BigInt, claimId)
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_upd_claim_file_death");
+    .execute("bes.usp_upd_claim_file_death");
 };
 
 // Closes an APPROVED death claim and the employee's account, in one
@@ -188,7 +188,7 @@ const closeClaim = async (pool, claimId, userId) => {
     .request()
     .input("claim_id", sql.BigInt, claimId)
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_upd_claim_close");
+    .execute("bes.usp_upd_claim_close");
 
   return result.recordset[0];
 };
@@ -202,7 +202,7 @@ const cancelClaim = async (pool, cancelData) => {
     .input("client_id", sql.BigInt, cancelData.client_id)
     .input("cancelled_by", sql.VarChar(50), cancelData.cancelled_by)
     .input("cancel_remarks", sql.VarChar(500), cancelData.cancel_remarks)
-    .execute("usp_upd_claim_cancel");
+    .execute("bes.usp_upd_claim_cancel");
 };
 
 // Who files a claim type: 'HR' for the death claim, 'EMPLOYEE' for the rest, and
@@ -214,7 +214,7 @@ const getClaimTypeFiler = async (pool, claimTypeId) => {
   const result = await pool
     .request()
     .input("claim_type_id", sql.BigInt, claimTypeId)
-    .query("SELECT filed_by FROM dbo.claim_types WHERE claim_type_id = @claim_type_id");
+    .query("SELECT filed_by FROM bes.claim_types WHERE claim_type_id = @claim_type_id");
 
   return result.recordset[0]?.filed_by;
 };

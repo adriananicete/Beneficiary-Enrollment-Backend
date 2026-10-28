@@ -222,7 +222,7 @@ export const buildCertificate = async (pool, clientId) =>
 // HR's resend button. Unlike tryBuildCertificate below, nothing here is
 // swallowed: HR asked for it and has to be told whether the employee got it.
 //
-// It goes to the address on the enrollment record — dbo.clients — which is the
+// It goes to the address on the enrollment record — bes.clients — which is the
 // record the certificate describes. An approved email change writes it there
 // first and syncUserRecord carries it to the user account, so the two agree in
 // every case that has worked as designed.

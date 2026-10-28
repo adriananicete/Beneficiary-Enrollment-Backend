@@ -9,13 +9,13 @@ const insertAgreements = async (pool, clientId, agreementData) => {
     .input('ip_address', sql.VarChar(45), agreementData.ip_address)
     .input('user_agent', sql.VarChar(500), agreementData.user_agent)
     .input('created_by', sql.VarChar, agreementData.created_by)
-    .execute('usp_ins_agreements')
+    .execute('bes.usp_ins_agreements')
 };
 
 const getClientAgreements = async (pool, clientId) => {
     const result = await pool.request()
     .input('client_id', sql.BigInt, clientId)
-    .execute('usp_sel_client_agreement');
+    .execute('bes.usp_sel_client_agreement');
 
     return result.recordset
 }

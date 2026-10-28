@@ -96,7 +96,7 @@ describe("model bindings — the types that destroy a value when they are wrong"
       created_by: "system",
     });
 
-    const { barangay_id } = callTo(calls, "usp_ins_client_address").bindings;
+    const { barangay_id } = callTo(calls, "bes.usp_ins_client_address").bindings;
 
     assert.equal(declarationOf(barangay_id.type), "varchar");
     assert.notEqual(declarationOf(barangay_id.type), "bigint");
@@ -122,7 +122,7 @@ describe("model bindings — the types that destroy a value when they are wrong"
 
     await ClientModel.insertClient(pool, { height: 172.55, weight: 68.45 });
 
-    const { height, weight } = callTo(calls, "usp_ins_client").bindings;
+    const { height, weight } = callTo(calls, "bes.usp_ins_client").bindings;
 
     for (const [name, binding] of [["height", height], ["weight", weight]]) {
       assert.equal(declarationOf(binding.type), "decimal", `${name} is not a decimal`);
@@ -161,7 +161,7 @@ describe("model bindings — the types that destroy a value when they are wrong"
       created_by: "system",
     });
 
-    const { coverage_percent } = callTo(calls, "usp_ins_beneficiary").bindings;
+    const { coverage_percent } = callTo(calls, "bes.usp_ins_beneficiary").bindings;
 
     assert.equal(coverage_percent.type.precision, 5);
     assert.equal(coverage_percent.type.scale, 2);
@@ -179,7 +179,7 @@ describe("model bindings — the types that destroy a value when they are wrong"
       sha256: "a".repeat(64),
     });
 
-    const { content, sha256 } = callTo(calls, "dbo.usp_ins_client_signature").bindings;
+    const { content, sha256 } = callTo(calls, "bes.usp_ins_client_signature").bindings;
 
     assert.equal(declarationOf(content.type), "varbinary");
     assert.notEqual(declarationOf(content.type), "nvarchar");
@@ -249,11 +249,11 @@ describe("model bindings — output parameters", () => {
   // produced. The caller uses the value, so a missing output is a silent
   // undefined rather than an error.
   const insertsReturningAnId = [
-    ["insertClient", (pool) => ClientModel.insertClient(pool, {}), "usp_ins_client", "client_id"],
-    ["insertClientAddress", (pool) => AddressModel.insertClientAddress(pool, 75, {}), "usp_ins_client_address", "client_address_id"],
-    ["insertBeneficiary", (pool) => BeneficiaryModel.insertBeneficiary(pool, {}), "usp_ins_beneficiary", "beneficiary_id"],
+    ["insertClient", (pool) => ClientModel.insertClient(pool, {}), "bes.usp_ins_client", "client_id"],
+    ["insertClientAddress", (pool) => AddressModel.insertClientAddress(pool, 75, {}), "bes.usp_ins_client_address", "client_address_id"],
+    ["insertBeneficiary", (pool) => BeneficiaryModel.insertBeneficiary(pool, {}), "bes.usp_ins_beneficiary", "beneficiary_id"],
     ["createUser", (pool) => UserModel.createUser(pool, {}), "sec.us01_usp_ins_users", "us01_user_id"],
-    ["createInvitation", (pool) => InvitationModel.createInvitation(pool, {}), "usp_ins_enrollment_invitation", "invitation_id"],
+    ["createInvitation", (pool) => InvitationModel.createInvitation(pool, {}), "bes.usp_ins_enrollment_invitation", "invitation_id"],
   ];
 
   for (const [name, call, procedure, output] of insertsReturningAnId) {
@@ -308,7 +308,7 @@ describe("model bindings — output parameters", () => {
     await SignatureModel.insertSignature(pool, {});
 
     assert.ok(
-      callTo(calls, "dbo.usp_ins_client_signature").outputs.signature_id,
+      callTo(calls, "bes.usp_ins_client_signature").outputs.signature_id,
       "the call omits a mandatory parameter and SQL Server will refuse it",
     );
   });
@@ -352,7 +352,7 @@ describe("model bindings — output parameters", () => {
 
     await EmployerModel.updateEmployerSettings(pool, { employerId: 1, sendCocEmail: false, messagesEnabled: true, userId: 3 });
 
-    const { bindings } = callTo(calls, "usp_upd_employer_settings");
+    const { bindings } = callTo(calls, "bes.usp_upd_employer_settings");
 
     assert.equal(declarationOf(bindings.send_coc_email.type), declarationOf(sql.Bit));
     assert.equal(bindings.send_coc_email.value, false);
@@ -406,21 +406,21 @@ describe("model bindings — output parameters", () => {
 // result set and declare no OUTPUT parameter (sys.parameters, no rows).
 describe("model bindings — claims", () => {
   const CLAIM_CALLS = [
-    ["getClaimTypes", (pool) => ClaimModel.getClaimTypes(pool, "EMPLOYEE"), "usp_sel_claim_types"],
-    ["insertClaim", (pool) => ClaimModel.insertClaim(pool, {}), "usp_ins_claim"],
-    ["insertClaimDocument", (pool) => ClaimModel.insertClaimDocument(pool, {}), "usp_ins_claim_document"],
-    ["checkClaimRequirements", (pool) => ClaimModel.checkClaimRequirements(pool, 30), "usp_chk_claim_requirements"],
-    ["getClaimsByClient", (pool) => ClaimModel.getClaimsByClient(pool, 75), "usp_sel_claims_by_client"],
-    ["getClaimById", (pool) => ClaimModel.getClaimById(pool, 30, 12), "usp_sel_claim_by_id"],
-    ["getClaimDocument", (pool) => ClaimModel.getClaimDocument(pool, 9, 12), "usp_sel_claim_document"],
-    ["cancelClaim", (pool) => ClaimModel.cancelClaim(pool, {}), "usp_upd_claim_cancel"],
-    ["resubmitClaim", (pool) => ClaimModel.resubmitClaim(pool, 30, 75), "usp_upd_claim_resubmit"],
-    ["getClaimsByUser", (pool) => ClaimModel.getClaimsByUser(pool, 3, "PENDING", { page: 1, pageSize: 25 }), "usp_sel_claims_by_user"],
-    ["getPendingCountByUser", (pool) => ClaimModel.getPendingCountByUser(pool, 3), "usp_sel_claims_pending_count_by_user"],
-    ["reviewClaim", (pool) => ClaimModel.reviewClaim(pool, {}), "usp_upd_claim_review"],
+    ["getClaimTypes", (pool) => ClaimModel.getClaimTypes(pool, "EMPLOYEE"), "bes.usp_sel_claim_types"],
+    ["insertClaim", (pool) => ClaimModel.insertClaim(pool, {}), "bes.usp_ins_claim"],
+    ["insertClaimDocument", (pool) => ClaimModel.insertClaimDocument(pool, {}), "bes.usp_ins_claim_document"],
+    ["checkClaimRequirements", (pool) => ClaimModel.checkClaimRequirements(pool, 30), "bes.usp_chk_claim_requirements"],
+    ["getClaimsByClient", (pool) => ClaimModel.getClaimsByClient(pool, 75), "bes.usp_sel_claims_by_client"],
+    ["getClaimById", (pool) => ClaimModel.getClaimById(pool, 30, 12), "bes.usp_sel_claim_by_id"],
+    ["getClaimDocument", (pool) => ClaimModel.getClaimDocument(pool, 9, 12), "bes.usp_sel_claim_document"],
+    ["cancelClaim", (pool) => ClaimModel.cancelClaim(pool, {}), "bes.usp_upd_claim_cancel"],
+    ["resubmitClaim", (pool) => ClaimModel.resubmitClaim(pool, 30, 75), "bes.usp_upd_claim_resubmit"],
+    ["getClaimsByUser", (pool) => ClaimModel.getClaimsByUser(pool, 3, "PENDING", { page: 1, pageSize: 25 }), "bes.usp_sel_claims_by_user"],
+    ["getPendingCountByUser", (pool) => ClaimModel.getPendingCountByUser(pool, 3), "bes.usp_sel_claims_pending_count_by_user"],
+    ["reviewClaim", (pool) => ClaimModel.reviewClaim(pool, {}), "bes.usp_upd_claim_review"],
     // DBA request 21, read back 2026-10-12.
-    ["fileDeathClaim", (pool) => ClaimModel.fileDeathClaim(pool, 40, 3), "usp_upd_claim_file_death"],
-    ["closeClaim", (pool) => ClaimModel.closeClaim(pool, 40, 3), "usp_upd_claim_close"],
+    ["fileDeathClaim", (pool) => ClaimModel.fileDeathClaim(pool, 40, 3), "bes.usp_upd_claim_file_death"],
+    ["closeClaim", (pool) => ClaimModel.closeClaim(pool, 40, 3), "bes.usp_upd_claim_close"],
   ];
 
   for (const [name, call, procedure] of CLAIM_CALLS)
@@ -440,7 +440,7 @@ describe("model bindings — claims", () => {
 
     await ClaimModel.insertClaimDocument(pool, { content: Buffer.from("%PDF-"), file_name: "Peña.pdf" });
 
-    const { bindings } = callTo(calls, "usp_ins_claim_document");
+    const { bindings } = callTo(calls, "bes.usp_ins_claim_document");
 
     assert.equal(declarationOf(bindings.content.type), "varbinary");
     assert.equal(declarationOf(bindings.file_name.type), "nvarchar");
@@ -454,7 +454,7 @@ describe("model bindings — claims", () => {
 
     await ClaimModel.insertClaim(pool, { client_id: "75", claim_type_id: "1", filed_by: "12", filed_by_role: "Employee" });
 
-    const { bindings } = callTo(calls, "usp_ins_claim");
+    const { bindings } = callTo(calls, "bes.usp_ins_claim");
 
     assert.equal(declarationOf(bindings.client_id.type), declarationOf(sql.BigInt));
     assert.equal(declarationOf(bindings.claim_type_id.type), declarationOf(sql.BigInt));
@@ -483,7 +483,7 @@ describe("model bindings — claims", () => {
 
     await ClaimModel.reviewClaim(pool, { claim_id: "30", us01_user_id: 3, decision: "RETURNED", review_remarks: "x" });
 
-    const { bindings } = callTo(calls, "usp_upd_claim_review");
+    const { bindings } = callTo(calls, "bes.usp_upd_claim_review");
 
     assert.equal(declarationOf(bindings.claim_id.type), declarationOf(sql.BigInt));
     assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
@@ -504,8 +504,8 @@ describe("model bindings — claims", () => {
 // DBA request 21, read back 2026-10-12. No OUTPUT parameters.
 describe("model bindings — deceased status", () => {
   for (const [name, call, procedure] of [
-    ["markDeceased", (pool) => DeathModel.markDeceased(pool, { clientId: "75", dateOfDeath: "2026-10-01", userId: 3 }), "usp_upd_client_death"],
-    ["undoDeceased", (pool) => DeathModel.undoDeceased(pool, { clientId: "75", userId: 1 }), "usp_del_client_death"],
+    ["markDeceased", (pool) => DeathModel.markDeceased(pool, { clientId: "75", dateOfDeath: "2026-10-01", userId: 3 }), "bes.usp_upd_client_death"],
+    ["undoDeceased", (pool) => DeathModel.undoDeceased(pool, { clientId: "75", userId: 1 }), "bes.usp_del_client_death"],
   ])
     test(`${name} calls ${procedure} and declares no output`, async () => {
       const { pool, calls } = anyProcedure();
@@ -523,7 +523,7 @@ describe("model bindings — deceased status", () => {
 
     await DeathModel.markDeceased(pool, { clientId: "75", dateOfDeath: "2026-10-01", userId: 3 });
 
-    const { bindings } = callTo(calls, "usp_upd_client_death");
+    const { bindings } = callTo(calls, "bes.usp_upd_client_death");
 
     assert.equal(declarationOf(bindings.date_of_death.type), "date");
     assert.equal(bindings.date_of_death.value, "2026-10-01");
@@ -535,12 +535,12 @@ describe("model bindings — deceased status", () => {
 // DBA request 22, read back 2026-10-12. No OUTPUT parameters.
 describe("model bindings — messaging", () => {
   const MESSAGE_CALLS = [
-    ["openConversation", (pool) => MessageModel.openConversation(pool, 12), "usp_ins_conversation"],
-    ["insertMessage", (pool) => MessageModel.insertMessage(pool, { conversationId: 7, userId: 12, body: "hi" }), "usp_ins_message"],
-    ["getConversationsByUser", (pool) => MessageModel.getConversationsByUser(pool, 3, { page: 1, pageSize: 25 }), "usp_sel_conversations_by_user"],
-    ["getConversationById", (pool) => MessageModel.getConversationById(pool, 7, 12), "usp_sel_conversation_by_id"],
-    ["markConversationRead", (pool) => MessageModel.markConversationRead(pool, 7, 12, "120"), "usp_upd_conversation_read"],
-    ["getUnreadCountByUser", (pool) => MessageModel.getUnreadCountByUser(pool, 12), "usp_sel_conversation_unread_count_by_user"],
+    ["openConversation", (pool) => MessageModel.openConversation(pool, 12), "bes.usp_ins_conversation"],
+    ["insertMessage", (pool) => MessageModel.insertMessage(pool, { conversationId: 7, userId: 12, body: "hi" }), "bes.usp_ins_message"],
+    ["getConversationsByUser", (pool) => MessageModel.getConversationsByUser(pool, 3, { page: 1, pageSize: 25 }), "bes.usp_sel_conversations_by_user"],
+    ["getConversationById", (pool) => MessageModel.getConversationById(pool, 7, 12), "bes.usp_sel_conversation_by_id"],
+    ["markConversationRead", (pool) => MessageModel.markConversationRead(pool, 7, 12, "120"), "bes.usp_upd_conversation_read"],
+    ["getUnreadCountByUser", (pool) => MessageModel.getUnreadCountByUser(pool, 12), "bes.usp_sel_conversation_unread_count_by_user"],
   ];
 
   for (const [name, call, procedure] of MESSAGE_CALLS)
@@ -561,7 +561,7 @@ describe("model bindings — messaging", () => {
 
     await MessageModel.insertMessage(pool, { conversationId: 7, userId: 12, body: "Salamat po 🙂" });
 
-    const { body } = callTo(calls, "usp_ins_message").bindings;
+    const { body } = callTo(calls, "bes.usp_ins_message").bindings;
 
     assert.equal(declarationOf(body.type), "nvarchar");
     assert.equal(body.type.length, 4000);
@@ -574,7 +574,7 @@ describe("model bindings — messaging", () => {
 
     await MessageModel.openConversation(pool, 12);
 
-    assert.equal(callTo(calls, "usp_ins_conversation").inputs.client_id, null);
+    assert.equal(callTo(calls, "bes.usp_ins_conversation").inputs.client_id, null);
   });
 
   test("the cursor reaches the procedure, and an empty answer is a null conversation", async () => {
@@ -584,7 +584,7 @@ describe("model bindings — messaging", () => {
 
     assert.deepEqual(result, { conversation: null, messages: [], hasMore: false });
 
-    const { inputs, bindings } = callTo(calls, "usp_sel_conversation_by_id");
+    const { inputs, bindings } = callTo(calls, "bes.usp_sel_conversation_by_id");
 
     assert.equal(inputs.before_message_id, "120");
     assert.equal(inputs.limit, 20);
@@ -641,7 +641,7 @@ describe("model bindings — the invitation's class and affiliate", () => {
       employer_id: "5", email_address: "ana@abcc.com.ph", token: "b".repeat(64), created_by: 3,
     });
 
-    const [assigned, bare] = calls.filter((call) => call.procedure === "usp_ins_enrollment_invitation");
+    const [assigned, bare] = calls.filter((call) => call.procedure === "bes.usp_ins_enrollment_invitation");
 
     for (const field of ["classification_id", "affiliate_id"])
       assert.equal(declarationOf(assigned.bindings[field].type), declarationOf(sql.BigInt), field);
@@ -660,7 +660,7 @@ describe("model bindings — the invitation's class and affiliate", () => {
     await EmployerModel.insertClientEmployer(pool, { client_id: 9, employer_id: "5", position_title: "Clerk", is_current: true, affiliate_id: "7" });
     await EmployerModel.insertClientEmployer(pool, { client_id: 9, employer_id: "1", position_title: "Clerk", is_current: true });
 
-    const [assigned, bare] = calls.filter((call) => call.procedure === "usp_ins_client_employer");
+    const [assigned, bare] = calls.filter((call) => call.procedure === "bes.usp_ins_client_employer");
 
     assert.equal(declarationOf(assigned.bindings.affiliate_id.type), declarationOf(sql.BigInt));
     assert.equal(assigned.inputs.affiliate_id, "7");

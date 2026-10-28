@@ -80,7 +80,7 @@ export const sqlErrorMap = {
     // usp_ins_client, added by the DBA on 2026-09-07 at our request.
     //
     // Before it existed, a duplicate SSS number was not refused by the
-    // procedure at all — dbo.clients has a UNIQUE index on sss_gsis_no and
+    // procedure at all — bes.clients has a UNIQUE index on sss_gsis_no and
     // nothing checked it, so the caller got SQL Server's own 2627, which this
     // file can only render as "Duplicate record". That message names no field,
     // so the employee had nothing to act on.

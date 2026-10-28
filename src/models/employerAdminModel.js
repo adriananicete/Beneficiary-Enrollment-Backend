@@ -24,7 +24,7 @@ const bindCompany = (request, company) =>
 const getCompanies = async (pool, userId) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
-    .execute('usp_sel_employers_admin');
+    .execute('bes.usp_sel_employers_admin');
 
     return result.recordset;
 };
@@ -34,7 +34,7 @@ const getCompanyById = async (pool, userId, employerId) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
     .input('employer_id', sql.BigInt, employerId)
-    .execute('usp_sel_employer_admin_by_id');
+    .execute('bes.usp_sel_employer_admin_by_id');
 
     return result.recordset[0];
 };
@@ -47,7 +47,7 @@ const createCompany = async (pool, userId, company) => {
         company,
     )
     .input('created_by', sql.VarChar(50), String(userId))
-    .execute('usp_ins_employer');
+    .execute('bes.usp_ins_employer');
 
     return result.recordset[0].employer_id;
 };
@@ -62,7 +62,7 @@ const updateCompany = async (pool, userId, employerId, company) => {
         company,
     )
     .input('modified_by', sql.VarChar(50), String(userId))
-    .execute('usp_upd_employer');
+    .execute('bes.usp_upd_employer');
 
     return result.recordset[0].employer_id;
 };
@@ -75,7 +75,7 @@ const deleteCompany = async (pool, userId, employerId) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
     .input('employer_id', sql.BigInt, employerId)
-    .execute('usp_del_employer');
+    .execute('bes.usp_del_employer');
 
     return result.recordset[0].employer_id;
 };

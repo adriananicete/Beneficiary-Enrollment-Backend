@@ -1,7 +1,7 @@
 import { devStoreOn, readStore, update } from "./devStore.js";
 
 // The employee ID HR gives in the invitation file (docs: the Employee ID column of the
-// template). dbo.enrollment_invitations has no column for it yet, so it is kept in the dev
+// template). bes.enrollment_invitations has no column for it yet, so it is kept in the dev
 // store, by the invitation's token, for as long as the dev store is on. The employee then
 // finds it filled in on the enrollment form, and cannot change it: the server writes it over
 // whatever the form sends, as it does for the class and the affiliate HR assigned.

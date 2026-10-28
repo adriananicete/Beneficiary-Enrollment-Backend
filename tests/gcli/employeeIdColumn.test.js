@@ -136,7 +136,7 @@ describe("a bulk send with employee IDs", () => {
   const store = useDevStore();
 
   const EMPLOYERS = "sec.us08_usp_sel_employers_by_user";
-  const INSERT = "usp_ins_enrollment_invitation";
+  const INSERT = "bes.usp_ins_enrollment_invitation";
   const answers = {
     [EMPLOYERS]: [company],
     usp_sel_classifications_by_employer: classes,
@@ -274,7 +274,7 @@ describe("a bulk send with employee IDs", () => {
     });
     await InvitationService.revokeInvitation(pool, 41, 77);
 
-    assert.ok(calls.some((call) => call.procedure === "usp_del_enrollment_invitation"));
+    assert.ok(calls.some((call) => call.procedure === "bes.usp_del_enrollment_invitation"));
     assert.equal(invitedEmployeeId(token), null);
     assert.equal(
       (await sendForReal([row("jun@abcc.example", "E-7")])).job.results[0].status,

@@ -51,7 +51,7 @@ describe("getPlans", () => {
     await getPlans(pool);
 
     assert.equal(calls.length, 1);
-    assert.match(calls[0].query, /^SELECT .* FROM dbo\.ref_plans/);
+    assert.match(calls[0].query, /^SELECT .* FROM bes\.ref_plans/);
   });
 });
 

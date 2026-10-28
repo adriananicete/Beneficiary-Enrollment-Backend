@@ -60,7 +60,7 @@ describe("a bulk send for a credit company", () => {
   useDevStore();
 
   const EMPLOYERS = "sec.us08_usp_sel_employers_by_user";
-  const INSERT = "usp_ins_enrollment_invitation";
+  const INSERT = "bes.usp_ins_enrollment_invitation";
 
   const answers = {
     [EMPLOYERS]: [{ employer_id: "5", company_code: "ABCC", company_name: "Abacus Book and Card Corporation" }],

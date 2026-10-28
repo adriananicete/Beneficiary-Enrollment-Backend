@@ -4,7 +4,7 @@ import { devStoreOn, readStore, update } from "./devStore.js";
 import { limitsOf, limitsProblem } from "./loanRules.js";
 
 // A company's plan and loan limits (docs/backend-handoff.md 2.12 A), kept in the dev
-// store because dbo.employers has no plan column. A company with nothing stored is on
+// store because bes.employers has no plan column. A company with nothing stored is on
 // the standard plan, as every company is today.
 
 export const CREDIT_TEMPLATE = "G-CLI";

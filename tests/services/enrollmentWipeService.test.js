@@ -11,9 +11,9 @@ const { default: EnrollmentWipeService } = await import("../../src/services/enro
 // called: which company, whether the caller may, and whether the typed code
 // matches. Every refusal below leaves the procedure uncalled.
 
-const WIPE = "usp_del_company_enrollees";
+const WIPE = "bes.usp_del_company_enrollees";
 const EMPLOYERS_BY_USER = "sec.us08_usp_sel_employers_by_user";
-const COMPANY = "usp_sel_employer_admin_by_id";
+const COMPANY = "bes.usp_sel_employer_admin_by_id";
 
 const HR = { user_id: 3, role_name: "HR" };
 const ADMIN = { user_id: 1, role_name: "Administrator" };

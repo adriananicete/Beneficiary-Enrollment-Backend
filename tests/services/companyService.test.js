@@ -13,11 +13,11 @@ const { default: CompanyService, companyOf } = await import(
 // is what this side decides: the fields that leave, the 404, and how a PATCH
 // becomes the whole record the procedure replaces.
 
-const LIST = "usp_sel_employers_admin";
-const BY_ID = "usp_sel_employer_admin_by_id";
-const INSERT = "usp_ins_employer";
-const UPDATE = "usp_upd_employer";
-const DELETE = "usp_del_employer";
+const LIST = "bes.usp_sel_employers_admin";
+const BY_ID = "bes.usp_sel_employer_admin_by_id";
+const INSERT = "bes.usp_ins_employer";
+const UPDATE = "bes.usp_upd_employer";
+const DELETE = "bes.usp_del_employer";
 
 const ADMIN_ID = 1;
 

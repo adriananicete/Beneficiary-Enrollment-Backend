@@ -67,7 +67,7 @@ describe("a company with the dev store on", () => {
 
     const company = await CompanyService.createCompany(fake, 1, { company_code: "Bluepoint" }, { plan: CREDIT_PLAN, loan_limits: LIMITS });
 
-    assert.ok(callTo(calls, "usp_ins_employer"));
+    assert.ok(callTo(calls, "bes.usp_ins_employer"));
     assert.equal(company.plan_code, "GCLIP");
     assert.deepEqual(company.loan_limits, LIMITS);
     assert.deepEqual(readStore().companies["5"].loan_limits, LIMITS);
@@ -85,7 +85,7 @@ describe("a company with the dev store on", () => {
     const { pool: fake, calls } = pool();
 
     await assert.rejects(CompanyService.createCompany(fake, 1, {}, { loan_limits: LIMITS }), { statusCode: 400 });
-    assert.equal(callTo(calls, "usp_ins_employer"), undefined);
+    assert.equal(callTo(calls, "bes.usp_ins_employer"), undefined);
   });
 
   test("a change of limits alone leaves the company row alone", async () => {
@@ -94,7 +94,7 @@ describe("a company with the dev store on", () => {
 
     const company = await CompanyService.updateCompany(fake, 1, "5", {}, { loan_limits: { ...LIMITS, max_loan: 4000000 } });
 
-    assert.equal(callTo(calls, "usp_upd_employer"), undefined, "no write to the database");
+    assert.equal(callTo(calls, "bes.usp_upd_employer"), undefined, "no write to the database");
     assert.equal(company.loan_limits.max_loan, 4000000);
   });
 
@@ -104,7 +104,7 @@ describe("a company with the dev store on", () => {
 
     await CompanyService.updateCompany(fake, 1, "5", { work_address: "Ortigas" }, { loan_limits: { ...LIMITS, max_term_months: 48 } });
 
-    assert.equal(callTo(calls, "usp_upd_employer").inputs.work_address, "Ortigas");
+    assert.equal(callTo(calls, "bes.usp_upd_employer").inputs.work_address, "Ortigas");
     assert.equal(readStore().companies["5"].loan_limits.max_term_months, 48);
   });
 
@@ -115,7 +115,7 @@ describe("a company with the dev store on", () => {
       CompanyService.updateCompany(fake, 1, "5", { work_address: "Ortigas" }, { plan: CREDIT_PLAN }),
       { statusCode: 409 },
     );
-    assert.equal(callTo(calls, "usp_upd_employer"), undefined);
+    assert.equal(callTo(calls, "bes.usp_upd_employer"), undefined);
     assert.deepEqual(readStore().companies, {});
   });
 

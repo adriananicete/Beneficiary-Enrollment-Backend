@@ -5,7 +5,7 @@ import { makeNext, makeReq, makeRes } from "../helpers/http.js";
 import { validateCompanyChanges, validateNewCompany } from "../../src/middlewares/validateCompany.js";
 
 // The Administrator's company form, branch 2 of the onboarding effort. Widths
-// are the dbo.employers columns: code 20, name 200, address 255, office no.
+// are the bes.employers columns: code 20, name 200, address 255, office no.
 // 30, policy no. 12.
 
 const company = (overrides = {}) => ({

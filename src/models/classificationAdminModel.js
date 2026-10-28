@@ -15,7 +15,7 @@ const getSchedule = async (pool, userId, employerId) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
     .input('employer_id', sql.BigInt, employerId)
-    .execute('usp_sel_classifications_admin');
+    .execute('bes.usp_sel_classifications_admin');
 
     return result.recordset;
 };
@@ -25,7 +25,7 @@ const getSchedule = async (pool, userId, employerId) => {
 const getBenefitTypes = async (pool, userId) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
-    .execute('usp_sel_benefit_types');
+    .execute('bes.usp_sel_benefit_types');
 
     return result.recordset;
 };
@@ -38,7 +38,7 @@ const insertClassification = async (transaction, userId, { employerId, code, des
     .input('classification_code', sql.VarChar(50), code)
     .input('classification_desc', sql.VarChar(200), desc)
     .input('created_by', sql.VarChar(50), String(userId))
-    .execute('usp_ins_classification');
+    .execute('bes.usp_ins_classification');
 
     return result.recordset[0].classification_id;
 };
@@ -52,7 +52,7 @@ const updateClassification = async (transaction, userId, classificationId, { cod
     .input('classification_desc', sql.VarChar(200), desc)
     .input('is_active', sql.Bit, isActive)
     .input('modified_by', sql.VarChar(50), String(userId))
-    .execute('usp_upd_classification');
+    .execute('bes.usp_upd_classification');
 };
 
 // One of a plan or a rider; one of an amount or a formula. Decimal(18,2), the
@@ -67,7 +67,7 @@ const insertBenefit = async (transaction, userId, { classificationId, planId, ri
     .input('coverage_amount', sql.Decimal(18, 2), amount ?? null)
     .input('coverage_formula', sql.VarChar(100), formula ?? null)
     .input('created_by', sql.VarChar(50), String(userId))
-    .execute('usp_ins_classification_benefit');
+    .execute('bes.usp_ins_classification_benefit');
 };
 
 // A new amount or formula, or retired with isActive false. A benefit is never
@@ -80,7 +80,7 @@ const updateBenefit = async (transaction, userId, benefitId, { amount, formula, 
     .input('coverage_formula', sql.VarChar(100), formula ?? null)
     .input('is_active', sql.Bit, isActive)
     .input('modified_by', sql.VarChar(50), String(userId))
-    .execute('usp_upd_classification_benefit');
+    .execute('bes.usp_upd_classification_benefit');
 };
 
 export default {

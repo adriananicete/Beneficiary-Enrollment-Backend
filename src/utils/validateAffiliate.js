@@ -6,7 +6,7 @@ import { trimStrings } from "./trimStrings.js";
 // name taken in the company, a code equal to the company's own, a reference
 // used anywhere else, and a reference changed after it numbered an employee.
 //
-// Widths are the dbo.employer_affiliates columns, read 2026-10-15: code 20,
+// Widths are the bes.employer_affiliates columns, read 2026-10-15: code 20,
 // name 200, reference 20.
 
 // Letters, digits and hyphens, as a company code. HR writes it in the

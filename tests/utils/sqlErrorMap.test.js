@@ -145,7 +145,7 @@ describe("sqlErrorMap", () => {
   });
 
   test("the three fields with a unique index all have a mapped number", () => {
-    // dbo.clients carries UNIQUE indexes on tin_id and sss_gsis_no, and
+    // bes.clients carries UNIQUE indexes on tin_id and sss_gsis_no, and
     // sec.us01_users on us01_username. Each needs a procedure check with a
     // mapped number, or the caller gets 2627 instead of a sentence.
     //
@@ -246,7 +246,7 @@ describe("sqlErrorMap", () => {
     // user-facing strings rather than the database's own wording.
     for (const [number, mapped] of Object.entries(sqlErrorMap)) {
       assert.ok(
-        !/THROW|sql|procedure|dbo\./i.test(mapped.message),
+        !/THROW|sql|procedure|bes\./i.test(mapped.message),
         `${number} reads like internal text: ${mapped.message}`,
       );
     }
