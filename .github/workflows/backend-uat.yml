@@ -2,6 +2,11 @@ name: BES Backend UAT
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy_uat:
+        description: 'Deploy to UAT after checks (brief backend restart)'
+        type: boolean
+        default: false
   push:
     branches:
       - uat-deployed
@@ -9,22 +14,25 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: bes-backend-uat
+  cancel-in-progress: false
+
 jobs:
   verify:
     runs-on: windows-latest
-
+    timeout-minutes: 20
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-
+        with:
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24.22.1'
-
       - name: Install dependencies
         run: npm ci
-
       - name: Run backend checks
         run: npm run verify
 
@@ -32,23 +40,36 @@ jobs:
     needs: verify
     if: github.ref == 'refs/heads/uat-deployed'
     runs-on: [self-hosted, Windows, X64, bes-backend-uat]
-
+    timeout-minutes: 20
     steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Check deployment runner
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-
           whoami
-          Get-Service -Name 'BES-API-UAT' |
-            Select-Object Name, Status
-
-          if (-not (Test-Path 'F:\bes_backend_uat\server.js')) {
-            throw 'UAT backend server.js was not found.'
-          }
-
-          $probe = 'F:\Fixes\BES_Backend_CICD_Backups\runner-write-test.txt'
+          Get-Service -Name 'BES-API-UAT' | Select-Object Name, Status
+          $probe = Join-Path 'F:\Fixes\BES_Backend_CICD_Backups' ('probe-' + [guid]::NewGuid().ToString('N') + '.txt')
           Set-Content -Path $probe -Value 'Runner write test'
           Remove-Item -Path $probe
+      - name: Prepare and validate deployment without restarting UAT
+        shell: powershell
+        run: '& .\scripts\deploy-backend-uat.ps1 -PreflightOnly'
 
-          Write-Host 'Runner checks passed.'
+  deploy:
+    needs: [verify, runner-check]
+    # Initially enabled for manual testing only. Automatic deployment is a later edit.
+    if: github.ref == 'refs/heads/uat-deployed' && github.event_name == 'workflow_dispatch' && inputs.deploy_uat
+    runs-on: [self-hosted, Windows, X64, bes-backend-uat]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout verified source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Back up, deploy, restart and check BES UAT
+        shell: powershell
+        run: '& .\scripts\deploy-backend-uat.ps1'
