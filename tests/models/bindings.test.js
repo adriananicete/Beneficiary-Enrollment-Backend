@@ -900,3 +900,90 @@ describe("model bindings — the audit trail", () => {
     assert.equal(await UserModel.createSession(answers(null), args), null);
   });
 });
+
+// bes.usp_upd_employer_settings writes BOTH settings exactly as given. A NULL
+// does not mean "leave it": send_coc_email NULL fails (515, NOT NULL) and
+// messages_enabled NULL is written, which is off. Probed 2026-10-28 in
+// transactions that were rolled back. So the one not being changed has to be
+// read and sent back as it is.
+describe("model bindings — employer settings are written whole", () => {
+  const SELECT = "bes.usp_sel_employer_settings";
+  const UPDATE = "bes.usp_upd_employer_settings";
+
+  const current = (rows) => fakePool({ [SELECT]: rows, [UPDATE]: [{ employer_id: "1" }] });
+  const written = (calls) => callTo(calls, UPDATE).inputs;
+
+  test("switching messaging alone sends the certificate setting as it is stored", async () => {
+    const { pool, calls } = current([{ employer_id: "1", send_coc_email: false, messages_enabled: null }]);
+
+    await EmployerModel.updateEmployerSettings(pool, { employerId: "1", sendCocEmail: null, messagesEnabled: true, userId: 1 });
+
+    assert.strictEqual(written(calls).send_coc_email, false);
+    assert.strictEqual(written(calls).messages_enabled, true);
+  });
+
+  test("saving the certificate alone does not turn messaging off", async () => {
+    const { pool, calls } = current([{ employer_id: "1", send_coc_email: false, messages_enabled: true }]);
+
+    await EmployerModel.updateEmployerSettings(pool, { employerId: "1", sendCocEmail: true, messagesEnabled: null, userId: 1 });
+
+    assert.strictEqual(written(calls).send_coc_email, true);
+    assert.strictEqual(written(calls).messages_enabled, true);
+  });
+
+  test("a messaging setting nobody has set yet stays unset", async () => {
+    const { pool, calls } = current([{ employer_id: "1", send_coc_email: false, messages_enabled: null }]);
+
+    await EmployerModel.updateEmployerSettings(pool, { employerId: "1", sendCocEmail: true, messagesEnabled: null, userId: 1 });
+
+    assert.strictEqual(written(calls).messages_enabled, null);
+  });
+
+  test("an explicit false is sent as false, not replaced by what is stored", async () => {
+    const { pool, calls } = current([{ employer_id: "1", send_coc_email: true, messages_enabled: true }]);
+
+    await EmployerModel.updateEmployerSettings(pool, { employerId: "1", sendCocEmail: false, messagesEnabled: false, userId: 1 });
+
+    assert.strictEqual(written(calls).send_coc_email, false);
+    assert.strictEqual(written(calls).messages_enabled, false);
+  });
+
+  test("with both given, nothing is read first", async () => {
+    const { pool, calls } = current([]);
+
+    await EmployerModel.updateEmployerSettings(pool, { employerId: "1", sendCocEmail: true, messagesEnabled: false, userId: 1 });
+
+    assert.equal(callTo(calls, SELECT), undefined);
+  });
+
+  test("it reads the settings as the caller, and takes the row of THIS company", async () => {
+    const { pool, calls } = current([
+      { employer_id: 2, send_coc_email: true, messages_enabled: true },
+      { employer_id: 1, send_coc_email: false, messages_enabled: false },
+    ]);
+
+    await EmployerModel.updateEmployerSettings(pool, { employerId: "1", sendCocEmail: null, messagesEnabled: true, userId: 3 });
+
+    assert.equal(callTo(calls, SELECT).inputs.us01_user_id, 3);
+    assert.strictEqual(written(calls).send_coc_email, false);
+  });
+
+  // HR does not see another company's row, and a company that is not there is
+  // for the procedure to refuse (50140, 50141), not for this to guess about.
+  test("a company the caller cannot see goes through unchanged, for the procedure to refuse", async () => {
+    const { pool, calls } = current([]);
+
+    await EmployerModel.updateEmployerSettings(pool, { employerId: "9", sendCocEmail: null, messagesEnabled: true, userId: 3 });
+
+    assert.strictEqual(written(calls).send_coc_email, null);
+    assert.strictEqual(written(calls).messages_enabled, true);
+  });
+
+  test("it hands back the row the procedure answered", async () => {
+    const { pool } = current([{ employer_id: "1", send_coc_email: false, messages_enabled: null }]);
+
+    const row = await EmployerModel.updateEmployerSettings(pool, { employerId: "1", sendCocEmail: null, messagesEnabled: true, userId: 1 });
+
+    assert.deepEqual(row, { employer_id: "1" });
+  });
+});

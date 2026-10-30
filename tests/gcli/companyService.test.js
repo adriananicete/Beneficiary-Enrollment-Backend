@@ -29,9 +29,12 @@ const row = (overrides = {}) => ({
   ...overrides,
 });
 
+// The single-company procedure returns no messages_enabled, and the list does, so
+// reading one company asks the list as well (companyService.js).
 const pool = (stored = row()) =>
   fakePool({
     usp_sel_employer_admin_by_id: [stored],
+    usp_sel_employers_admin: [{ ...stored, messages_enabled: false }],
     usp_ins_employer: [{ employer_id: "5" }],
     usp_upd_employer: [{ employer_id: "5" }],
   });

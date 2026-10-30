@@ -114,6 +114,82 @@ describe("CompanyService — reading", () => {
   });
 });
 
+// The page that switches messaging on and off reads ONE company. On 2026-10-28
+// bes.usp_sel_employer_admin_by_id returned no messages_enabled at all, though
+// the list returns it, and the page answered "not available from the server
+// yet". And the column is NULL on every company until somebody switches it,
+// which the page also read as "not available".
+describe("CompanyService — the messaging switch", () => {
+  // The single-company row as the database really answers: without the column.
+  const withoutColumn = () => {
+    const { messages_enabled, ...row } = stored();
+    return row;
+  };
+
+  test("a company read without the column gets it from the list", async () => {
+    const { pool, calls } = fakePool({
+      [BY_ID]: [withoutColumn()],
+      [LIST]: [stored({ employer_id: "2", messages_enabled: false }), stored({ messages_enabled: true })],
+    });
+
+    const company = await CompanyService.getCompany(pool, ADMIN_ID, "1");
+
+    assert.equal(company.messages_enabled, true);
+    assert.equal(inputsFor(calls, LIST).us01_user_id, ADMIN_ID);
+  });
+
+  test("it takes the row for THIS company, not the first in the list", async () => {
+    const { pool } = fakePool({
+      [BY_ID]: [withoutColumn()],
+      [LIST]: [stored({ employer_id: "2", messages_enabled: true }), stored({ employer_id: "1", messages_enabled: false })],
+    });
+
+    assert.equal((await CompanyService.getCompany(pool, ADMIN_ID, "1")).messages_enabled, false);
+  });
+
+  test("NULL, which is every company until it is switched, is off", async () => {
+    const { pool } = fakePool({
+      [BY_ID]: [withoutColumn()],
+      [LIST]: [stored({ messages_enabled: null })],
+    });
+
+    assert.strictEqual((await CompanyService.getCompany(pool, ADMIN_ID, "1")).messages_enabled, false);
+  });
+
+  test("a company that is not in the list stays unknown, not guessed off", async () => {
+    const { pool } = fakePool({ [BY_ID]: [withoutColumn()], [LIST]: [] });
+
+    assert.strictEqual((await CompanyService.getCompany(pool, ADMIN_ID, "1")).messages_enabled, undefined);
+  });
+
+  test("once the procedure returns the column, the list is not asked", async () => {
+    const { pool, calls } = fakePool({ [BY_ID]: [stored({ messages_enabled: true })] });
+
+    const company = await CompanyService.getCompany(pool, ADMIN_ID, "1");
+
+    assert.equal(company.messages_enabled, true);
+    assert.equal(calls.some((call) => call.procedure === LIST), false);
+  });
+
+  test("and a NULL it returns is off too", async () => {
+    const { pool } = fakePool({ [BY_ID]: [stored({ messages_enabled: null })] });
+
+    assert.strictEqual((await CompanyService.getCompany(pool, ADMIN_ID, "1")).messages_enabled, false);
+  });
+
+  test("the list answers off for NULL as well", async () => {
+    const { pool } = fakePool({ [LIST]: [stored({ messages_enabled: null })] });
+
+    assert.strictEqual((await CompanyService.getCompanies(pool, ADMIN_ID))[0].messages_enabled, false);
+  });
+
+  test("a bit that arrives as 1 or \"1\" is on", () => {
+    assert.strictEqual(companyOf(stored({ messages_enabled: 1 })).messages_enabled, true);
+    assert.strictEqual(companyOf(stored({ messages_enabled: "1" })).messages_enabled, true);
+    assert.strictEqual(companyOf(stored({ messages_enabled: 0 })).messages_enabled, false);
+  });
+});
+
 describe("CompanyService — creating", () => {
   const abcc = {
     company_code: "ABCC",

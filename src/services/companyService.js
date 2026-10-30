@@ -9,6 +9,13 @@ import { devStoreOn } from "../gcli/devStore.js";
 // anybody who is not an active Administrator, so a route that lost its role
 // check would still be refused.
 
+// NULL is off. Nobody has switched messaging on or off for a company yet, so the
+// column is NULL on every one, and bes.usp_sel_messaging_access_by_user already
+// answers off for it: this says the same, instead of passing the NULL on for a
+// page to read as "not available". Absent stays absent.
+const messagesEnabledOf = (value) =>
+  value === undefined ? undefined : value === true || value === 1 || value === "1";
+
 // What leaves, named field by field. The HR account is null until branch 4
 // creates one.
 export const companyOf = (row) => ({
@@ -20,7 +27,7 @@ export const companyOf = (row) => ({
   policy_no: row.policy_no,
   status: row.status,
   send_coc_email: row.send_coc_email,
-  messages_enabled: row.messages_enabled,
+  messages_enabled: messagesEnabledOf(row.messages_enabled),
   online_enrollment_max_age: row.online_enrollment_max_age,
   hr_account: row.hr_user_id
     ? {
@@ -48,11 +55,28 @@ const getCompanies = async (pool, userId) => {
   return rows.map(companyOf);
 };
 
+// bes.usp_sel_employer_admin_by_id does not return messages_enabled (read on
+// 2026-10-28), though bes.usp_sel_employers_admin does, and the page that
+// switches it reads one company. Without this it answered nothing for the
+// setting and the page said "not available from the server yet".
+//
+// Until that procedure returns the column, it is read from the list. Once it
+// does, the first line leaves the row as it is and the list is not asked.
+const withMessagesEnabled = async (pool, userId, row) => {
+  if ("messages_enabled" in row) return row;
+
+  const listed = (await EmployerAdminModel.getCompanies(pool, userId)).find(
+    (company) => String(company.employer_id) === String(row.employer_id),
+  );
+
+  return { ...row, messages_enabled: listed?.messages_enabled };
+};
+
 const getCompany = async (pool, userId, employerId) => {
   const row = await EmployerAdminModel.getCompanyById(pool, userId, employerId);
   if (!row) throw new AppError("Company not found", 404);
 
-  return companyOf(row);
+  return companyOf(await withMessagesEnabled(pool, userId, row));
 };
 
 // Answers the company as stored, read back, rather than echoing what was

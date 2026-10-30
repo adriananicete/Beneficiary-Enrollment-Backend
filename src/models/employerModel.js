@@ -54,11 +54,36 @@ const getMessagingAccessByUser = async (pool, userId) => {
 
 // THROWs 50140 for a company that does not exist or is inactive, and 50141
 // for HR changing a company that is not theirs. Answers the updated row.
+//
+// `null` for either setting means "not being changed", and the procedure does
+// not understand that: it writes both parameters as given (probed 2026-10-28, in
+// transactions that were rolled back). A NULL send_coc_email fails with 515, the
+// column being NOT NULL, so switching messaging on or off alone failed. A NULL
+// messages_enabled is written, so saving only the certificate setting turned
+// messaging off for the company (NULL is off).
+//
+// So the setting that is not being changed is read first and sent back as it is.
+// A company the caller cannot see is not found here, and the nulls go through, so
+// the procedure refuses it with its own 50140 or 50141 as before.
 const updateEmployerSettings = async (pool, { employerId, sendCocEmail, messagesEnabled, userId }) => {
+    let sendCoc = sendCocEmail;
+    let messages = messagesEnabled;
+
+    if (sendCoc === null || sendCoc === undefined || messages === null || messages === undefined) {
+        const current = (await getEmployerSettings(pool, userId)).find(
+            (company) => String(company.employer_id) === String(employerId),
+        );
+
+        if (current) {
+            sendCoc = sendCoc ?? current.send_coc_email;
+            messages = messages ?? current.messages_enabled;
+        }
+    }
+
     const result = await pool.request()
     .input('employer_id', sql.BigInt, employerId)
-    .input('send_coc_email', sql.Bit, sendCocEmail)
-    .input('messages_enabled', sql.Bit, messagesEnabled)
+    .input('send_coc_email', sql.Bit, sendCoc)
+    .input('messages_enabled', sql.Bit, messages)
     .input('us01_user_id', sql.BigInt, userId)
     .execute('bes.usp_upd_employer_settings');
 
