@@ -24,7 +24,7 @@ const TOKEN = "bes.usp_sel_enrollment_invitation_by_token";
 const EMPLOYERS = "bes.usp_sel_employers";
 const CLASSIFICATIONS = "bes.usp_sel_classifications_by_employer";
 
-const BARANGAY_SP = "dbo.usp_sel_barangay_exists";
+const BARANGAY_SP = "bes.usp_sel_barangay_exists";
 const USERNAME_QUERY = /us01_users/;
 
 const validInvitation = (overrides = {}) => ({

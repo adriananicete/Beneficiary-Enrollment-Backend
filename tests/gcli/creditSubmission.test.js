@@ -145,7 +145,7 @@ describe("what the invitation lookup adds", () => {
 
   test("a link whose application was sent is 409, and a returned one opens again", async () => {
     savePlan("2", { plan: CREDIT_PLAN, loan_limits: LIMITS });
-    const { pool } = fakePool({ usp_sel_enrollment_invitation_by_token: [invitationRow()], usp_sel_employers: [{ employer_id: "2" }], "dbo.usp_sel_barangay_exists": [{ one: 1 }] });
+    const { pool } = fakePool({ usp_sel_enrollment_invitation_by_token: [invitationRow()], usp_sel_employers: [{ employer_id: "2" }], "bes.usp_sel_barangay_exists": [{ one: 1 }] });
     const next = makeNext();
     await createCreditSubmission({ getPool: async () => pool })(makeReq({ body: body() }), makeRes(), next);
 
@@ -164,7 +164,7 @@ describe("the submit of a credit company's borrower", () => {
       {
         usp_sel_enrollment_invitation_by_token: invitation === null ? [] : [invitation],
         usp_sel_employers: employerActive ? [{ employer_id: "2" }, { employer_id: "9" }] : [{ employer_id: "9" }],
-        "dbo.usp_sel_barangay_exists": barangay ? [{ one: 1 }] : [],
+        "bes.usp_sel_barangay_exists": barangay ? [{ one: 1 }] : [],
       },
       [
         [/sec\.us01_users/, existingUser ? [{ one: 1 }] : []],

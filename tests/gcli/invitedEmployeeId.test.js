@@ -198,7 +198,7 @@ describe("the invitation lookup and the credit submit", () => {
     give();
 
     const { pool } = fakePool(
-      { usp_sel_enrollment_invitation_by_token: [invitation], usp_sel_employers: [{ employer_id: "5" }], "dbo.usp_sel_barangay_exists": [{ one: 1 }] },
+      { usp_sel_enrollment_invitation_by_token: [invitation], usp_sel_employers: [{ employer_id: "5" }], "bes.usp_sel_barangay_exists": [{ one: 1 }] },
     );
     const body = {
       token: TOKEN,
