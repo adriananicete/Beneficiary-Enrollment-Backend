@@ -15,7 +15,7 @@ const insert = async (pool, { conversationId, messageId, file }) => {
     .input("byte_size", sql.Int, file.byteSize)
     .input("sha256", sql.Char(64), file.sha256)
     .input("content", sql.VarBinary(sql.MAX), file.content)
-    .execute("dbo.usp_ins_message_attachment");
+    .execute("bes.usp_ins_message_attachment");
   return result.recordset[0];
 };
 // The controller has already verified access to the conversation through its SP.
@@ -29,7 +29,7 @@ const listMetadata = async (pool, conversationId, messageIds) => {
       sql.NVarChar(sql.MAX),
       JSON.stringify(messageIds.map(id => String(id)))
     )
-    .execute("dbo.usp_sel_message_attachment_metadata");
+    .execute("bes.usp_sel_message_attachment_metadata");
 
   return result.recordset;
 };
@@ -37,7 +37,7 @@ const get = async (pool, conversationId, attachmentId) => {
   const result = await pool.request()
     .input("conversation_id", sql.BigInt, conversationId)
     .input("attachment_id", sql.BigInt, attachmentId)
-    .execute("dbo.usp_sel_message_attachment");
+    .execute("bes.usp_sel_message_attachment");
 
   return result.recordset[0];
 };
