@@ -23,7 +23,7 @@ const TOKEN = "usp_sel_enrollment_invitation_by_token";
 const EMPLOYERS = "usp_sel_employers";
 const CLASSIFICATIONS = "usp_sel_employee_classifications";
 
-const BARANGAY_QUERY = /dbo\.barangay/;
+const BARANGAY_SP = "dbo.usp_sel_barangay_exists";
 const USERNAME_QUERY = /us01_users/;
 
 const validInvitation = (overrides = {}) => ({
@@ -51,16 +51,16 @@ const submission = (overrides = {}) => ({
 // Defaults let every guard pass, so a test names the one thing it is breaking.
 const enrol = (data, { invitation, employers, classifications, barangayReal = true, usernameTaken = false } = {}) => {
   const { pool, calls } = fakePool(
-    {
-      [TOKEN]: invitation === null ? [] : [invitation ?? validInvitation()],
-      [EMPLOYERS]: employers ?? [{ employer_id: 1 }, { employer_id: 2 }],
-      [CLASSIFICATIONS]: classifications ?? [{ classification_id: 3 }],
-    },
-    [
-      [BARANGAY_QUERY, barangayReal ? [{ ok: 1 }] : []],
-      [USERNAME_QUERY, usernameTaken ? [{ ok: 1 }] : []],
-    ],
-  );
+  {
+    [TOKEN]: invitation === null ? [] : [invitation ?? validInvitation()],
+    [EMPLOYERS]: employers ?? [{ employer_id: 1 }, { employer_id: 2 }],
+    [CLASSIFICATIONS]: classifications ?? [{ classification_id: 3 }],
+    [BARANGAY_SP]: barangayReal ? [{ exists_flag: 1 }] : [],
+  },
+  [
+    [USERNAME_QUERY, usernameTaken ? [{ ok: 1 }] : []],
+  ],
+);
 
   return { calls, result: EnrollmentService.createEnrollment(pool, data) };
 };
@@ -159,7 +159,9 @@ describe("enrollmentService — the reference guards", () => {
     const { calls, result } = enrol(submission(), { usernameTaken: true });
     await assert.rejects(() => result);
 
-    const barangayCall = calls.find((call) => BARANGAY_QUERY.test(call.query ?? ""));
+    const barangayCall = calls.find(
+      (call) => call.procedure === BARANGAY_SP
+    );
 
     assert.equal(barangayCall.inputs.brgy_code, "012801001");
   });
