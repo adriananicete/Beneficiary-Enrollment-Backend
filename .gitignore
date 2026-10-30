@@ -9,3 +9,11 @@ test.html
 # Group Credit Life dev store (src/gcli/devStore.js): test data, never committed
 .gcli-dev-store.json
 .gcli-dev-store.json.tmp
+
+# Markdown stays local unless it is code related (a README next to the code).
+# This only stops new files being added; a file already tracked stays tracked.
+*.md
+!README.md
+
+# Hand-off notes and reports, kept local, as in the frontend
+docs/
