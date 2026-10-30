@@ -83,7 +83,7 @@ export const submitChangeRequest = async (req, res, next) => {
       // this field yet, and the approval writes every client column straight
       // through — so passing whatever the form sent would clear a real value the
       // day file upload is built.
-      signature_path,
+      signature_path: signature_path ?? "",
       addresses_json: addressesJson,
       beneficiaries_json: beneficiariesJson,
       submitted_by: String(user_id),

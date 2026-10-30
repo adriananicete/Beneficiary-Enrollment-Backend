@@ -2,13 +2,13 @@ import multer from "multer";
 import { AppError } from "../utils/AppError.js";
 import { cleanFileName, MAX_DOCUMENT_BYTES, readDocument } from "../utils/validateDocument.js";
 
-const upload = multer({
+const makeUpload = (fieldName) => multer({
   storage: multer.memoryStorage(),
   defParamCharset: "utf8",
   limits: { fileSize: MAX_DOCUMENT_BYTES, files: 1, fields: 1, fieldSize: 16 * 1024, parts: 2 },
-}).single("attachment");
+}).single(fieldName);
 
-export const parseMessageAttachment = (req, res, next) => {
+const parse = (upload, property, optional) => (req, res, next) => {
   upload(req, res, (error) => {
     if (error) {
       if (error.code === "LIMIT_FILE_SIZE") return next(new AppError("Each attachment must be 5MB or smaller", 413));
@@ -19,7 +19,8 @@ export const parseMessageAttachment = (req, res, next) => {
     }
 
     if (!req.file) {
-      req.attachment = null;
+      if (!optional) return next(new AppError("An attachment is required", 400));
+      req[property] = null;
       return next();
     }
 
@@ -27,9 +28,15 @@ export const parseMessageAttachment = (req, res, next) => {
     const described = readDocument(req.file.buffer);
     if (described.error) return next(new AppError(`${fileName}: ${described.error}`, 400));
 
-    req.attachment = { fileName, content: req.file.buffer, ...described };
+    req[property] = { fileName, content: req.file.buffer, ...described };
     return next();
   });
 };
 
-export default { parseMessageAttachment };
+// The message composer sends an optional attachment as part of the message request.
+export const parseMessageAttachment = parse(makeUpload("attachment"), "attachment", true);
+
+// Keep the dedicated upload endpoint used by the UAT client compatible.
+export const parseStandaloneMessageAttachment = parse(makeUpload("file"), "messageAttachment", false);
+
+export default { parseMessageAttachment, parseStandaloneMessageAttachment };

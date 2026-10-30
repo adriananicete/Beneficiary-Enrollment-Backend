@@ -24,7 +24,7 @@ const TOKEN = "bes.usp_sel_enrollment_invitation_by_token";
 const EMPLOYERS = "bes.usp_sel_employers";
 const CLASSIFICATIONS = "bes.usp_sel_classifications_by_employer";
 
-const BARANGAY_QUERY = /bes\.barangay/;
+const BARANGAY_SP = "bes.usp_sel_barangay_exists";
 const USERNAME_QUERY = /us01_users/;
 
 const validInvitation = (overrides = {}) => ({
@@ -52,16 +52,16 @@ const submission = (overrides = {}) => ({
 // Defaults let every guard pass, so a test names the one thing it is breaking.
 const enrol = (data, { invitation, employers, classifications, barangayReal = true, usernameTaken = false } = {}) => {
   const { pool, calls } = fakePool(
-    {
-      [TOKEN]: invitation === null ? [] : [invitation ?? validInvitation()],
-      [EMPLOYERS]: employers ?? [{ employer_id: 1 }, { employer_id: 2 }],
-      [CLASSIFICATIONS]: classifications ?? [{ classification_id: 3 }],
-    },
-    [
-      [BARANGAY_QUERY, barangayReal ? [{ ok: 1 }] : []],
-      [USERNAME_QUERY, usernameTaken ? [{ ok: 1 }] : []],
-    ],
-  );
+  {
+    [TOKEN]: invitation === null ? [] : [invitation ?? validInvitation()],
+    [EMPLOYERS]: employers ?? [{ employer_id: 1 }, { employer_id: 2 }],
+    [CLASSIFICATIONS]: classifications ?? [{ classification_id: 3 }],
+    [BARANGAY_SP]: barangayReal ? [{ exists_flag: 1 }] : [],
+  },
+  [
+    [USERNAME_QUERY, usernameTaken ? [{ ok: 1 }] : []],
+  ],
+);
 
   return { calls, result: EnrollmentService.createEnrollment(pool, data) };
 };
@@ -162,7 +162,9 @@ describe("enrollmentService — the reference guards", () => {
     const { calls, result } = enrol(submission(), { usernameTaken: true });
     await assert.rejects(() => result);
 
-    const barangayCall = calls.find((call) => BARANGAY_QUERY.test(call.query ?? ""));
+    const barangayCall = calls.find(
+      (call) => call.procedure === BARANGAY_SP
+    );
 
     assert.equal(barangayCall.inputs.brgy_code, "012801001");
   });
@@ -389,12 +391,14 @@ describe("enrollmentService — reading an enrollment back", () => {
     const { pool, calls } = fakePool({
       [DETAILS]: [{ enrollment_id: 54, client_id: 75 }],
       [BENEFITS]: [{ benefit_name: "GTLIP", amount: 1000000 }],
+      usp_sel_beneficiaries: [{ full_name: "Test beneficiary" }],
     });
 
     const result = await EnrollmentService.getFullEnrollmentDetails(pool, 75);
 
     assert.equal(result.enrollment.length, 1);
     assert.equal(result.benefits.length, 1);
+    assert.equal(result.beneficiaries.length, 1);
     assert.equal(inputsFor(calls, DETAILS).client_id, 75);
   });
 

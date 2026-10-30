@@ -25,17 +25,7 @@ import config from "../config/env.js";
 const openInvitation = async (pool, token) => {
   const invitation = await InvitationModel.getInvitationByToken(pool, token)
   if(!invitation) throw new AppError("Invitation not found", 404);
-  // Truthiness rather than === 0 and === 1. Both columns are computed in the
-  // procedure, and the two procedures that compute them do not agree on the
-  // type: usp_sel_enrollment_invitation_by_token returns a bare 1, an INT,
-  // while usp_sel_enrollment_invitations_by_user CASTs to BIT, which mssql
-  // hands back as a boolean. A strict comparison is correct against one and
-  // silently false against the other — which is exactly how the resend guard
-  // died, fixed in c71abc7.
-  //
-  // These two are on the public submit path, so a dead guard here would accept
-  // an expired invitation or a second enrollment. Written this way they hold
-  // whichever type arrives, and survive the procedure being rewritten.
+
   if(!invitation.is_valid) throw new AppError("This invitation has expired. Please ask your HR to resend it.", 410);
   if(invitation.is_enrolled) throw new AppError("You have already submitted an enrollment", 409);
 
@@ -124,14 +114,6 @@ const createEnrollment = async (pool, enrollmentData) => {
   enrollmentData.classification_id = classification_id;
   enrollmentData.affiliate_id = affiliate_id;
 
-  // The third reference id, checked the same way as the two above. It was the
-  // only one going unvalidated, and six fabricated barangay codes reached the
-  // database through the gap — see PARK.md.
-  //
-  // It fails silently in both directions, which is what makes it worth a query:
-  // nothing errors on the way in, and the address still displays afterwards
-  // because full_address and zip_code are stored separately. Only brgy_name,
-  // city_municipality_name, province_name and region_name come back NULL.
   const barangayIsReal = await ReferenceModel.barangayExists(
     pool,
     enrollmentData.barangay_id,
@@ -147,6 +129,9 @@ const createEnrollment = async (pool, enrollmentData) => {
     throw new AppError("Employee ID number already exists", 409);
 
   const transaction = new sql.Transaction(pool);
+  let rolledBack = false;
+  let committed = false;
+  transaction.on("rollback", () => { rolledBack = true; });
   await transaction.begin();
 
   try {
@@ -155,14 +140,6 @@ const createEnrollment = async (pool, enrollmentData) => {
       created_by: "system",
     });
 
-    // Inside the transaction, immediately after the client it belongs to. That
-    // placement is the whole design: the signature commits with the enrollment
-    // or nothing is written at all.
-    //
-    // The alternative — a file written before or after the transaction — is
-    // what made storage location and write order two of the five open
-    // questions in PARK.md. Keeping the bytes in the database answered both by
-    // removing them.
     if (enrollmentData.signature) {
       await SignatureModel.insertSignature(transaction, {
         client_id: clientId,
@@ -241,6 +218,7 @@ const createEnrollment = async (pool, enrollmentData) => {
     });
 
     await transaction.commit();
+    committed = true;
 
     // Built after the commit and read back from the database, so it certifies
     // what was stored. autoCertificateFor never rejects: a certificate that
@@ -269,7 +247,13 @@ const createEnrollment = async (pool, enrollmentData) => {
 
     return { clientId, enrollmentId, policyNo };
   } catch (error) {
-    await transaction.rollback();
+    if (!committed && !rolledBack) {
+      try {
+        await transaction.rollback();
+      } catch (rollbackError) {
+        console.error("Enrollment rollback failed:", rollbackError);
+      }
+    }
     console.error("Service Error:", error);
     throw error;
   }
@@ -287,9 +271,14 @@ const getFullEnrollmentDetails = async (pool, clientId) => {
   const enrollmentBenefitsById =
     await ClientModel.getEnrollmentBenefitsByClientId(pool, clientId);
 
+  const beneficiaries = await BeneficiaryModel.getBeneficiariesByEnrollmentId(
+    pool, enrollmentDetails[0].enrollment_id,
+  );
+
   return {
     enrollment: enrollmentDetails,
     benefits: enrollmentBenefitsById,
+    beneficiaries,
   };
 };
 

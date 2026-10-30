@@ -1,3 +1,4 @@
+import { isClaimsPath } from "../utils/claimsAvailability.js";
 import express from 'express';
 import { getMyEnrollment, login, logout, changePassword } from '../controllers/employeeController.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
@@ -11,6 +12,7 @@ import {
     markConversationRead,
     openMyConversation,
     sendMessage,
+    sendMessageAttachment,
     editMessage,
     unsendMessage,
     getMessageAttachment,
@@ -31,9 +33,17 @@ import {
     submitMyClaim,
 } from '../controllers/claimController.js';
 import { getMessagingAvailability } from '../controllers/messagingAccessController.js';
-import { parseMessageAttachment } from '../middlewares/parseMessageAttachment.js';
+import { parseMessageAttachment, parseStandaloneMessageAttachment } from '../middlewares/parseMessageAttachment.js';
 
 const router = express.Router();
+
+// Claims are temporarily unavailable during this UAT rollout.
+router.use((req, res, next) => {
+    if (isClaimsPath(req.path)) {
+        return res.status(503).json({ success: false, message: "Claims are temporarily unavailable during UAT." });
+    }
+    next();
+});
 
 router.post('/login', authIpLimiter, strictLimiter, login);
 router.post('/logout', logout);
@@ -78,6 +88,7 @@ router.post('/conversations/:conversation_id/messages', verifyToken, allowedRole
 router.patch('/conversations/:conversation_id/messages/:message_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, validateIdParam('message_id', 'Message not found'), requireCompanyMessaging, editMessage);
 router.delete('/conversations/:conversation_id/messages/:message_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, validateIdParam('message_id', 'Message not found'), requireCompanyMessaging, unsendMessage);
 router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, validateIdParam('attachment_id', 'Attachment not found'), requireCompanyMessaging, getMessageAttachment);
+router.post('/conversations/:conversation_id/attachments', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, messageSendLimiter, parseStandaloneMessageAttachment, sendMessageAttachment);
 router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, markConversationRead);
 
 export default router;

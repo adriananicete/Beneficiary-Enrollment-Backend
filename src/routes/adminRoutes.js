@@ -1,7 +1,8 @@
+import { isClaimsPath } from "../utils/claimsAvailability.js";
 import express from 'express';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
-import { exportEnrollments, getCompanyAffiliates, getCompanyClassifications, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials, wipeEnrollments } from '../controllers/adminController.js';
+import { exportEnrollments, getCompanyAffiliates, getCompanyClassifications, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, downloadCertificate, resendCertificate, resendCredentials, wipeEnrollments } from '../controllers/adminController.js';
 import { developmentOnly } from '../middlewares/developmentOnly.js';
 import config from '../config/env.js';
 import { getPool } from '../config/db.js';
@@ -17,7 +18,7 @@ import { getEmployerSettings, updateEmployerSettings } from '../controllers/empl
 import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
 import { closeDeathClaim, fileClaimForEmployee, fileDeathClaim, getClaimDetails, getClaimDocument, getClaims, getHrClaimTypes, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
 import { parseDocuments } from '../middlewares/parseDocuments.js';
-import { editMessage, getConversation, getConversations, getMessageAttachment, getUnreadMessageCount, markConversationRead, openConversation, sendMessage, unsendMessage } from '../controllers/messageController.js';
+import { editMessage, getConversation, getConversations, getMessageAttachment, getUnreadMessageCount, markConversationRead, openConversation, sendMessage, sendMessageAttachment, unsendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
 import { createAffiliate, createClassification, createCompany, createHrAccount, deleteCompany, getAffiliates, getClassificationSchedule, getCompanies, getCompany, resendHrCredentials, updateAffiliate, updateClassification, updateCompany } from '../controllers/companyController.js';
 import { validateHrAccount } from '../middlewares/validateHrAccount.js';
@@ -26,7 +27,7 @@ import { validateClassificationChanges, validateNewClassification } from '../mid
 import { validateAffiliateChanges, validateNewAffiliate } from '../middlewares/validateAffiliate.js';
 import { getAuditTrail } from '../controllers/auditTrailController.js';
 import { getMessagingAvailability } from '../controllers/messagingAccessController.js';
-import { parseMessageAttachment } from '../middlewares/parseMessageAttachment.js';
+import { parseMessageAttachment, parseStandaloneMessageAttachment } from '../middlewares/parseMessageAttachment.js';
 
 const router = express.Router();
 
@@ -41,6 +42,14 @@ const changeRequestId = validateIdParam('request_id', 'Change request not found'
 // Same for the two invitation routes that take an id. job_id is not covered:
 // it is a job identifier held in memory, never bound to the database.
 const invitationId = validateIdParam('invitation_id', 'Enrollment invitation does not exist');
+
+// Claims are temporarily unavailable during this UAT rollout.
+router.use((req, res, next) => {
+    if (isClaimsPath(req.path)) {
+        return res.status(503).json({ success: false, message: "Claims are temporarily unavailable during UAT." });
+    }
+    next();
+});
 
 router.post('/invitations/:invitation_id/resend', verifyToken, allowedRoles(ADMIN), invitationId, resendInvitation);
 router.post('/invitations', verifyToken, allowedRoles(ADMIN), bulkInvitationLimiter, validateInvitations, sendInvitations)
@@ -68,6 +77,7 @@ router.get('/enrollments/:client_id/agreements',verifyToken, allowedRoles(ADMIN,
 // Same chain as the two above it, and verifyClientAccess is doing the whole of
 // the company scoping — the procedure behind this takes a client_id and trusts
 // it. Answers image bytes rather than JSON.
+router.get('/enrollments/:client_id/certificate', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, downloadCertificate);
 router.get('/enrollments/:client_id/signature', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, getEnrollmentSignature);
 router.post('/enrollments/:client_id/resend-credentials', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, credentialsResendLimiter, resendCredentials);
 // The same chain as resend-credentials. verifyClientAccess is the whole of the
@@ -172,6 +182,7 @@ router.post('/conversations/:conversation_id/messages', verifyToken, allowedRole
 router.patch('/conversations/:conversation_id/messages/:message_id', verifyToken, allowedRoles(ADMIN), conversationId, validateIdParam('message_id', 'Message not found'), requireCompanyMessaging, editMessage);
 router.delete('/conversations/:conversation_id/messages/:message_id', verifyToken, allowedRoles(ADMIN), conversationId, validateIdParam('message_id', 'Message not found'), requireCompanyMessaging, unsendMessage);
 router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(ADMIN), conversationId, validateIdParam('attachment_id', 'Attachment not found'), requireCompanyMessaging, getMessageAttachment);
+router.post('/conversations/:conversation_id/attachments', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, messageSendLimiter, parseStandaloneMessageAttachment, sendMessageAttachment);
 router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, markConversationRead);
 
 

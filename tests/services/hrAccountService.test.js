@@ -2,7 +2,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 import "../helpers/env.js";
-import { fakePool, inputsFor, queryMatching } from "../helpers/fakePool.js";
+import { callTo, fakePool, inputsFor } from "../helpers/fakePool.js";
 
 const { default: HrAccountService, hrUsernameFor } = await import("../../src/services/hrAccountService.js");
 const { default: config } = await import("../../src/config/env.js");
@@ -17,7 +17,7 @@ const HR_BY_COMPANY = "sec.us08_usp_sel_hr_by_employer";
 const CREATE_USER = "sec.us01_usp_ins_users";
 const ASSIGN_ROLE = "sec.us04_usp_assign_role";
 const MAP_HR = "sec.us08_usp_ins_user_employer";
-const RESET = /UPDATE sec\.us01_users/;
+const RESET = "sec.usp_upd_user_password_reset";
 
 const ADMIN_ID = 1;
 
@@ -56,6 +56,7 @@ const harness = ({ answers = {}, sendFails = false } = {}) => {
     [CREATE_USER]: () => ({ recordset: [], output: { us01_user_id: "9" } }),
     [ASSIGN_ROLE]: [],
     [MAP_HR]: [{ us08_user_employer_id: "7" }],
+    [RESET]: [{ affected_count: 1 }],
     ...answers,
   });
 
@@ -236,7 +237,7 @@ describe("HrAccountService.resendHrCredentials", () => {
     const result = await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", deps);
 
     assert.equal(log[0], "credentials email");
-    assert.ok(queryMatching(calls, RESET), "the password was not stored");
+    assert.ok(callTo(calls, RESET), "the password was not stored");
     assert.deepEqual(log.at(-1), "end sessions 9");
     assert.deepEqual(result, { email_address: "hr@abcc.example" });
   });
@@ -263,7 +264,7 @@ describe("HrAccountService.resendHrCredentials", () => {
         (error) => error.statusCode === 502 && /nothing was changed/.test(error.message),
       ),
     );
-    assert.equal(queryMatching(calls, RESET), undefined);
+    assert.equal(callTo(calls, RESET), undefined);
     assert.ok(!log.some((entry) => entry.startsWith("end sessions")));
   });
 
