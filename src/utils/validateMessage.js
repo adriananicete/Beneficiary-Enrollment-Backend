@@ -1,13 +1,14 @@
 import { AppError } from "./AppError.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
 
-// What a messaging request may carry, judged before the database is asked.
-// Decided 2026-10-06: text only, trimmed, 1 to 2,000 characters.
+// Validate the text part of a message request. A file can be sent without
+// text, but the current bes.usp_ins_message still rejects an empty body (50174),
+// so the database procedure must be updated before file-only sends can succeed.
 //
-// The procedure checks the same rules (50174, 50175). These come first so the
-// common mistakes are answered without a round trip, and so the length is
-// counted the same way on both sides: JavaScript's `length` and SQL Server's
-// LEN() on NVARCHAR both count UTF-16 code units, so an emoji is 2 on both.
+// The procedure checks the 2,000 character limit (50175). This check runs first
+// so an overlong message is refused without a round trip. JavaScript's `length`
+// and SQL Server's LEN() on NVARCHAR both count UTF-16 code units, so an emoji
+// is 2 on both.
 
 export const MAX_MESSAGE_LENGTH = 2000;
 

@@ -198,16 +198,7 @@ export const editMessage = async (req, res, next) => {
 };
 
 export const unsendMessage = async (req, res, next) => {
-  try {
-    const pool = await getPool();
-    const message = await MessageService.unsendMessage(pool, {
-      conversationId: req.params.conversation_id,
-      messageId: req.params.message_id,
-      userId: req.user.user_id,
-    });
-    if (!message) throw new AppError("Message not found", 404);
-    return res.status(200).json({ success: true, data: message });
-  } catch (error) { next(error); }
+  return next(new AppError("Unsend is not available until the database supports soft-deleted messages", 501));
 };
 
 export const getMessageAttachment = async (req, res, next) => {

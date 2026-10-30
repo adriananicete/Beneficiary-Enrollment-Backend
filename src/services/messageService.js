@@ -55,17 +55,6 @@ const editMessage = async (pool, { conversationId, messageId, userId, body }) =>
   return message;
 };
 
-const unsendMessage = async (pool, { conversationId, messageId, userId }) => {
-  const saved = await MessageModel.softDeleteMessage(pool, { conversationId, messageId, userId });
-  if (!saved) return null;
-  const message = {
-    conversation_id: saved.conversation_id,
-    ...messageOf({ ...saved, is_deleted: true, body: "", attachments: [] }),
-  };
-  emitToConversation({ clientId: saved.client_id, employerId: saved.employer_id }, "message:deleted", message);
-  return message;
-};
-
 // Moves the caller's read marker, then tells both sides where both markers
 // now stand, for "seen" ticks. The procedure may not move it as far as asked
 // (never backwards, never past the newest), so the markers announced are read
@@ -94,4 +83,4 @@ const markRead = async (pool, { conversationId, userId, lastReadMessageId }) => 
   }
 };
 
-export default { sendMessage, editMessage, unsendMessage, markRead };
+export default { sendMessage, editMessage, markRead };

@@ -80,22 +80,30 @@ const getMessageAttachment = async (pool, conversationId, attachmentId) => {
 };
 
 const updateMessage = async (pool, { conversationId, messageId, userId, body }) => {
+  const { conversation } = await getConversationById(pool, conversationId, userId, { limit: 1 });
+  if (!conversation) return null;
+
   const result = await pool.request()
     .input("conversation_id", sql.BigInt, conversationId)
     .input("message_id", sql.BigInt, messageId)
     .input("us01_user_id", sql.BigInt, userId)
     .input("body", sql.NVarChar(4000), body)
-    .execute("bes.usp_upd_message");
-  return result.recordset[0];
-};
+    .query(`
+      UPDATE bes.messages
+      SET body = @body
+      OUTPUT INSERTED.message_id, INSERTED.conversation_id, INSERTED.sender_role,
+             INSERTED.body, INSERTED.created_date
+      WHERE message_id = @message_id
+        AND conversation_id = @conversation_id
+        AND sender_user_id = @us01_user_id;
+    `);
 
-const softDeleteMessage = async (pool, { conversationId, messageId, userId }) => {
-  const result = await pool.request()
-    .input("conversation_id", sql.BigInt, conversationId)
-    .input("message_id", sql.BigInt, messageId)
-    .input("us01_user_id", sql.BigInt, userId)
-    .execute("bes.usp_del_message");
-  return result.recordset[0];
+  const updated = result.recordset[0];
+  return updated ? {
+    ...updated,
+    client_id: conversation.client_id,
+    employer_id: conversation.employer_id,
+  } : null;
 };
 
 // HR's list, unread first. `page_size` undefined reaches it as NULL, the
@@ -181,7 +189,6 @@ export default {
   insertMessageWithAttachment,
   getMessageAttachment,
   updateMessage,
-  softDeleteMessage,
   getConversationsByUser,
   getConversationById,
   getMessageAttachmentMetadata,
