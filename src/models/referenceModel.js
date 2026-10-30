@@ -66,7 +66,7 @@ export const getBarangaysByCity = async (pool, cityCode) => {
 export const barangayExists = async (pool, barangayId) => {
     const result = await pool.request()
     .input('brgy_code', sql.VarChar(9), barangayId)
-    .query(`SELECT 1 FROM dbo.barangay WHERE brgy_code = @brgy_code`);
+    .execute("dbo.usp_sel_barangay_exists");
 
     return result.recordset.length > 0;
 };
