@@ -120,40 +120,16 @@ const findUserByClientId = async (pool, clientId) => {
   return result.recordset[0];
 };
 
-// Issues a new temporary password. There is no procedure for this:
-// us01_usp_first_login requires the old password, which is exactly what has been
-// lost, and us01_usp_upd_user does not touch credentials. Raw, like the
-// queries around it.
-//
-// The lock and the failed-attempt counter are cleared alongside the password.
-// Since PR #58 those two block a login, so leaving them set would hand the
-// employee a working password and still refuse them at the door — with
-// everything appearing to have worked. The temporary lock from DBA request 18
-// is cleared for the same reason, which also makes this HR's way to unlock
-// somebody at once rather than in fifteen minutes.
-//
-// The token version goes up in the same statement, so every session the
-// employee had ends with the old password. Whoever was using those
-// credentials is signed out. In the raw UPDATE rather than a call to
-// endSessions, so the two cannot come apart.
+// Resets temporary credentials, clears lockout, and invalidates existing
+// sessions through the stored procedure. Returns the affected user count.
 const resetPassword = async (pool, resetData) => {
-  const result = await pool
-    .request()
+  const result = await pool.request()
     .input("us01_user_id", sql.BigInt, resetData.us01_user_id)
-    .input("us01_password", sql.VarChar, resetData.us01_password)
+    .input("us01_password", sql.VarChar(255), resetData.us01_password)
     .input("us01_modified_by", sql.VarChar(50), resetData.us01_modified_by)
-    .query(`UPDATE sec.us01_users
-            SET us01_password = @us01_password,
-                us01_must_change_password = 1,
-                us01_is_locked = 0,
-                us01_failed_login_attempts = 0,
-                us01_locked_until = NULL,
-                us01_token_version = us01_token_version + 1,
-                us01_modified_by = @us01_modified_by,
-                us01_modified_date = GETDATE()
-            WHERE us01_user_id = @us01_user_id AND us01_is_active = 1`);
+    .execute("sec.usp_upd_user_password_reset");
 
-  return result.rowsAffected[0];
+  return result.recordset[0].affected_count;
 };
 
 // Keeps sec.us01_users in step with dbo.clients after an approved change.
