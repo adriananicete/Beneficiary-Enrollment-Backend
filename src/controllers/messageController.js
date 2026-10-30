@@ -13,7 +13,6 @@ import {
   messageBodyIfPresentOf,
   messageCursorOf,
 } from "../utils/validateMessage.js";
-import { sendStoredFile } from "../utils/storedFileResponse.js";
 
 // HR ↔ employee messaging over REST, branch 8 of
 // md/CLAIMS-AND-MESSAGING-DECISIONS.md. Branch 9 added the socket, which only
@@ -196,20 +195,6 @@ export const editMessage = async (req, res, next) => {
 
 export const unsendMessage = async (req, res, next) => {
   return next(new AppError("Unsend is not available until the database supports soft-deleted messages", 501));
-};
-
-export const getMessageAttachment = async (req, res, next) => {
-  try {
-    const pool = await getPool();
-    const file = await MessageModel.getMessageAttachment(pool, req.params.conversation_id, req.params.attachment_id);
-    if (!file) throw new AppError("Attachment not found", 404);
-    return sendStoredFile(res, {
-      content: file.content,
-      mimeType: file.mime_type,
-      byteSize: file.byte_size,
-      fileName: file.file_name,
-    });
-  } catch (error) { next(error); }
 };
 
 export const markConversationRead = async (req, res, next) => {

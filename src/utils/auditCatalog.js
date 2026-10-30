@@ -54,6 +54,8 @@ export const AUDITED_ROUTES = {
 
   "POST /admin/conversations": entry("Conversation", "I", "data.conversation_id"),
   "POST /admin/conversations/:conversation_id/messages": entry("Message", "I", "data.message_id", "param.conversation_id"),
+  "PATCH /admin/conversations/:conversation_id/messages/:message_id": entry("Message", "U", "param.message_id"),
+  "DELETE /admin/conversations/:conversation_id/messages/:message_id": entry("Message", "D", "param.message_id"),
   "POST /admin/conversations/:conversation_id/attachments": entry("Message attachment", "I", "data.message_id", "param.conversation_id"),
   "POST /admin/conversations/:conversation_id/read": entry("Conversation", "U", "param.conversation_id"),
 
@@ -71,6 +73,8 @@ export const AUDITED_ROUTES = {
   "POST /employee/claims/:claim_id/resubmit": entry("Claim", "U", "param.claim_id"),
   "POST /employee/conversation": entry("Conversation", "I", "data.conversation_id"),
   "POST /employee/conversations/:conversation_id/messages": entry("Message", "I", "data.message_id", "param.conversation_id"),
+  "PATCH /employee/conversations/:conversation_id/messages/:message_id": entry("Message", "U", "param.message_id"),
+  "DELETE /employee/conversations/:conversation_id/messages/:message_id": entry("Message", "D", "param.message_id"),
   "POST /employee/conversations/:conversation_id/attachments": entry("Message attachment", "I", "data.message_id", "param.conversation_id"),
   "POST /employee/conversations/:conversation_id/read": entry("Conversation", "U", "param.conversation_id"),
 };

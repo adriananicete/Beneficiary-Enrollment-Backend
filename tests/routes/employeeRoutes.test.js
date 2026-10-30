@@ -144,7 +144,7 @@ describe("the employee messaging routes", () => {
   test("sending is rate limited, after the id check", () => {
     const handlers = handlersFor("post", "/conversations/:conversation_id/messages");
 
-    assert.equal(handlers.length, 6);
+    assert.equal(handlers.length, 7);
     assert.equal(handlers.indexOf(messageSendLimiter), 4);
   });
 });
