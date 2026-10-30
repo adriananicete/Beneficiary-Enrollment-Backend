@@ -77,6 +77,19 @@ const coverageLabel = ({ benefit_name, benefit_description }) =>
 const coverageAmount = (benefit) =>
   hasAmount(benefit) ? `P ${money(benefit.coverage_amount)}` : (benefit.coverage_formula ?? "");
 
+// Who the insured is covered under, as the sentence names it: the company, or
+// for an employee of one of its affiliates (DBA request 25), the affiliate
+// named as one. "…accepted for coverage under Alakor Corporation, an affiliate
+// of Abacus Book and Card Corporation, with Group Policy No. G-TLI-26-177…".
+// The Group Policy No. stays the company's. Branch 7 of the onboarding effort.
+//
+// It fits the page: measured 2026-10-15 on the tallest certificate (ten
+// dependents, a wrapped address), the longest ABCC affiliate adds no line, and
+// a 200-character affiliate name under ABCC adds one, inside the 12 points of
+// slack. Only an affiliate and a company both near 200 characters overflow.
+export const coveredUnder = ({ company_name, affiliate_name }) =>
+  affiliate_name ? `${affiliate_name}, an affiliate of ${company_name},` : company_name;
+
 // Each dependent's share of every benefit that carries an amount: the benefit
 // times their coverage percent. A 100% spouse on a 500,000 plan reads 500,000,
 // which is what the example shows.
@@ -100,10 +113,12 @@ export const buildCertificateData = async (pool, clientId) => {
       409,
     );
 
-  // usp_get_enrollment_benefits_by_id filters on ec.is_active, so a
-  // classification deactivated after enrollment returns nothing here. That is
-  // a certificate with an empty coverage table, and it is refused for the same
-  // reason as the one above.
+  // An enrollment with no active benefit rows would print an empty coverage
+  // table, and it is refused for the same reason as the one above. Until DBA
+  // request 23 (2026-10-15), usp_get_enrollment_benefits_by_id also filtered
+  // on the classification being active, so retiring a class emptied this for
+  // every enrollment in it. It no longer does: the enrollment's own snapshot
+  // is returned whatever became of its class.
   const benefits = await ClientModel.getEnrollmentBenefitsByClientId(pool, clientId);
   if (benefits.length === 0)
     throw new AppError(
@@ -127,7 +142,7 @@ export const buildCertificateData = async (pool, clientId) => {
     lastName: record.last_name,
     policyNo: record.policy_no,
     groupPolicyNo: record.group_policy_no,
-    companyName: record.company_name,
+    coveredUnder: coveredUnder(record),
     insuredName: fullName(record),
     address: formatAddress(record),
     coverageDate: formatCoverageDate(record.enrollment_date),
@@ -207,7 +222,7 @@ export const buildCertificate = async (pool, clientId) =>
 // HR's resend button. Unlike tryBuildCertificate below, nothing here is
 // swallowed: HR asked for it and has to be told whether the employee got it.
 //
-// It goes to the address on the enrollment record — dbo.clients — which is the
+// It goes to the address on the enrollment record — bes.clients — which is the
 // record the certificate describes. An approved email change writes it there
 // first and syncUserRecord carries it to the user account, so the two agree in
 // every case that has worked as designed.

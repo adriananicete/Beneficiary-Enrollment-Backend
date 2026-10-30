@@ -8,12 +8,15 @@ const { verifyToken } = await import("../../src/middlewares/verifyToken.js");
 const { getEmployerSettings, updateEmployerSettings } = await import(
   "../../src/controllers/employerSettingsController.js"
 );
+const { getAuditTrail } = await import("../../src/controllers/auditTrailController.js");
+const { getMessagingAvailability } = await import("../../src/controllers/messagingAccessController.js");
 const claims = await import("../../src/controllers/claimController.js");
 const messages = await import("../../src/controllers/messageController.js");
 const deceased = await import("../../src/controllers/deceasedController.js");
 const { verifyClientAccess } = await import("../../src/middlewares/verifyClientAccess.js");
 const { claimSubmitLimiter, messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
 const { parseDocuments } = await import("../../src/middlewares/parseDocuments.js");
+const { requireCompanyMessaging } = await import("../../src/middlewares/requireCompanyMessaging.js");
 
 const handlersFor = (method, path) => {
   const layer = router.stack.find(
@@ -43,6 +46,34 @@ describe("the employer settings routes", () => {
     assert.equal(handlers[0], verifyToken);
     assert.equal(handlers.length, 4);
     assert.equal(handlers.at(-1), updateEmployerSettings);
+  });
+
+  describe("company messaging enforcement", () => {
+    test("every HR and employee messaging route checks the company setting", async () => {
+      const adminRouter = (await import("../../src/routes/adminRoutes.js")).default;
+      const employeeRouter = (await import("../../src/routes/employeeRoutes.js")).default;
+      const routes = [
+        [adminRouter, "get", "/conversations"],
+        [adminRouter, "post", "/conversations"],
+        [adminRouter, "get", "/conversations/unread-count"],
+        [adminRouter, "get", "/conversations/:conversation_id"],
+        [adminRouter, "post", "/conversations/:conversation_id/messages"],
+        [adminRouter, "post", "/conversations/:conversation_id/read"],
+        [employeeRouter, "post", "/conversation"],
+        [employeeRouter, "get", "/conversations/unread-count"],
+        [employeeRouter, "get", "/conversations/:conversation_id"],
+        [employeeRouter, "post", "/conversations/:conversation_id/messages"],
+        [employeeRouter, "post", "/conversations/:conversation_id/read"],
+      ];
+
+      for (const [router, method, path] of routes) {
+        const layer = router.stack.find(
+          (candidate) => candidate.route?.path === path && candidate.route.methods[method],
+        );
+        assert.ok(layer, `${method.toUpperCase()} ${path} is not registered`);
+        assert.ok(layer.route.stack.some((entry) => entry.handle === requireCompanyMessaging), path);
+      }
+    });
   });
 });
 
@@ -98,6 +129,31 @@ const roleAnswer = (handlers, role_name) => {
   return answer;
 };
 
+describe("the audit trail route", () => {
+  test("GET /audit-trail is authenticated, Administrator-only, and reaches its controller", () => {
+    const handlers = handlersFor("get", "/audit-trail");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.length, 3);
+    assert.equal(handlers.at(-1), getAuditTrail);
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "HR"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
+describe("the messaging availability route", () => {
+  test("GET /messaging-access is authenticated and restricted to HR", () => {
+    const handlers = handlersFor("get", "/messaging-access");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), getMessagingAvailability);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
 // Deceased status, DBA request 21. HR and the Administrator mark; only the
 // Administrator undoes (decided 2026-10-06).
 describe("the deceased routes", () => {
@@ -150,6 +206,20 @@ describe("the death claim routes", () => {
     assert.equal(handlers.at(-1), claims.fileDeathClaim);
   });
 
+  // The same chain as the death claim, ending in the general controller.
+  test("POST /enrollments/:client_id/claims checks the company and the limiter before reading the upload", () => {
+    const handlers = handlersFor("post", "/enrollments/:client_id/claims");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+    assert.equal(handlers[2], verifyClientAccess);
+    assert.equal(handlers[3], claimSubmitLimiter);
+    assert.equal(handlers[4], parseDocuments);
+    assert.equal(handlers.at(-1), claims.fileClaimForEmployee);
+  });
+
   test("PATCH /claims/:claim_id/close checks the id, for HR and the Administrator", () => {
     const handlers = handlersFor("patch", "/claims/:claim_id/close");
 
@@ -158,6 +228,246 @@ describe("the death claim routes", () => {
     assert.equal(handlers.at(-1), claims.closeDeathClaim);
     assert.equal(roleAnswer(handlers, "HR"), "passed");
     assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
+// The Administrator's companies, DBA request 24. The Administrator only; HR
+// keeps its own settings route.
+describe("the company routes", () => {
+  const ROUTES = [
+    ["get", "/companies", "getCompanies", 3],
+    // takePlanFields (src/gcli) sits in front of the validator on the two routes that take a body.
+    ["post", "/companies", "createCompany", 5],
+    ["get", "/companies/:employer_id", "getCompany", 4],
+    ["patch", "/companies/:employer_id", "updateCompany", 6],
+    // Branch 10: the id check, then the controller. No body.
+    ["delete", "/companies/:employer_id", "deleteCompany", 4],
+  ];
+
+  for (const [method, path, controllerName, length] of ROUTES)
+    test(`${method.toUpperCase()} ${path} is for the Administrator only, behind verifyToken, and reaches its controller`, async () => {
+      const controllers = await import("../../src/controllers/companyController.js");
+      const handlers = handlersFor(method, path);
+
+      assert.equal(handlers[0], verifyToken);
+      assert.equal(handlers.at(-1), controllers[controllerName]);
+      assert.equal(handlers.length, length);
+      assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+      assert.equal(roleAnswer(handlers, "HR"), 403);
+      assert.equal(roleAnswer(handlers, "Employee"), 403);
+    });
+
+  // The body is checked before the controller, and on the PATCH after the id
+  // check, so /companies/abc is a 404 before anything is read.
+  test("the validators run before the controllers", async () => {
+    const { validateCompanyChanges, validateNewCompany } = await import("../../src/middlewares/validateCompany.js");
+
+    assert.equal(handlersFor("post", "/companies")[3], validateNewCompany);
+    assert.equal(handlersFor("patch", "/companies/:employer_id")[4], validateCompanyChanges);
+  });
+
+  // The plan and loan limits are taken off the body before the company rules, which
+  // refuse any field a company does not have. With the dev store off it does nothing.
+  test("the plan fields are taken off the body before the validators read it", () => {
+    for (const handlers of [handlersFor("post", "/companies"), handlersFor("patch", "/companies/:employer_id")]) {
+      const takePlan = handlers.at(-3);
+
+      assert.equal(typeof takePlan, "function");
+      assert.equal(takePlan.length, 3, "a middleware: (req, res, next)");
+      assert.notEqual(takePlan, handlers.at(-2));
+    }
+  });
+});
+
+// A company's schedule, DBA request 24, branch 3. The Administrator only.
+describe("the schedule routes", () => {
+  const ROUTES = [
+    ["get", "/companies/:employer_id/classifications", "getClassificationSchedule", 4],
+    ["post", "/companies/:employer_id/classifications", "createClassification", 5],
+    ["patch", "/companies/:employer_id/classifications/:classification_id", "updateClassification", 6],
+  ];
+
+  for (const [method, path, controllerName, length] of ROUTES)
+    test(`${method.toUpperCase()} ${path} is for the Administrator only, behind verifyToken, and reaches its controller`, async () => {
+      const controllers = await import("../../src/controllers/companyController.js");
+      const handlers = handlersFor(method, path);
+
+      assert.equal(handlers[0], verifyToken);
+      assert.equal(handlers.at(-1), controllers[controllerName]);
+      assert.equal(handlers.length, length);
+      assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+      assert.equal(roleAnswer(handlers, "HR"), 403);
+      assert.equal(roleAnswer(handlers, "Employee"), 403);
+    });
+
+  // After the id checks, so a bad id is 404 before the body is looked at.
+  test("the validators run last, before the controllers", async () => {
+    const { validateClassificationChanges, validateNewClassification } = await import(
+      "../../src/middlewares/validateClassification.js"
+    );
+
+    assert.equal(handlersFor("post", "/companies/:employer_id/classifications").at(-2), validateNewClassification);
+    assert.equal(
+      handlersFor("patch", "/companies/:employer_id/classifications/:classification_id").at(-2),
+      validateClassificationChanges,
+    );
+  });
+});
+
+// The company's one HR account, DBA request 24, branch 4. The Administrator
+// only.
+describe("the HR account routes", () => {
+  test("POST /companies/:employer_id/hr-account checks the id, then the body", async () => {
+    const controllers = await import("../../src/controllers/companyController.js");
+    const { validateHrAccount } = await import("../../src/middlewares/validateHrAccount.js");
+    const handlers = handlersFor("post", "/companies/:employer_id/hr-account");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.length, 5);
+    assert.equal(handlers[3], validateHrAccount);
+    assert.equal(handlers.at(-1), controllers.createHrAccount);
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "HR"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+
+  // It mails a password, as HR's employee resend does, and shares its limit.
+  test("POST …/hr-account/resend-credentials is rate limited", async () => {
+    const controllers = await import("../../src/controllers/companyController.js");
+    const { credentialsResendLimiter } = await import("../../src/middlewares/rateLimiter.js");
+    const handlers = handlersFor("post", "/companies/:employer_id/hr-account/resend-credentials");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers[3], credentialsResendLimiter);
+    assert.equal(handlers.at(-1), controllers.resendHrCredentials);
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "HR"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
+// A company's affiliates, DBA request 25, branch 5. The Administrator only.
+// The edit sits under the company (option A, 2026-10-15).
+describe("the affiliate routes", () => {
+  const ROUTES = [
+    ["get", "/companies/:employer_id/affiliates", "getAffiliates", 4],
+    ["post", "/companies/:employer_id/affiliates", "createAffiliate", 5],
+    ["patch", "/companies/:employer_id/affiliates/:affiliate_id", "updateAffiliate", 6],
+  ];
+
+  for (const [method, path, controllerName, length] of ROUTES)
+    test(`${method.toUpperCase()} ${path} is for the Administrator only, behind verifyToken, and reaches its controller`, async () => {
+      const controllers = await import("../../src/controllers/companyController.js");
+      const handlers = handlersFor(method, path);
+
+      assert.equal(handlers[0], verifyToken);
+      assert.equal(handlers.at(-1), controllers[controllerName]);
+      assert.equal(handlers.length, length);
+      assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+      assert.equal(roleAnswer(handlers, "HR"), 403);
+      assert.equal(roleAnswer(handlers, "Employee"), 403);
+    });
+
+  // After the id checks, so a bad id is 404 before the body is looked at.
+  test("the validators run last, before the controllers", async () => {
+    const { validateAffiliateChanges, validateNewAffiliate } = await import(
+      "../../src/middlewares/validateAffiliate.js"
+    );
+
+    assert.equal(handlersFor("post", "/companies/:employer_id/affiliates").at(-2), validateNewAffiliate);
+    assert.equal(
+      handlersFor("patch", "/companies/:employer_id/affiliates/:affiliate_id").at(-2),
+      validateAffiliateChanges,
+    );
+  });
+
+  // Both ids are checked: /companies/5/affiliates/abc is a 404 that names the
+  // affiliate, before anything is read.
+  test("the PATCH checks the affiliate id as well as the company id", () => {
+    const handlers = handlersFor("patch", "/companies/:employer_id/affiliates/:affiliate_id");
+    let answer = null;
+
+    handlers[3]({ params: { employer_id: "5", affiliate_id: "abc" } }, {}, (error) => {
+      answer = error ? { statusCode: error.statusCode, message: error.message } : "passed";
+    });
+
+    assert.deepEqual(answer, { statusCode: 404, message: "Affiliate not found" });
+  });
+});
+
+// The development wipe, DBA request 26. The door comes first, before the
+// session, so in production the path answers like one never declared.
+describe("the development wipe route", () => {
+  test("POST /enrollments/wipe: the door, then the session, then HR or the Administrator", async () => {
+    const { wipeEnrollments } = await import("../../src/controllers/adminController.js");
+    const handlers = handlersFor("post", "/enrollments/wipe");
+
+    assert.equal(handlers.length, 4);
+    assert.equal(handlers[1], verifyToken);
+    assert.equal(handlers.at(-1), wipeEnrollments);
+
+    // The suite runs as "test", so the door is open.
+    let passed = false;
+    handlers[0]({}, {}, (arg) => {
+      passed = arg === undefined;
+    });
+    assert.ok(passed, "the door is shut outside production");
+
+    const roleOf = (role_name) => {
+      let answer = null;
+      handlers[2]({ user: { role_name } }, {}, (error) => {
+        answer = error ? error.statusCode : "passed";
+      });
+      return answer;
+    };
+    assert.equal(roleOf("HR"), "passed");
+    assert.equal(roleOf("Administrator"), "passed");
+    assert.equal(roleOf("Employee"), 403);
+  });
+});
+
+// The invitation template, branch 6. HR only, as the upload it feeds is.
+describe("the invitation template route", () => {
+  test("GET /invitations/template is for HR only, behind verifyToken, and reaches its controller", async () => {
+    const { downloadInvitationTemplate } = await import("../../src/controllers/invitationController.js");
+    const handlers = handlersFor("get", "/invitations/template");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.length, 3);
+    assert.equal(handlers.at(-1), downloadInvitationTemplate);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
+// HR's own company's affiliates, DBA request 25. HR only, as its classes are:
+// they are what HR writes in its invitation file.
+describe("the HR affiliate route", () => {
+  test("GET /affiliates is for HR only, behind verifyToken, and reaches its controller", async () => {
+    const { getCompanyAffiliates } = await import("../../src/controllers/adminController.js");
+    const handlers = handlersFor("get", "/affiliates");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), getCompanyAffiliates);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
+// HR's own company's classifications, DBA request 23. HR only, like the
+// invitation routes: they are what HR assigns on each invitation.
+describe("the HR classification route", () => {
+  test("GET /classifications is for HR only, behind verifyToken, and reaches its controller", async () => {
+    const { getCompanyClassifications } = await import("../../src/controllers/adminController.js");
+    const handlers = handlersFor("get", "/classifications");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), getCompanyClassifications);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), 403);
     assert.equal(roleAnswer(handlers, "Employee"), 403);
   });
 });
@@ -209,7 +519,8 @@ describe("the HR messaging routes", () => {
   test("sending is rate limited, after the id check", () => {
     const handlers = handlersFor("post", "/conversations/:conversation_id/messages");
 
-    assert.equal(handlers.length, 5);
-    assert.equal(handlers.indexOf(messageSendLimiter), 3);
+    assert.equal(handlers.length, 6);
+    assert.equal(handlers.indexOf(requireCompanyMessaging), 3);
+    assert.equal(handlers.indexOf(messageSendLimiter), 4);
   });
 });

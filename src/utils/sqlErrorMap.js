@@ -32,6 +32,7 @@ export const sqlErrorMap = {
     // changing a company they are not mapped to.
     50140: { statusCode: 404, message: 'Company not found' },
     50141: { statusCode: 403, message: 'You can only change the settings of your own company' },
+    50199: { statusCode: 403, message: 'Messaging is disabled for this company.' },
 
     // Thrown by usp_ins_beneficiary, on the public enrollment submit path. Its
     // only caller is enrollmentService.js:107, once per beneficiary, inside the
@@ -79,7 +80,7 @@ export const sqlErrorMap = {
     // usp_ins_client, added by the DBA on 2026-09-07 at our request.
     //
     // Before it existed, a duplicate SSS number was not refused by the
-    // procedure at all — dbo.clients has a UNIQUE index on sss_gsis_no and
+    // procedure at all — bes.clients has a UNIQUE index on sss_gsis_no and
     // nothing checked it, so the caller got SQL Server's own 2627, which this
     // file can only render as "Duplicate record". That message names no field,
     // so the employee had nothing to act on.
@@ -137,13 +138,18 @@ export const sqlErrorMap = {
     // picked a classification that has since been deactivated, and choosing a
     // different one fixes it.
     //
-    // Nearly unreachable: enrollmentService.js:51 validates the id against the
-    // active list before the transaction opens, so this only fires if the
-    // classification is deactivated in the milliseconds between. Mapped anyway
-    // for the same reason as 50008 — it is the database's own guard on a rule
-    // we also check, and if it ever fires the employee should be told what to
-    // change rather than that the server broke.
+    // Nearly unreachable: enrollmentService validates the id against the
+    // company's active list before the transaction opens, so this only fires
+    // if the classification is deactivated in the milliseconds between.
+    // Mapped anyway for the same reason as 50008 — it is the database's own
+    // guard on a rule we also check, and if it ever fires the employee should
+    // be told what to change rather than that the server broke.
     50018: {statusCode: 400, message: 'That employee classification is no longer available. Please choose another.'},
+
+    // Same procedure, DBA request 23, read back 2026-10-15: the class belongs
+    // to another company. enrollmentService refuses that first with this same
+    // sentence, so the employee hears one answer whichever guard fires.
+    50180: {statusCode: 400, message: 'That classification is not available for your company'},
     50019: {statusCode: 409, message: 'You have already submitted an enrollment'},
     50020: {statusCode: 404, message: 'Beneficiary not found'},
     50021: {statusCode: 409, message: 'This enrollment already has a beneficiary with that name'},
@@ -302,6 +308,18 @@ export const sqlErrorMap = {
     // handled rather than missed.
     50063: { statusCode: 409, message: 'This company is no longer active. Please contact PhilLife.' },
 
+    // Same procedure, DBA request 23: the class sent with an invitation is not
+    // the company's, or is retired. The bulk send (branch 6) matches the codes
+    // first, so this is a class retired while the job ran, and
+    // invitationService catches it to report that row with a reason. The
+    // mapping stays for any other caller.
+    //
+    // 50209, the same for the affiliate (DBA request 25), is caught there the
+    // same way and NOT mapped. 50210, from usp_ins_client_employer at submit,
+    // is NOT mapped either: the affiliate comes from the invitation of the
+    // same company, so its firing would be a fault on our side.
+    50181: { statusCode: 400, message: 'That classification is not available for this company' },
+
     // ── Employee claims, DBA request 20, read back 2026-10-12 ──────────────
     //
     // The submit path checks the claim type, the file fields and the required
@@ -383,7 +401,84 @@ export const sqlErrorMap = {
     50174: { statusCode: 400, message: 'A message cannot be empty' },
     50175: { statusCode: 400, message: 'A message can be at most 2000 characters' },
 
-    50180: { statusCode: 400, message: 'The selected classification is not available for your employer' },
+    // ── The Administrator's companies, DBA request 24, read back 2026-10-15 ──
+    //
+    // The role guard on all twelve of that request's procedures. The routes
+    // allow the Administrator only, so this is the stale-session case.
+    50182: { statusCode: 403, message: 'Only an Administrator can manage companies' },
+    // usp_ins_employer and usp_upd_employer. validateCompany checks the two
+    // lengths first, so 50183 and 50185 are the database's own guards.
+    50183: { statusCode: 400, message: 'Company code must be 1 to 20 characters' },
+    50184: { statusCode: 409, message: 'That company code is already used by another company' },
+    50185: { statusCode: 400, message: 'Policy number must be 1 to 12 characters' },
+    50186: { statusCode: 409, message: 'That policy number is already used by another company' },
+    // An id that matches no company. Also thrown when a class, an HR account
+    // or an affiliate is added to an inactive one (branches 3, 4 and 5).
+    50187: { statusCode: 404, message: 'Company not found' },
+    // The policy number is the prefix of every employee's number, and the
+    // certificate reads it live, so it is fixed once one enrollment exists.
+    50188: { statusCode: 409, message: 'The policy number cannot change once the company has an enrollment' },
+
+    // The classification procedures, branch 3. validateClassification checks
+    // the code's length and each benefit's value first, so 50189 and 50193 are
+    // the database's own guards. 50190 is the one met in ordinary use.
+    50189: { statusCode: 400, message: 'Classification code must be 1 to 20 characters' },
+    50190: { statusCode: 409, message: 'That classification code is already used in this company' },
+    50191: { statusCode: 404, message: 'Classification not found' },
+    // The plan or rider id comes from usp_sel_benefit_types, read moments
+    // earlier, so this means the catalogue changed in between.
+    50192: { statusCode: 400, message: 'That benefit is not available' },
+    50193: { statusCode: 400, message: 'A benefit needs either an amount above zero or a formula' },
+    // scheduleService only inserts a benefit the class does not have, so this
+    // is a race between two saves of the same class.
+    50194: { statusCode: 409, message: 'That benefit is already on the classification' },
+    50195: { statusCode: 404, message: 'Benefit not found' },
+
+    // sec.us08_usp_ins_user_employer, branch 4. 50196 means our own code
+    // mapped a user that is not an active HR account: the role is assigned a
+    // line earlier in the same transaction, so this is a fault on our side.
+    50196: { statusCode: 500, message: 'The HR account could not be set up. Please contact PhilLife.' },
+    // hrAccountService asks first and answers the same sentence, so this is a
+    // race between two creations.
+    50197: { statusCode: 409, message: 'This company already has an HR account' },
+
+    // ── Affiliates, DBA request 25, read 2026-10-15 before delivery ──
+    //
+    // usp_ins_employer_affiliate and usp_upd_employer_affiliate, branch 5.
+    // validateAffiliate checks both lengths first, so 50200 and 50204 are the
+    // database's own guards. 50201–50203 and 50205 compare without regard to
+    // case or surrounding spaces.
+    50200: { statusCode: 400, message: 'Affiliate code must be 1 to 20 characters' },
+    50201: { statusCode: 409, message: 'That affiliate code is already used in this company' },
+    // In HR's file the company's own code means the company itself, so an
+    // affiliate cannot carry it.
+    50202: { statusCode: 400, message: "An affiliate's code cannot be the company's own code" },
+    50203: { statusCode: 409, message: 'That affiliate name is already used in this company' },
+    50204: { statusCode: 400, message: 'Affiliate reference must be 1 to 20 characters with no spaces' },
+    // Two equal references would share one series of policy numbers.
+    50205: { statusCode: 409, message: "That reference is already used by another affiliate or as a company's policy number" },
+    // The reference is the prefix of its employees' policy numbers.
+    50206: { statusCode: 409, message: 'The reference cannot change once an employee is numbered under it' },
+    50207: { statusCode: 404, message: 'Affiliate not found' },
+    // usp_sel_employer_affiliates_by_user. The route allows HR only, so this
+    // is the stale-session case.
+    50208: { statusCode: 403, message: 'Only HR users can list affiliates' },
+    // usp_ins_employer and usp_upd_employer (branch 2), from request 25 Part
+    // 9c: the other side of 50205.
+    50211: { statusCode: 409, message: "That policy number is already used as an affiliate's reference" },
+    // usp_del_employer (branch 10): an employee, invitation, class, affiliate,
+    // conversation or HR account belongs to the company. Only a company
+    // created by mistake or for a test can be deleted.
+    50212: { statusCode: 409, message: 'This company cannot be deleted: it already has employees, invitations, classes, affiliates or an HR account' },
+
+    // ── The development wipe, DBA request 26, read back 2026-10-15 ──
+    //
+    // usp_del_company_enrollees. enrollmentWipeService checks both first: the
+    // route admits HR and the Administrator only, HR is held to its own
+    // company, and the typed code is compared. These are the database's own
+    // guards, and the stale-session case.
+    50220: { statusCode: 403, message: "You are not allowed to wipe this company's enrollments" },
+    50221: { statusCode: 400, message: 'The confirmation does not match the company code' },
 
     2627: {statusCode: 409, message: 'Duplicate record'},
 

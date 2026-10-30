@@ -14,6 +14,8 @@ const {
   employeeClaimOf,
   hrClaimListItemOf,
   hrClaimOf,
+  hrClaimTypesOf,
+  deathClaimFlagOf,
   reviewClaim,
   statusFilterOf,
   getClaims,
@@ -142,6 +144,46 @@ describe("what leaves, field by field", () => {
       { requirement_id: "1", requirement_desc: "Required", is_required: true, sort_order: 1, field: "requirement_1" },
       { requirement_id: "2", requirement_desc: "Optional", is_required: false, sort_order: 2, field: "requirement_2" },
     ]);
+  });
+
+  // HR files the death claim (its own type) and, for an employee, anything the
+  // employee could file. `filed_by` is how the frontend tells the two apart.
+  test("HR's list is its own types and the employee's, each saying who files it", () => {
+    const own = {
+      types: [{ claim_type_id: "3", claim_type_code: "TEST-DEATH", claim_type_desc: "Test death claim", ends_coverage: true }],
+      requirements: [{ requirement_id: "4", claim_type_id: "3", requirement_desc: "Death certificate", is_required: true, sort_order: 1 }],
+    };
+    const general = {
+      types: [{ claim_type_id: "1", claim_type_code: "TEST-CLAIM", claim_type_desc: "Test claim", ends_coverage: false }],
+      requirements: [{ requirement_id: "1", claim_type_id: "1", requirement_desc: "Document", is_required: true, sort_order: 1 }],
+    };
+
+    const listed = hrClaimTypesOf(own, general);
+
+    assert.deepEqual(listed.map((type) => [type.claim_type_code, type.filed_by]), [
+      ["TEST-DEATH", "HR"],
+      ["TEST-CLAIM", "EMPLOYEE"],
+    ]);
+    // each type keeps its own documents
+    assert.deepEqual(listed.map((type) => type.requirements.map((requirement) => requirement.field)), [
+      ["requirement_4"],
+      ["requirement_1"],
+    ]);
+    assert.deepEqual(hrClaimTypesOf({ types: [], requirements: [] }, { types: [], requirements: [] }), []);
+  });
+});
+
+describe("which claim is a death claim", () => {
+  test("a claim of HR's own type is, a claim of an employee's type is not", () => {
+    assert.deepEqual(deathClaimFlagOf("HR"), { is_death_claim: true });
+    assert.deepEqual(deathClaimFlagOf("hr"), { is_death_claim: true });
+    assert.deepEqual(deathClaimFlagOf("EMPLOYEE"), { is_death_claim: false });
+  });
+
+  // A type that was not found says nothing, so the screen keeps its older rule
+  // instead of being told a real death claim is not one.
+  test("a type that is not known says nothing at all", () => {
+    for (const unknown of [undefined, null, ""]) assert.deepEqual(deathClaimFlagOf(unknown), {});
   });
 });
 

@@ -15,6 +15,9 @@ const emptyCounts = () => ({
   email_failed: 0,
   already_invited: 0,
   already_enrolled: 0,
+  // A class or affiliate that stopped being available while the job ran
+  // (branch 6 of the onboarding effort). Carries a reason.
+  invalid: 0,
   failed: 0,
 });
 

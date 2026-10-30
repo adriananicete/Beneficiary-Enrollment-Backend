@@ -1,8 +1,20 @@
 import crypto from "crypto";
 import InvitationModel from "../models/invitationModel.js";
+import ReferenceModel from "../models/referenceModel.js";
+import AffiliateModel from "../models/affiliateModel.js";
 import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
-import { partitionEmails } from "../utils/partitionEmails.js";
+import { partitionInvitations } from "../utils/partitionInvitations.js";
+import { creditCompanyOf } from "../gcli/companies.js";
+import { devStoreOn } from "../gcli/devStore.js";
+import {
+  clearInvitedEmployeeId,
+  employeeIdGivenToSomeoneElse,
+  setInvitedEmployeeId,
+  supersedeInvitedEmployeeIds,
+} from "../gcli/invitedEmployeeId.js";
+import UserModel from "../models/userModel.js";
+import { buildInvitationTemplate, invitationTemplateFileName } from "../utils/invitationTemplate.js";
 import { chunk, delay, runWithConcurrency } from "../utils/concurrency.js";
 import { buildPage } from "../utils/parsePaging.js";
 import InvitationJobStore from "./invitationJobStore.js";
@@ -52,18 +64,56 @@ const sendWithRetry = async (payload) => {
   }
 };
 
+// The class retired, or the affiliate deactivated, between the upload reading
+// the codes and this row being created. The row is HR's to fix, so it is
+// reported with a reason rather than as a failure of the send.
+const NO_LONGER_AVAILABLE = {
+  50181: "Classification is no longer available",
+  50209: "Affiliate is no longer available",
+};
+
 // Returns the status it recorded so the caller can judge the run as a whole.
 // Never throws — a failure here is one address, not the job.
-const processAddress = async (pool, jobId, userId, employer, email) => {
+const processAddress = async (pool, jobId, userId, employer, invitee) => {
+  const { email, classificationId, affiliateId, employeeId } = invitee;
   const token = crypto.randomBytes(32).toString("hex");
 
   try {
+    // An employee ID HR gave that is a login already, or that another person's invitation carries
+    // (any company: a login name is shared by all), would fill the employee's form with a number
+    // they cannot register under. It may be the employee's own login, if they enrolled already.
+    if (employeeId && (employeeIdGivenToSomeoneElse({ employeeId, email }) || (await UserModel.checkUsernameExists(pool, employeeId)))) {
+      InvitationJobStore.appendResult(jobId, {
+        email,
+        status: "invalid",
+        reason: "Employee ID is already a login, or given to another invitation",
+      });
+
+      return "invalid";
+    }
+
+    // Kept before the invitation is made, with the token it will have: if keeping it fails, no
+    // invitation exists without its ID; if the invitation is refused, the ID is taken back below.
+    if (employeeId) setInvitedEmployeeId({ token, employeeId, employerId: employer.employer_id, email });
+
     const invitationId = await InvitationModel.createInvitation(pool, {
       employer_id: employer.employer_id,
       email_address: email,
       token,
       created_by: userId,
+      classification_id: classificationId,
+      affiliate_id: affiliateId,
     });
+
+    // A person invited again leaves their old invitation's ID behind: let it go. Nothing depends
+    // on it, so a failure here is not the invitation's.
+    if (employeeId) {
+      try {
+        supersedeInvitedEmployeeIds({ token, employerId: employer.employer_id, email });
+      } catch (error) {
+        console.error("Could not release an earlier invitation's employee ID:", { email, error });
+      }
+    }
 
     try {
       await sendWithRetry({
@@ -93,6 +143,9 @@ const processAddress = async (pool, jobId, userId, employer, email) => {
       return "email_failed";
     }
   } catch (error) {
+    // the invitation was not made (or the check before it failed): its ID, if kept, goes back
+    if (employeeId) clearInvitedEmployeeId(token);
+
     const number = error.number ?? error.originalError?.number;
 
     if (number === 50064) {
@@ -115,6 +168,16 @@ const processAddress = async (pool, jobId, userId, employer, email) => {
       return "already_enrolled";
     }
 
+    if (number in NO_LONGER_AVAILABLE) {
+      InvitationJobStore.appendResult(jobId, {
+        email,
+        status: "invalid",
+        reason: NO_LONGER_AVAILABLE[number],
+      });
+
+      return "invalid";
+    }
+
     console.error("Invitation creation failed:", { email, error });
     InvitationJobStore.appendResult(jobId, { email, status: "failed" });
 
@@ -130,7 +193,7 @@ const processAddress = async (pool, jobId, userId, employer, email) => {
 // a single long-lived pool rather than opening one per caller, so holding it
 // past the response is the same object the next request will use — nothing
 // request-scoped is being kept alive here.
-const runInvitationJob = async (pool, jobId, userId, employer, emails) => {
+const runInvitationJob = async (pool, jobId, userId, employer, invitees) => {
   try {
     // An address failure is skipped; a systemic failure stops the run. Without
     // this, a Graph outage would burn through every address, mark them all
@@ -140,7 +203,7 @@ const runInvitationJob = async (pool, jobId, userId, employer, emails) => {
     let consecutiveFailures = 0;
     let cancelled = false;
 
-    for (const batch of chunk(emails, BATCH_SIZE)) {
+    for (const batch of chunk(invitees, BATCH_SIZE)) {
       // Checked at the boundary rather than per address, so a cancel never
       // lands between creating an invitation and sending its email.
       if (InvitationJobStore.isCancelRequested(jobId)) {
@@ -153,13 +216,13 @@ const runInvitationJob = async (pool, jobId, userId, employer, emails) => {
       await runWithConcurrency(
         batch,
         config.invitationConcurrency,
-        async (email, index) => {
+        async (invitee, index) => {
           statuses[index] = await processAddress(
             pool,
             jobId,
             userId,
             employer,
-            email,
+            invitee,
           );
         },
       );
@@ -196,13 +259,35 @@ const runInvitationJob = async (pool, jobId, userId, employer, emails) => {
   }
 };
 
-const sendInvitations = async (pool, userId, emails) => {
+// The company HR sends under, with its active classes and active affiliates:
+// what an upload is matched against and what the template lists. The company
+// is the first the account is mapped to, under the one-HR-account-per-company
+// rule, the same one HR's class and affiliate lists answer for.
+const companyCodesFor = async (pool, userId) => {
   const employers = await InvitationModel.getEmployersByUser(pool, userId);
   if (employers.length === 0)
     throw new AppError("No company is assigned to your account", 403);
 
-  const employer = employers[0];
+  const company = employers[0];
+  const classes = await ReferenceModel.getClassificationsByEmployer(pool, company.employer_id);
 
+  // The procedure answers for every company the account is mapped to.
+  const affiliates = (await AffiliateModel.getAffiliatesByUser(pool, userId)).filter(
+    (row) => String(row.employer_id) === String(company.employer_id),
+  );
+
+  return { company, classes, affiliates };
+};
+
+// Each row is an email, a class code and, where the company has affiliates,
+// an affiliate code (branch 6 of the onboarding effort).
+const sendInvitations = async (pool, userId, rows) => {
+  // The codes are read once, before the job starts, and every row is judged
+  // against the same list.
+  const { company, classes, affiliates } = await companyCodesFor(pool, userId);
+
+  // After the reads, with nothing awaited between this check and createJob,
+  // so two uploads arriving together cannot both pass it.
   if (InvitationJobStore.hasRunningJob(userId))
     throw new AppError(
       "An invitation upload is already running. Wait for it to finish before starting another.",
@@ -211,22 +296,40 @@ const sendInvitations = async (pool, userId, emails) => {
 
   // Rejected rows need no I/O, so they are known now and returned with the
   // acknowledgement — HR sees the bad rows while still looking at the upload.
-  const { valid, rejected } = partitionEmails(emails);
+  // A company on the credit plan has borrowers, who are not classified (src/gcli).
+  const { valid, rejected } = partitionInvitations(rows, {
+    company,
+    classes,
+    affiliates,
+    classified: !creditCompanyOf(company.employer_id),
+    employeeIds: devStoreOn(),
+  });
 
   const job = InvitationJobStore.createJob(userId, valid.length);
 
   // Intentionally not awaited: the response goes out now and the sending
   // continues behind it. The catch is belt and braces; runInvitationJob
   // already swallows everything.
-  runInvitationJob(pool, job.id, userId, employer, valid).catch((error) =>
+  runInvitationJob(pool, job.id, userId, company, valid).catch((error) =>
     console.error("Invitation job crashed:", { jobId: job.id, error }),
   );
 
   return {
     jobId: job.id,
-    submitted: emails.length,
+    submitted: rows.length,
     total: valid.length,
     rejected,
+  };
+};
+
+// The file HR fills: its company's codes as they are now.
+const getTemplate = async (pool, userId) => {
+  const codes = await companyCodesFor(pool, userId);
+
+  return {
+    fileName: invitationTemplateFileName(codes.company),
+    // an Employee ID column only where the server can keep what HR writes in it
+    workbook: buildInvitationTemplate({ ...codes, employeeIds: devStoreOn() }),
   };
 };
 
@@ -335,6 +438,9 @@ const revokeInvitation = async (pool, userId, invitationId) => {
     throw new AppError("Invitation does not belong to your company", 403);
 
   await InvitationModel.revokeInvitation(pool, invitationId, userId)
+
+  // the employee ID HR gave it is free again
+  clearInvitedEmployeeId(invitation.token);
 };
 
 const resendInvitation = async (pool, userId, invitationId) => {
@@ -371,6 +477,7 @@ const resendInvitation = async (pool, userId, invitationId) => {
 
 export default {
     sendInvitations,
+    getTemplate,
     getInvitationJobStatus,
     cancelInvitationJob,
     getInvitations,

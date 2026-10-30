@@ -20,6 +20,14 @@
 // from a query rather than a procedure — barangayExists and checkUsernameExists
 // both decide a guard that way — so answering every query with nothing would
 // pin one branch and make the other unreachable.
+//
+// The models call procedures by schema-qualified name (bes.usp_ins_message). A
+// test may script and look up the bare name and still match; a test that names
+// the schema is held to it, so the binding tests still pin the prefix.
+const bare = (name) => name.replace(/^\w+\./, "");
+
+const sameProcedure = (called, wanted) => called === wanted || bare(called) === wanted;
+
 export const fakePool = (answers, queryAnswers = []) => {
   const calls = [];
 
@@ -45,7 +53,7 @@ export const fakePool = (answers, queryAnswers = []) => {
       async execute(procedure) {
         calls.push({ procedure, inputs, bindings, outputs });
 
-        const answer = answers[procedure];
+        const answer = answers[procedure] ?? answers[bare(procedure)];
         if (answer === undefined)
           throw new Error(`fake pool has no answer for ${procedure}`);
 
@@ -81,14 +89,14 @@ export const fakePool = (answers, queryAnswers = []) => {
 // The inputs a procedure was called with, for asserting that a filter or a
 // scoping id actually reached the database rather than being dropped on the way.
 export const inputsFor = (calls, procedure) =>
-  calls.find((call) => call.procedure === procedure)?.inputs;
+  calls.find((call) => call.procedure && sameProcedure(call.procedure, procedure))?.inputs;
 
 // The raw-query equivalent, matched on the SQL text.
 export const queryMatching = (calls, pattern) =>
   calls.find((call) => call.query && pattern.test(call.query));
 
 export const callTo = (calls, procedure) =>
-  calls.find((call) => call.procedure === procedure);
+  calls.find((call) => call.procedure && sameProcedure(call.procedure, procedure));
 
 // mssql types come in two shapes: a bare `sql.BigInt` is a function carrying a
 // `declaration`, while `sql.Decimal(5, 2)` and `sql.VarChar(9)` are objects

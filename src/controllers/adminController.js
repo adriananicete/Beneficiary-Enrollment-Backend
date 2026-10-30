@@ -5,14 +5,22 @@ import UserModel from "../models/userModel.js";
 import ExportService from "../services/exportService.js";
 import DashboardService from "../services/dashboardService.js";
 import CertificateService from "../services/certificateService.js";
+import ClassificationService from "../services/classificationService.js";
+import AffiliateService from "../services/affiliateService.js";
+import EnrollmentWipeService from "../services/enrollmentWipeService.js";
 import SignatureModel from "../models/signatureModel.js";
 import { sendSignature } from "../utils/signatureResponse.js";
 import { getPool } from "../config/db.js";
+import config from "../config/env.js";
 import { buildPage, parsePaging, parseSearch } from "../utils/parsePaging.js";
 import { AppError } from "../utils/AppError.js";
 import { localIsoDate } from "../utils/localDate.js";
 import { sendCredentialsEmail } from "../services/emailService.js";
 import { endUserSessions } from "../realtime/realtime.js";
+import InvitationModel from "../models/invitationModel.js";
+import { withApplications } from "../gcli/applications.js";
+import { devStoreOn } from "../gcli/devStore.js";
+import { ADMIN } from "../utils/constants.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 
@@ -28,9 +36,72 @@ export const getEnrollment = async (req, res, next) => {
       search: parseSearch(req.query.search),
     });
 
+    const page = buildPage(employees, paging);
+
     return res.status(200).json({
       success: true,
-      data: buildPage(employees, paging),
+      data: await withGcliApplications(pool, req.user, page, parseSearch(req.query.search)),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The enrollment list with the credit plan's applications in front, while the dev store
+// is on (src/gcli). Only HR has applications to show; anything else, and HR with none,
+// gets the page as it was.
+const withGcliApplications = async (pool, user, page, search) => {
+  if (!devStoreOn() || user.role_name !== ADMIN) return page;
+
+  const employers = await InvitationModel.getEmployersByUser(pool, user.user_id);
+
+  return withApplications(page, { employerIds: employers.map((employer) => String(employer.employer_id)), search });
+};
+
+// HR's own company's classifications: id, code and name, no amounts. What HR
+// will assign on each invitation (branch 6 of the onboarding effort).
+export const getCompanyClassifications = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const classifications = await ClassificationService.getForUser(pool, req.user.user_id);
+
+    return res.status(200).json({
+      success: true,
+      data: classifications,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// HR's own company's active affiliates: id, code and name. What HR writes in
+// the Affiliate column of its invitation file (branch 6 of the onboarding
+// effort). An empty list means the company has none.
+export const getCompanyAffiliates = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const affiliates = await AffiliateService.getForUser(pool, req.user.user_id);
+
+    return res.status(200).json({
+      success: true,
+      data: affiliates,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The development wipe, DBA request 26: every enrollee of one company, whole.
+// The route exists only where NODE_ENV is not production.
+export const wipeEnrollments = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const result = await EnrollmentWipeService.wipe(pool, req.user, req.body);
+
+    return res.status(200).json({
+      success: true,
+      message: `Deleted ${result.people_deleted} people and ${result.enrollments_deleted} enrollments from ${result.company_code}`,
+      data: result,
     });
   } catch (error) {
     next(error);
@@ -103,6 +174,7 @@ export const resendCredentials = async (req, res, next) => {
         firstName: user.us01_first_name,
         username: user.us01_username,
         password: tempPassword,
+        loginUrl: `${config.appUrl}/employee-login`,
       });
     } catch (error) {
       // Caught only to say what is true. graphSendError returns a plain Error,

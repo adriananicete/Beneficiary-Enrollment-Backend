@@ -4,7 +4,7 @@ import { sql } from "../config/db.js";
 // address and beneficiary changes as JSON documents it reads with OPENJSON.
 //
 // Every parameter defaults to NULL in the procedure, and the approval writes all
-// eighteen client fields straight onto dbo.clients. So a field missing from the
+// eighteen client fields straight onto bes.clients. So a field missing from the
 // payload is stored as NULL and later clears a real value. validateEnrollmentUpdate
 // is what stops that happening and must stay in front of this.
 const insertChangeRequest = async (pool, changeRequestData) => {
@@ -48,7 +48,7 @@ const insertChangeRequest = async (pool, changeRequestData) => {
       changeRequestData.beneficiaries_json,
     )
     .input("submitted_by", sql.VarChar(50), changeRequestData.submitted_by)
-    .execute("usp_ins_client_change_request");
+    .execute("bes.usp_ins_client_change_request");
 
   // The procedure returns the new id in a result set rather than an OUTPUT
   // parameter, unlike every other insert in this codebase.
@@ -59,7 +59,7 @@ const getChangeRequestsByClient = async (pool, clientId) => {
   const result = await pool
     .request()
     .input("client_id", sql.BigInt, clientId)
-    .execute("usp_sel_client_change_request_by_client");
+    .execute("bes.usp_sel_client_change_request_by_client");
 
   return result.recordset;
 };
@@ -79,7 +79,7 @@ const cancelChangeRequest = async (pool, cancelData) => {
     .input("client_id", sql.BigInt, cancelData.client_id)
     .input("cancelled_by", sql.VarChar(50), cancelData.cancelled_by)
     .input("cancel_remarks", sql.VarChar(500), cancelData.cancel_remarks)
-    .execute("usp_upd_client_change_request_cancel");
+    .execute("bes.usp_upd_client_change_request_cancel");
 
   return result.recordset[0];
 };
@@ -98,7 +98,7 @@ const getChangeRequestsByUser = async (pool, userId, requestStatus, paging = {})
     .input("request_status", sql.VarChar(20), requestStatus ?? null)
     .input("page", sql.Int, paging.page)
     .input("page_size", sql.Int, paging.pageSize)
-    .execute("usp_sel_client_change_requests_by_user");
+    .execute("bes.usp_sel_client_change_requests_by_user");
 
   return result.recordset;
 };
@@ -107,7 +107,7 @@ const getPendingCountByUser = async (pool, userId) => {
   const result = await pool
     .request()
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_sel_client_change_request_pending_count");
+    .execute("bes.usp_sel_client_change_request_pending_count");
 
 	return result.recordset[0]?.pending_count ?? 0;
 };
@@ -129,7 +129,7 @@ const getChangeRequestById = async (pool, requestId, userId) => {
     .request()
     .input("client_change_request_id", sql.BigInt, requestId)
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_sel_client_change_request_by_id");
+    .execute("bes.usp_sel_client_change_request_by_id");
 
   const [header = [], changedFields = [], addresses = [], beneficiaries = []] =
     result.recordsets;
@@ -154,7 +154,7 @@ const approveChangeRequest = async (pool, approvalData) => {
     )
     .input("reviewed_by", sql.VarChar(50), approvalData.reviewed_by)
     .input("review_remarks", sql.VarChar(500), approvalData.review_remarks)
-    .execute("usp_upd_client_change_request_approve");
+    .execute("bes.usp_upd_client_change_request_approve");
 
   return result.recordset[0];
 };
@@ -169,7 +169,7 @@ const rejectChangeRequest = async (pool, rejectionData) => {
     )
     .input("reviewed_by", sql.VarChar(50), rejectionData.reviewed_by)
     .input("review_remarks", sql.VarChar(500), rejectionData.review_remarks)
-    .execute("usp_upd_client_change_request_reject");
+    .execute("bes.usp_upd_client_change_request_reject");
 
   return result.recordset[0];
 };

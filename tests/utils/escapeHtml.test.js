@@ -6,6 +6,7 @@ import { emailTemplate } from "../../src/utils/emailTemplate.js";
 import { credentialsEmailTemplate } from "../../src/utils/credentialsEmailTemplate.js";
 import { invitationEmailTemplate } from "../../src/utils/invitationEmailTemplate.js";
 import { changeRequestEmailTemplate } from "../../src/utils/changeRequestEmailTemplate.js";
+import { hrAccountEmailTemplate } from "../../src/utils/hrAccountEmailTemplate.js";
 
 const PAYLOAD = `<script>alert('x')</script>`;
 
@@ -75,6 +76,31 @@ describe("every template escapes what is interpolated into it", () => {
           username: value,
           password: value,
           loginUrl: "https://example.com/login",
+        }),
+    },
+    // The company name is typed by the Administrator, and the issuer and
+    // contact are passed in by the caller.
+    {
+      name: "credentialsEmailTemplate — Administrator reissue to HR",
+      build: (value) =>
+        credentialsEmailTemplate({
+          firstName: "Maria",
+          username: "hr.abcc",
+          password: "x",
+          loginUrl: "https://example.com",
+          issuedBy: value,
+          contact: value,
+        }),
+    },
+    {
+      name: "hrAccountEmailTemplate",
+      build: (value) =>
+        hrAccountEmailTemplate({
+          firstName: value,
+          companyName: value,
+          username: value,
+          password: value,
+          loginUrl: "https://example.com",
         }),
     },
     {

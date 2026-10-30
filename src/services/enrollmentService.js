@@ -14,18 +14,83 @@ import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
 import { sendConfirmationEmail } from "./emailService.js";
 import { autoCertificateFor } from "./certificateService.js";
 import { AppError } from "../utils/AppError.js";
+import { ageAtLastBirthday } from "../utils/validateBirthdate.js";
 import crypto from "crypto";
 import config from "../config/env.js";
 
-const createEnrollment = async (pool, enrollmentData) => {
-  const invitation = await InvitationModel.getInvitationByToken(pool, enrollmentData.token)
+// The invitation behind a public link, refused the way GET /enrollment/invitation
+// refuses it: not found, expired, or already used. Shared by the submit and by
+// the classification list, so the form cannot list a company's classes for a
+// link it would refuse to submit.
+const openInvitation = async (pool, token) => {
+  const invitation = await InvitationModel.getInvitationByToken(pool, token)
   if(!invitation) throw new AppError("Invitation not found", 404);
 
   if(!invitation.is_valid) throw new AppError("This invitation has expired. Please ask your HR to resend it.", 410);
   if(invitation.is_enrolled) throw new AppError("You have already submitted an enrollment", 409);
 
+  return invitation;
+};
+
+// The class and the affiliate the employee is enrolled under. HR assigns both
+// on the invitation (branch 6 of the onboarding effort), so the form's values
+// are ignored, not compared, the same rule as the company and the email.
+//
+// An invitation sent before branch 6 has no class: the employee chooses one,
+// from their company's active list (branch 1). Its affiliate is NULL, the
+// company itself.
+//
+// `activeClasses` is the invitation's company's active list. One sentence for
+// a body class that does not exist, is retired, or is another company's: the
+// employee fixes all three the same way. An assigned class that has been
+// retired since is HR's to fix (Adrian, 2026-10-15).
+export const assignedClassAndAffiliate = (invitation, body, activeClasses) => {
+  const active = new Set(activeClasses.map((c) => String(c.classification_id)));
+  const affiliate_id = invitation.affiliate_id ?? null;
+
+  if (invitation.classification_id != null) {
+    if (!active.has(String(invitation.classification_id)))
+      throw new AppError("Your classification is no longer available. Please contact your HR.", 409);
+
+    return { classification_id: invitation.classification_id, affiliate_id };
+  }
+
+  if (!body.classification_id)
+    throw new AppError("classification_id is required", 400);
+
+  // usp_ins_insurance_enrollment refuses another company's class as well
+  // (50180, DBA request 23), so this is not the only guard.
+  if (!active.has(String(body.classification_id)))
+    throw new AppError("That classification is not available for your company", 400);
+
+  return { classification_id: body.classification_id, affiliate_id };
+};
+
+// Takes the pool, like every other service since PR #102. The controller
+// fetches it; this decides.
+//
+// Everything down to `new sql.Transaction(pool)` is a refusal, and every one of
+// them is tested. The transaction body is not, deliberately — its correctness
+// is about whether the database agrees with us on insert order and procedure
+// contracts, and a fake transaction would agree with whatever we told it. Two
+// defects on 2026-09-08 were exactly that failure. The rollback itself was
+// proven end to end on 2026-09-04, when a duplicate beneficiary name answered
+// 409 and left nothing behind.
+const createEnrollment = async (pool, enrollmentData) => {
+  const invitation = await openInvitation(pool, enrollmentData.token);
+
   enrollmentData.employer_id = invitation.employer_id;
   enrollmentData.email_address = invitation.email_address;
+
+  // The company's limit on online enrollment, employers.online_enrollment_max_age
+  // (DBA request 23): the oldest age, at last birthday, that may enroll here.
+  // NULL means no limit beyond validateBirthdate's 18–100. ABCC's is 65 until
+  // its age rules are built (branch 9): a full amount the contract would not
+  // pay must not be snapshotted. The limit itself never leaves the backend;
+  // the public invitation lookup answers field by field (branch 0).
+  const maxAge = invitation.online_enrollment_max_age;
+  if (maxAge !== null && maxAge !== undefined && ageAtLastBirthday(enrollmentData.birthdate) > maxAge)
+    throw new AppError("Your enrollment cannot be completed online. Please contact your HR.", 409);
 
   const employers = await ReferenceModel.getEmployers(pool);
 
@@ -33,19 +98,21 @@ const createEnrollment = async (pool, enrollmentData) => {
   if (!employerSet.has(String(enrollmentData.employer_id)))
     throw new AppError("Invalid or inactive employer", 400);
 
-  // const classification = await ReferenceModel.getEmployeeClassifications(pool);
-
-    const classification =
-      await ReferenceModel.getEmployeeClassifications(
-        pool,
-        enrollmentData.employer_id,
-    );
-
-  const classificationSet = new Set(
-    classification.map((c) => String(c.classification_id)),
+  // The invitation's company's classes, never the form's company.
+  const classifications = await ReferenceModel.getClassificationsByEmployer(
+    pool,
+    invitation.employer_id,
   );
-  if (!classificationSet.has(String(enrollmentData.classification_id)))
-    throw new AppError("The selected classification is not available for your employer", 400);
+
+  // Overwritten whatever the form sent, the affiliate included even when it is
+  // null: every model below reads both from enrollmentData.
+  const { classification_id, affiliate_id } = assignedClassAndAffiliate(
+    invitation,
+    enrollmentData,
+    classifications,
+  );
+  enrollmentData.classification_id = classification_id;
+  enrollmentData.affiliate_id = affiliate_id;
 
   const barangayIsReal = await ReferenceModel.barangayExists(
     pool,
@@ -216,6 +283,7 @@ const getFullEnrollmentDetails = async (pool, clientId) => {
 };
 
 export default {
+  openInvitation,
   createEnrollment,
   getFullEnrollmentDetails,
 };

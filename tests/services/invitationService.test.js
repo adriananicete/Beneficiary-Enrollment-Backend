@@ -20,10 +20,39 @@ const { default: InvitationJobStore } = await import(
 // test that reaches it would be a network test wearing a unit test's clothes.
 // Every case below stops at a guard that throws before any email is attempted.
 
-const LIST = "usp_sel_enrollment_invitations_by_user";
-const BY_ID = "usp_sel_enrollment_invitation_by_id";
-const REVOKE = "usp_del_enrollment_invitation";
+const LIST = "bes.usp_sel_enrollment_invitations_by_user";
+const BY_ID = "bes.usp_sel_enrollment_invitation_by_id";
+const REVOKE = "bes.usp_del_enrollment_invitation";
 const EMPLOYERS = "sec.us08_usp_sel_employers_by_user";
+const CLASSES = "bes.usp_sel_classifications_by_employer";
+const AFFILIATES = "bes.usp_sel_employer_affiliates_by_user";
+const INSERT = "bes.usp_ins_enrollment_invitation";
+
+// ABCC's codes, as the two procedures return them. The affiliate list carries
+// every company the account is mapped to; 6's must be left out.
+const ABCC_CODES = {
+  [EMPLOYERS]: [{ employer_id: "5", company_code: "ABCC", company_name: "Abacus Book and Card Corporation" }],
+  [CLASSES]: [
+    { classification_id: "51", classification_code: "CLASS 1", classification_desc: "Officers" },
+    { classification_id: "54", classification_code: "CLASS 4", classification_desc: "Rank and file" },
+  ],
+  [AFFILIATES]: [
+    { employer_id: "5", affiliate_id: "7", affiliate_code: "ALAKOR", affiliate_name: "Alakor Corporation" },
+    { employer_id: "6", affiliate_id: "9", affiliate_code: "QUAD", affiliate_name: "Another Group's Affiliate" },
+  ],
+};
+
+// The job runs behind the response. Waits for it to stop processing.
+const settled = async (jobId) => {
+  for (let i = 0; i < 200; i++) {
+    const job = InvitationJobStore.getJob(jobId);
+    if (job.status !== "processing") return job;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error("the job never finished");
+};
+
+const sqlError = (number) => Object.assign(new Error(`SQL ${number}`), { number });
 
 const PAGING = { page: 1, pageSize: 25 };
 
@@ -192,7 +221,7 @@ describe("invitationService — starting a bulk send", () => {
     const { pool } = fakePool({ [EMPLOYERS]: [] });
 
     await assert.rejects(
-      () => InvitationService.sendInvitations(pool, 7, ["ana@coforge.com"]),
+      () => InvitationService.sendInvitations(pool, 7, [{ email_address: "ana@coforge.com" }]),
       (error) => error.statusCode === 403 && /No company is assigned/.test(error.message),
     );
   });
@@ -202,15 +231,13 @@ describe("invitationService — starting a bulk send", () => {
   // duplicates because the first had just created them.
   test("refuses a second upload while one is still running", async () => {
     const userId = 987654;
-    const { pool } = fakePool({
-      [EMPLOYERS]: [{ employer_id: 1, company_name: "Coforge" }],
-    });
+    const { pool } = fakePool(ABCC_CODES);
 
     const running = InvitationJobStore.createJob(userId, 10);
 
     try {
       await assert.rejects(
-        () => InvitationService.sendInvitations(pool, userId, ["ana@coforge.com"]),
+        () => InvitationService.sendInvitations(pool, userId, [{ email_address: "ana@abcc.com.ph" }]),
         (error) => error.statusCode === 409 && /already running/.test(error.message),
       );
     } finally {
@@ -218,5 +245,105 @@ describe("invitationService — starting a bulk send", () => {
       // the store is module state shared across the file.
       InvitationJobStore.completeJob(running.id, { cancelled: true });
     }
+  });
+});
+
+// Branch 6 of the onboarding effort: each row carries a class code and, for a
+// company with affiliates, an affiliate code, matched against the company's
+// codes read once before the job.
+describe("invitationService — the codes of a bulk send", () => {
+  test("matches against the first company's classes and its own affiliates only", async () => {
+    const { pool, calls } = fakePool(ABCC_CODES);
+
+    const answer = await InvitationService.sendInvitations(pool, 31, [
+      { email_address: "a@alakor.com.ph", classification_code: "CLAS 4", affiliate_code: "ALAKOR" },
+      { email_address: "b@quad.com.ph", classification_code: "CLASS 4", affiliate_code: "QUAD" },
+    ]);
+
+    // No row is valid, so no invitation is created and nothing is sent.
+    assert.deepEqual(answer.rejected, [
+      { email: "a@alakor.com.ph", status: "invalid", reason: 'Unknown classification code "CLAS 4"' },
+      { email: "b@quad.com.ph", status: "invalid", reason: 'Unknown affiliate code "QUAD"' },
+    ]);
+    assert.equal(answer.submitted, 2);
+    assert.equal(answer.total, 0);
+
+    assert.equal(inputsFor(calls, CLASSES).employer_id, "5");
+    assert.equal(inputsFor(calls, AFFILIATES).us01_user_id, 31);
+
+    await settled(answer.jobId);
+    assert.ok(!calls.some((call) => call.procedure === INSERT));
+  });
+
+  // The insert answers 50181 or 50209 when the class was retired, or the
+  // affiliate deactivated, after the codes were read. The row is reported
+  // with a reason, and no email is attempted for it.
+  for (const [number, reason] of [
+    [50181, "Classification is no longer available"],
+    [50209, "Affiliate is no longer available"],
+  ])
+    test(`a row the insert refuses with ${number} is reported as invalid: ${reason}`, async () => {
+      const { pool, calls } = fakePool({
+        ...ABCC_CODES,
+        [INSERT]: () => {
+          throw sqlError(number);
+        },
+      });
+
+      const answer = await InvitationService.sendInvitations(pool, 32, [
+        { email_address: "juan@alakor.com.ph", classification_code: "class 4", affiliate_code: "alakor" },
+      ]);
+      const job = await settled(answer.jobId);
+
+      // The matched ids reached the procedure.
+      const sent = inputsFor(calls, INSERT);
+      assert.equal(sent.classification_id, "54");
+      assert.equal(sent.affiliate_id, "7");
+      assert.equal(sent.employer_id, "5");
+
+      assert.deepEqual(job.results, [{ email: "juan@alakor.com.ph", status: "invalid", reason }]);
+      assert.equal(job.counts.invalid, 1);
+      assert.equal(job.status, "completed");
+    });
+
+  // The company's own code is no affiliate: NULL reaches the procedure.
+  test("a row under the company's own code reaches the insert with no affiliate", async () => {
+    const { pool, calls } = fakePool({
+      ...ABCC_CODES,
+      [INSERT]: () => {
+        throw sqlError(50181);
+      },
+    });
+
+    const answer = await InvitationService.sendInvitations(pool, 33, [
+      { email_address: "ana@abcc.com.ph", classification_code: "CLASS 1", affiliate_code: "ABCC" },
+    ]);
+    await settled(answer.jobId);
+
+    assert.equal(inputsFor(calls, INSERT).classification_id, "51");
+    assert.equal(inputsFor(calls, INSERT).affiliate_id, null);
+  });
+});
+
+describe("invitationService — the template", () => {
+  test("is the first company's codes, its own affiliates only, named after it", async () => {
+    const { pool } = fakePool(ABCC_CODES);
+
+    const { fileName, workbook } = await InvitationService.getTemplate(pool, 31);
+
+    assert.equal(fileName, "invitations-ABCC.xlsx");
+
+    const codes = workbook.getWorksheet("Codes");
+    const affiliateCodes = [2, 3, 4].map((row) => codes.getCell(row, 4).value ?? null);
+    assert.deepEqual(affiliateCodes, ["ABCC", "ALAKOR", null]);
+  });
+
+  test("refuses an account with no company assigned", async () => {
+    const { pool } = fakePool({ [EMPLOYERS]: [] });
+
+    await assert.rejects(
+      () => InvitationService.getTemplate(pool, 7),
+      (error) => error.statusCode === 403 && /No company is assigned/.test(error.message),
+    );
   });
 });

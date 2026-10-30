@@ -1,7 +1,12 @@
-import rateLimit, { ipKeyGenerator } from "express-rate-limit";
-import { MAX_INVITATION_EMAILS } from "../utils/partitionEmails.js";
+import baseRateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { MAX_INVITATION_EMAILS } from "../utils/partitionInvitations.js";
 
 const isDev = process.env.NODE_ENV !== "production";
+
+// LOCAL ONLY, not for commit: no limits while NODE_ENV is "development". Tests
+// leave NODE_ENV unset, so they still see the limits.
+const rateLimit = (options) =>
+  baseRateLimit({ skip: () => process.env.NODE_ENV === "development", ...options });
 
 // ── What the IP-keyed limits in this file can and cannot do ─────────────────
 //
@@ -157,8 +162,10 @@ export const enrollmentTokenLimiter = rateLimit({
 // change request form, which uses the same cascade. That figure is an
 // estimate, not a measurement of the frontend, so it lives in one constant.
 //
-// Not keyed on anything but the address: these routes carry no token and no
-// session, so there is nothing else to key on.
+// Not keyed on anything but the address: these routes carry no session, and
+// only the classification list carries a token (since DBA request 23). It
+// stays on this shared budget alone, as branch 1 of the onboarding design has
+// it, and not on the per-invitation one the submit uses.
 export const REFERENCE_CALLS_PER_FORM = 20;
 
 export const REFERENCE_BURST = MAX_INVITATION_EMAILS * REFERENCE_CALLS_PER_FORM;

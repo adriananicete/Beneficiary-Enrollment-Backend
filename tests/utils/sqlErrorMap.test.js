@@ -9,6 +9,7 @@ import { sqlErrorMap } from "../../src/utils/sqlErrorMap.js";
 const MUST_BE_MAPPED = [
   [50001, 403, /no longer active/i],
   [50133, 403, /not authorized/i],
+  [50199, 403, /Messaging is disabled/i],
   [50007, 409, /same name/i],
   [50008, 400, /cannot exceed 100/i],
   [50019, 409, /already submitted/i],
@@ -67,6 +68,41 @@ const MUST_BE_MAPPED = [
   [50173, 409, /can be read but no longer added to/i],
   [50174, 400, /cannot be empty/i],
   [50175, 400, /at most 2000 characters/i],
+  // Classifications belong to a company, DBA request 23, read back 2026-10-15.
+  [50180, 400, /^That classification is not available for your company$/],
+  [50181, 400, /^That classification is not available for this company$/],
+  // The Administrator's companies, DBA request 24, read back 2026-10-15.
+  [50182, 403, /Only an Administrator/],
+  [50183, 400, /Company code must be 1 to 20/],
+  [50184, 409, /company code is already used/i],
+  [50185, 400, /Policy number must be 1 to 12/],
+  [50186, 409, /policy number is already used/i],
+  [50187, 404, /^Company not found$/],
+  [50188, 409, /cannot change once the company has an enrollment/],
+  [50189, 400, /Classification code must be 1 to 20/],
+  [50190, 409, /already used in this company/],
+  [50191, 404, /^Classification not found$/],
+  [50192, 400, /benefit is not available/],
+  [50193, 400, /amount above zero or a formula/],
+  [50194, 409, /already on the classification/],
+  [50195, 404, /^Benefit not found$/],
+  [50196, 500, /contact PhilLife/],
+  [50197, 409, /^This company already has an HR account$/],
+  // Affiliates, DBA request 25, read 2026-10-15 before delivery.
+  [50200, 400, /Affiliate code must be 1 to 20/],
+  [50201, 409, /affiliate code is already used in this company/],
+  [50202, 400, /cannot be the company's own code/],
+  [50203, 409, /affiliate name is already used in this company/],
+  [50204, 400, /reference must be 1 to 20 characters with no spaces/],
+  [50205, 409, /reference is already used/],
+  [50206, 409, /cannot change once an employee is numbered under it/],
+  [50207, 404, /^Affiliate not found$/],
+  [50208, 403, /Only HR users can list affiliates/],
+  [50211, 409, /policy number is already used as an affiliate's reference/],
+  [50212, 409, /cannot be deleted/],
+  // The development wipe, DBA request 26, read back 2026-10-15.
+  [50220, 403, /not allowed to wipe/],
+  [50221, 400, /^The confirmation does not match the company code$/],
 ];
 
 describe("sqlErrorMap", () => {
@@ -109,7 +145,7 @@ describe("sqlErrorMap", () => {
   });
 
   test("the three fields with a unique index all have a mapped number", () => {
-    // dbo.clients carries UNIQUE indexes on tin_id and sss_gsis_no, and
+    // bes.clients carries UNIQUE indexes on tin_id and sss_gsis_no, and
     // sec.us01_users on us01_username. Each needs a procedure check with a
     // mapped number, or the caller gets 2627 instead of a sentence.
     //
@@ -210,7 +246,7 @@ describe("sqlErrorMap", () => {
     // user-facing strings rather than the database's own wording.
     for (const [number, mapped] of Object.entries(sqlErrorMap)) {
       assert.ok(
-        !/THROW|sql|procedure|dbo\./i.test(mapped.message),
+        !/THROW|sql|procedure|bes\./i.test(mapped.message),
         `${number} reads like internal text: ${mapped.message}`,
       );
     }
@@ -247,6 +283,10 @@ describe("the numbers deliberately left unmapped", () => {
     // `already_invited` instead of failing the send. A mapping would be dead
     // code and would hide where the handling actually is.
     [50064, "invitationService catches it to mark one recipient already_invited rather than failing the send"],
+
+    // DBA request 25, branch 6 of the onboarding effort.
+    [50209, "invitationService catches it to report that row's affiliate as no longer available"],
+    [50210, "the employee's affiliate comes from the invitation of the same company, so its firing is our fault"],
 
     // Was mapped to "You are not authorized to view employee information",
     // taken from usp_sel_hr_employees. That procedure now throws 50133 for the

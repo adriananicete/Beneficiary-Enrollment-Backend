@@ -42,7 +42,11 @@ const fakeVerifySession = async (pool, session) => {
   return { us01_user_id: session.user_id, client_id: isEmployee && session.user_id !== 13 ? "75" : null };
 };
 
-const EMPLOYERS = { 3: [{ employer_id: "1" }], 4: [{ employer_id: "2" }] };
+const MESSAGING_ACCESS = {
+  12: [{ employer_id: "1", messages_enabled: true }],
+  3: [{ employer_id: "1", messages_enabled: true }],
+  4: [{ employer_id: "2", messages_enabled: true }],
+};
 
 // Conversation 7 is Coforge's with client 75, and open. Conversation 8 is
 // read-only. Anything else is not the caller's.
@@ -64,7 +68,8 @@ before(async () => {
     httpServer,
     getPool: async () => ({}),
     verifySession: fakeVerifySession,
-    getEmployersByUser: async (pool, userId) => EMPLOYERS[userId] ?? [],
+    getMessagingAccessByUser: async (pool, userId) =>
+      MESSAGING_ACCESS[userId] ?? (userId === 13 ? [] : [{ employer_id: "1", messages_enabled: true }]),
     getConversationById: async (pool, conversationId) => {
       lookups.push(conversationId);
       return { conversation: CONVERSATIONS[conversationId] ?? null, messages: [], hasMore: false };
@@ -163,9 +168,8 @@ describe("the socket handshake", () => {
     assert.equal(await refusalOf(sign({ ...EMPLOYEE, user_id: 14 })), "unauthorized");
   });
 
-  // Decided 2026-10-12: no Administrator access to messaging in v1.
-  test("the Administrator is refused", async () => {
-    assert.equal(await refusalOf(sign(ADMINISTRATOR)), "forbidden");
+  test("the Administrator connects for audit notifications without messaging access", async () => {
+    assert.equal(await refusalOf(sign(ADMINISTRATOR)), "connected");
   });
 
   test("an employee account with no client is refused", async () => {
@@ -187,9 +191,30 @@ describe("the socket handshake", () => {
     assert.equal(await refusalOf(sign(EMPLOYEE)), "connected");
     assert.equal(await refusalOf(sign(HR_COFORGE)), "connected");
   });
+
+  test("a company with messaging disabled cannot establish a socket", async () => {
+    MESSAGING_ACCESS[12] = [{ employer_id: "1", messages_enabled: false }];
+
+    try {
+      assert.equal(await refusalOf(sign(EMPLOYEE)), "forbidden");
+    } finally {
+      MESSAGING_ACCESS[12] = [{ employer_id: "1", messages_enabled: true }];
+    }
+  });
 });
 
 describe("the rooms a socket is in", () => {
+  test("the Administrator hears audit notifications but not HR conversation events", async () => {
+    const administrator = await connected(client(sign(ADMINISTRATOR)));
+    const hr = await connected(client(sign(HR_COFORGE)));
+    const auditNotification = next(administrator, "audit:new");
+
+    io.to("audit:administrators").emit("audit:new", { audit_id: "19" });
+
+    assert.deepEqual(await auditNotification, { audit_id: "19" });
+    assert.deepEqual(await collect(hr, "audit:new", 50), []);
+  });
+
   test("the employee hears their client room and their user room, and not a company's", async () => {
     const employee = await connected(client(sign(EMPLOYEE)));
 
@@ -315,6 +340,18 @@ describe("the session re-check", () => {
     assert.equal(socket.connected, true);
 
     outages.delete(16);
+  });
+
+  test("a socket is disconnected after its company disables messaging", async () => {
+    const socket = await connected(client(sign(EMPLOYEE)));
+    const dropped = next(socket, "disconnect", 1000);
+    MESSAGING_ACCESS[12] = [{ employer_id: "1", messages_enabled: false }];
+
+    try {
+      assert.equal(await dropped, "io server disconnect");
+    } finally {
+      MESSAGING_ACCESS[12] = [{ employer_id: "1", messages_enabled: true }];
+    }
   });
 });
 

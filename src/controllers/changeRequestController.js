@@ -9,6 +9,7 @@ import { AppError } from "../utils/AppError.js";
 import { sendChangeRequestDecisionEmail } from "../services/emailService.js";
 import { certificateForDecision } from "../services/certificateService.js";
 import { buildPage, parsePaging } from "../utils/parsePaging.js";
+import { changeRequestAuditEntry } from "../utils/changeRequestAudit.js";
 import {
   assertAddressBelongs,
   buildAddressChange,
@@ -215,6 +216,14 @@ export const reviewChangeRequest = async (req, res, next) => {
       await ChangeRequestModel.approveChangeRequest(pool, reviewData);
     else await ChangeRequestModel.rejectChangeRequest(pool, reviewData);
 
+    // Neither procedure writes an audit row, so the audit trail is told what was
+    // decided and, for an approval, what changed. `details` is from before the
+    // decision, which is the only time the old values are still there.
+    res.locals.auditEntry = changeRequestAuditEntry(details, {
+      approved,
+      reviewRemarks: reviewData.review_remarks,
+    });
+
     if (approved) await syncUserRecord(pool, details, reviewData.reviewed_by);
 
     await notifyDecision(pool, details, approved, reviewData.review_remarks);
@@ -230,7 +239,7 @@ export const reviewChangeRequest = async (req, res, next) => {
   }
 };
 
-// Fields that exist on both dbo.clients and sec.us01_users, by the display names
+// Fields that exist on both bes.clients and sec.us01_users, by the display names
 // the comparison result set uses.
 const SYNCED_FIELDS = [
   "First Name",
@@ -239,7 +248,7 @@ const SYNCED_FIELDS = [
   "Email Address",
 ];
 
-// dbo.clients and sec.us01_users hold the same name and email twice. The approve
+// bes.clients and sec.us01_users hold the same name and email twice. The approve
 // procedure writes the first and does not touch the second, so without this they
 // drift apart on every approved name or email change.
 //

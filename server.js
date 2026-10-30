@@ -4,13 +4,19 @@ import config from './src/config/env.js';
 import { getPool } from './src/config/db.js';
 import AuthService from './src/services/authService.js';
 import { createSocketServer } from './src/realtime/socketServer.js';
-import { setRealtimeServer } from './src/realtime/realtime.js';
+import { emitAuditLogged, setRealtimeServer } from './src/realtime/realtime.js';
+import { createAuditTrailWatcher } from './src/realtime/auditTrailWatcher.js';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import authRoutes from './src/routes/authRoutes.js';
 import enrollmentRoutes from './src/routes/enrollmentRoutes.js';
 import adminRoutes from './src/routes/adminRoutes.js';
 import employeeRoutes from './src/routes/employeeRoutes.js';
+import { listenOnFreePort } from './src/utils/listenOnFreePort.js';
+import { verifyToken } from './src/middlewares/verifyToken.js';
+import { auditTrail } from './src/middlewares/auditTrail.js';
+import { createGcliRoutes } from './src/gcli/routes.js';
+import { assertDevStoreAllowed, devStoreOn } from './src/gcli/devStore.js';
 import {errorHandler} from './src/middlewares/errorHandler.js';
 import helmet from 'helmet';
 
@@ -35,8 +41,11 @@ app.use(cors({
     origin: config.corsOrigin,
     credentials: true
 }));
-// A 1,000-address invitation upload is roughly 33KB. The default is 100kb, which
-// would hold, but the limit should be deliberate rather than inherited.
+// The largest body is the invitation upload: 1,000 rows of an email, a class
+// code and an affiliate code since branch 6 of the onboarding effort. Measured
+// 2026-10-15: 122KiB for ordinary rows, 250KiB if every row is the longest
+// valid one (a 150-character email, 20-character codes). The default 100kb
+// would refuse the first; 256kb holds both, with little room for a field more.
 const parseJson = express.json({ limit: '256kb' });
 
 // The enrollment signature is a base64 image in the body — up to 500KB decoded,
@@ -50,9 +59,13 @@ const parseJson = express.json({ limit: '256kb' });
 const parseEnrollmentJson = express.json({ limit: '1mb' });
 
 const SUBMIT_PATH = `${API_PREFIX}/enrollment/submit`;
+// A returned Group Credit Life application is corrected with the same body, signature and
+// all (src/gcli); that route exists only while the dev store is on.
+const CORRECT_PATH = `${API_PREFIX}/enrollment/application`;
 
 app.use((req, res, next) =>
-    req.method === 'POST' && req.path === SUBMIT_PATH
+    (req.method === 'POST' && req.path === SUBMIT_PATH) ||
+    (req.method === 'PUT' && req.path === CORRECT_PATH && devStoreOn())
         ? parseEnrollmentJson(req, res, next)
         : parseJson(req, res, next),
 );
@@ -64,9 +77,22 @@ app.use((req, res, next) => {
 
 app.use(cookieParser());
 
+// Before every route, so it sees each request that creates, changes or deletes
+// something and writes its audit row once the response has gone (src/utils/auditCatalog.js).
+app.use(auditTrail);
+
 app.get('/', (req, res) => {
     res.send('Beneficiary Enrollment API v1');
 });
+
+// Group Credit Life before the database has it (src/gcli/devStore.js): its routes come
+// first, so a request for an application is answered here and anything else falls
+// through to the routes below. Off unless GCLI_DEV_STORE=true, and never in production.
+assertDevStoreAllowed();
+if (devStoreOn()) {
+    console.warn('GCLI_DEV_STORE is on: plans, loan applications and approvals are kept in a file, not in the database. That file holds borrowers\' personal details in plain text: use it on your own machine only.');
+    app.use(`${API_PREFIX}/admin`, createGcliRoutes({ verifyToken, getPool }));
+}
 
 app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/enrollment`, enrollmentRoutes);
@@ -111,5 +137,23 @@ const server = http.createServer(app);
 setRealtimeServer(
     createSocketServer({ httpServer: server, getPool, verifySession: AuthService.verifySession }),
 );
+createAuditTrailWatcher({
+    getPool,
+    publish: emitAuditLogged,
+});
 
-server.listen(config.PORT, "0.0.0.0", () => console.log(`Server is running on port ${config.PORT}`));
+// While developing, a port that is taken is not fatal: the next free one is used and said out
+// loud, so a second `npm run dev` comes up beside the first instead of crashing. In production
+// it stays the error it was, because the proxy in front expects this port.
+const port = await listenOnFreePort(server, {
+    port: config.PORT,
+    host: "0.0.0.0",
+    fallback: config.nodeEnv !== 'production',
+});
+
+if (port === Number(config.PORT)) console.log(`Server is running on port ${port}`);
+else
+    console.warn(
+        `Port ${config.PORT} is already in use, so the server is running on port ${port} instead. ` +
+        `Point the frontend at it with VITE_API_PROXY_TARGET=http://127.0.0.1:${port}.`,
+    );

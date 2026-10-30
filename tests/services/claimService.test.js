@@ -19,9 +19,9 @@ const { setRealtimeServer } = await import("../../src/realtime/realtime.js");
 // against TEST-CLAIM proves it.
 
 const USER = "sec.us01_usp_sel_user_by_id";
-const TYPES = "usp_sel_claim_types";
-const INSERT = "usp_ins_claim";
-const CANCEL = "usp_upd_claim_cancel";
+const TYPES = "bes.usp_sel_claim_types";
+const INSERT = "bes.usp_ins_claim";
+const CANCEL = "bes.usp_upd_claim_cancel";
 
 // TEST-CLAIM as seeded, plus a second type with no required document. Ids as
 // strings, as BigInt columns arrive.
@@ -173,9 +173,9 @@ describe("claimService.cancelClaim", () => {
   });
 });
 
-const DETAIL = "usp_sel_claim_by_id";
-const RESUBMIT = "usp_upd_claim_resubmit";
-const REVIEW = "usp_upd_claim_review";
+const DETAIL = "bes.usp_sel_claim_by_id";
+const RESUBMIT = "bes.usp_upd_claim_resubmit";
+const REVIEW = "bes.usp_upd_claim_review";
 
 // usp_sel_claim_by_id's three result sets, for a claim of TEST-CLAIM.
 const claimDetail = ({ claim, documents = [], requirements = SEEDED.requirements.slice(0, 2) } = {}) => () => ({
@@ -432,8 +432,8 @@ describe("claimService.reviewClaim", () => {
 
 // The death claim, branch 6. Filed by HR for an employee already marked
 // deceased, approved on filing.
-const ENROLLMENT = "usp_get_insurance_enrollment_by_id";
-const CLOSE = "usp_upd_claim_close";
+const ENROLLMENT = "bes.usp_get_insurance_enrollment_by_id";
+const CLOSE = "bes.usp_upd_claim_close";
 
 // TEST-DEATH as seeded by request 21: type 3, requirement 4.
 const HR_TYPES = {
@@ -519,6 +519,86 @@ describe("claimService.fileDeathClaim — refused before anything is written", (
   });
 });
 
+// HR files an employee's ordinary claim: an EMPLOYEE type (TEST-CLAIM, type 1,
+// requirement 1), for an employee who is alive.
+const generalScripted = ({ enrollment = { client_id: "75", date_of_death: null } } = {}) => {
+  const fake = fakePool({
+    [ENROLLMENT]: enrollment ? [enrollment] : [],
+    [TYPES]: () => ({ recordsets: [SEEDED.types, SEEDED.requirements], recordset: SEEDED.types }),
+  });
+
+  fake.transactions = 0;
+  fake.pool.acquire = (transaction, callback) => {
+    fake.transactions++;
+    callback(new Error(REACHED_TRANSACTION));
+  };
+
+  return fake;
+};
+
+const fileGeneral = (pool, overrides = {}) =>
+  ClaimService.fileClaimForEmployee(pool, {
+    userId: 3,
+    roleName: "HR",
+    clientId: "75",
+    claimTypeId: "1",
+    documents: [doc("requirement_1")],
+    ...overrides,
+  });
+
+describe("claimService.fileClaimForEmployee — refused before anything is written", () => {
+  test("a claim_type_id that is not a whole number is 400, and the database is not asked", async () => {
+    const { pool, calls } = generalScripted();
+
+    await assert.rejects(fileGeneral(pool, { claimTypeId: { toString: 1 } }), refusedWith(400, /^claim_type_id is required$/));
+    assert.equal(calls.length, 0);
+  });
+
+  test("an employee with no active enrollment is 404", async () => {
+    const fake = generalScripted({ enrollment: null });
+
+    await assert.rejects(fileGeneral(fake.pool), refusedWith(404, /^Enrollment not found$/));
+    assert.equal(fake.transactions, 0);
+  });
+
+  // A death claim has its own route and its own rule, so this one refuses a
+  // deceased employee before the types are read.
+  test("a deceased employee is 409, before the types are read and before any write", async () => {
+    const fake = generalScripted({ enrollment: { client_id: "75", date_of_death: "2026-10-01" } });
+
+    await assert.rejects(fileGeneral(fake.pool), refusedWith(409, /^This employee is marked deceased\. File a death claim instead$/));
+    assert.equal(callTo(fake.calls, TYPES), undefined);
+    assert.equal(fake.transactions, 0);
+  });
+
+  // HR's own type is the death claim. It cannot be filed through this route by
+  // naming its id, because only the employee's types are read.
+  test("only the employee's types are read, and HR's death type is 400", async () => {
+    const fake = generalScripted();
+
+    await assert.rejects(fileGeneral(fake.pool, { claimTypeId: "3" }), refusedWith(400, /^This claim type cannot be filed here$/));
+    assert.equal(inputsFor(fake.calls, TYPES).filed_by, "EMPLOYEE");
+    assert.equal(fake.transactions, 0);
+  });
+
+  test("a missing required document is 400 and names it", async () => {
+    const fake = generalScripted();
+
+    await assert.rejects(
+      fileGeneral(fake.pool, { documents: [] }),
+      refusedWith(400, /^Missing required documents: Test document \(required\)$/),
+    );
+    assert.equal(fake.transactions, 0);
+  });
+
+  test("a complete filing for an employee who is alive reaches the transaction", async () => {
+    const fake = generalScripted();
+
+    await assert.rejects(fileGeneral(fake.pool), reachedTransaction);
+    assert.equal(fake.transactions, 1);
+  });
+});
+
 describe("claimService.closeDeathClaim", () => {
   // account_closed is a BIT, which the driver hands back as a boolean; a
   // procedure that computes it may hand back 1. Both mean closed.
@@ -579,8 +659,21 @@ describe("asOpenClaimConflict", () => {
     }
   });
 
+  // The procedure's own refusal is the same conflict, so it takes the filer's
+  // sentence too: the error map's is worded for the employee, and HR filing for
+  // one was told "You already have an open claim".
+  test("50152 takes the caller's sentence as well, so HR is not told 'you'", () => {
+    for (const error of [{ number: 50152 }, { originalError: { number: 50152 } }]) {
+      const translated = asOpenClaimConflict(error, "This employee already has an open claim of this type");
+
+      assert.ok(translated instanceof AppError);
+      assert.equal(translated.statusCode, 409);
+      assert.equal(translated.message, "This employee already has an open claim of this type");
+    }
+  });
+
   test("anything else passes through untouched", () => {
-    for (const error of [{ number: 2627 }, { number: 50152 }, new AppError("x", 400), new Error("boom"), undefined]) {
+    for (const error of [{ number: 2627 }, { number: 50151 }, new AppError("x", 400), new Error("boom"), undefined]) {
       assert.equal(asOpenClaimConflict(error), error);
     }
   });

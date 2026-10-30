@@ -23,6 +23,7 @@ export const rooms = {
   client: (clientId) => `client:${clientId}`,
   hr: (employerId) => `hr:${employerId}`,
   user: (userId) => `user:${userId}`,
+  auditAdministrators: () => "audit:administrators",
 };
 
 const safely = (what, act) => {
@@ -43,6 +44,11 @@ export const emitToConversation = ({ clientId, employerId }, event, payload) =>
     server.to([rooms.client(clientId), rooms.hr(employerId)]).emit(event, payload),
   );
 
+export const emitAuditLogged = (auditId) =>
+  safely("audit notification", (server) =>
+    server.to(rooms.auditAdministrators()).emit("audit:new", { audit_id: auditId }),
+  );
+
 // Every socket of one user: logout, a password change, reissued credentials.
 // Their tokens already stop working at verifySession; this closes the sockets
 // opened with them rather than waiting for the next re-check.
@@ -59,6 +65,7 @@ export default {
   realtimeIsOn,
   rooms,
   emitToConversation,
+  emitAuditLogged,
   endUserSessions,
   endClientSessions,
 };

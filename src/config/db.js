@@ -11,6 +11,7 @@ const dbConfig = {
   options: {
     encrypt: config.db.encrypt,
     trustServerCertificate: config.db.trustServerCertificate,
+    serverName: config.db.tlsServerName,
     // The database writes Philippine local time (GETDATE(), at +08:00) into
     // columns that carry no time zone. With the driver's default, useUTC:
     // true, every one of those came back labelled UTC: written at 13:19 local,

@@ -2,8 +2,8 @@ import { Server } from "socket.io";
 import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
 import config from "../config/env.js";
-import { ADMIN, EMPLOYEE } from "../utils/constants.js";
-import InvitationModel from "../models/invitationModel.js";
+import { ADMIN, EMPLOYEE, SUPER_ADMIN } from "../utils/constants.js";
+import EmployerModel from "../models/employerModel.js";
 import MessageModel from "../models/messageModel.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
 import { rooms } from "./realtime.js";
@@ -43,7 +43,7 @@ export const createSocketServer = ({
   httpServer,
   getPool,
   verifySession,
-  getEmployersByUser = InvitationModel.getEmployersByUser,
+  getMessagingAccessByUser = EmployerModel.getMessagingAccessByUser,
   getConversationById = MessageModel.getConversationById,
   recheckMs = SESSION_RECHECK_MS,
   typingThrottleMs = TYPING_THROTTLE_MS,
@@ -72,24 +72,41 @@ export const createSocketServer = ({
       return next(refusal("unauthorized"));
     }
 
-    // Messaging is the employee's and HR's. The Administrator has no access
-    // in v1 (decided 2026-10-12). ADMIN is 'HR'.
-    if (session.role_name !== EMPLOYEE && session.role_name !== ADMIN)
+    if (
+      session.role_name !== EMPLOYEE &&
+      session.role_name !== ADMIN &&
+      session.role_name !== SUPER_ADMIN
+    )
       return next(refusal("forbidden"));
 
     try {
       const pool = await getPool();
       const user = await verifySession(pool, session);
 
-      let joined;
-
-      if (session.role_name === EMPLOYEE) {
-        if (!user.client_id) return next(refusal("forbidden"));
-        joined = [rooms.client(user.client_id)];
-      } else {
-        const employers = await getEmployersByUser(pool, session.user_id);
-        joined = employers.map((employer) => rooms.hr(employer.employer_id));
+      if (session.role_name === SUPER_ADMIN) {
+        socket.data.session = session;
+        socket.data.rooms = [
+          rooms.user(session.user_id),
+          rooms.auditAdministrators(),
+        ];
+        return next();
       }
+
+      const access = await getMessagingAccessByUser(pool, session.user_id);
+      const enabled = access.filter((company) =>
+        company.messages_enabled === true ||
+        company.messages_enabled === 1 ||
+        company.messages_enabled === "1",
+      );
+      if (enabled.length === 0) return next(refusal("forbidden"));
+
+      const joined =
+        session.role_name === EMPLOYEE
+          ? user.client_id
+            ? [rooms.client(user.client_id)]
+            : []
+          : enabled.map((company) => rooms.hr(company.employer_id));
+      if (joined.length === 0) return next(refusal("forbidden"));
 
       socket.data.session = session;
       socket.data.rooms = [rooms.user(session.user_id), ...joined];
@@ -108,6 +125,7 @@ export const createSocketServer = ({
   io.on("connection", (socket) => {
     const { session } = socket.data;
     const isEmployee = session.role_name === EMPLOYEE;
+    const isAdministrator = session.role_name === SUPER_ADMIN;
 
     socket.join(socket.data.rooms);
 
@@ -115,6 +133,30 @@ export const createSocketServer = ({
       try {
         const pool = await getPool();
         await verifySession(pool, session);
+        if (isAdministrator) return;
+
+        const access = await getMessagingAccessByUser(pool, session.user_id);
+        const enabled = access.filter((company) =>
+          company.messages_enabled === true ||
+          company.messages_enabled === 1 ||
+          company.messages_enabled === "1",
+        );
+        if (enabled.length === 0) {
+          socket.disconnect(true);
+          return;
+        }
+
+        const userRoom = rooms.user(session.user_id);
+        const joined =
+          session.role_name === EMPLOYEE
+            ? [socket.data.rooms.find((room) => room.startsWith("client:"))].filter(Boolean)
+            : enabled.map((company) => rooms.hr(company.employer_id));
+        const nextRooms = [userRoom, ...joined];
+        for (const room of socket.data.rooms)
+          if (!nextRooms.includes(room)) socket.leave(room);
+        for (const room of nextRooms)
+          if (!socket.data.rooms.includes(room)) socket.join(room);
+        socket.data.rooms = nextRooms;
       } catch (error) {
         // An outage is not a reason to drop everybody. Only an ended
         // session is.
@@ -145,6 +187,8 @@ export const createSocketServer = ({
 
     socket.on("typing", async (payload) => {
       try {
+        if (isAdministrator) return;
+
         const raw = payload?.conversation_id;
 
         if (!(typeof raw === "string" || typeof raw === "number") || !isNumericId(raw)) return;
@@ -159,6 +203,17 @@ export const createSocketServer = ({
 
         // Not theirs, or read-only: nothing to say.
         if (!conversation || !conversation.can_send) return;
+        const access = await getMessagingAccessByUser(await getPool(), session.user_id);
+        if (
+          !access.some(
+            (company) =>
+              String(company.employer_id) === String(conversation.employer_id) &&
+              (company.messages_enabled === true ||
+                company.messages_enabled === 1 ||
+                company.messages_enabled === "1"),
+          )
+        )
+          return;
 
         // To the other side only. The employee sees "HR is typing", because
         // HR is one shared account.

@@ -18,7 +18,7 @@ const openConversation = async (pool, userId, clientId = null) => {
     .request()
     .input("us01_user_id", sql.BigInt, userId)
     .input("client_id", sql.BigInt, clientId)
-    .execute("usp_ins_conversation");
+    .execute("bes.usp_ins_conversation");
 
   return result.recordset[0];
 };
@@ -33,7 +33,7 @@ const insertMessage = async (pool, { conversationId, userId, body }) => {
     .input("conversation_id", sql.BigInt, conversationId)
     .input("us01_user_id", sql.BigInt, userId)
     .input("body", sql.NVarChar(4000), body)
-    .execute("usp_ins_message");
+    .execute("bes.usp_ins_message");
 
   return result.recordset[0];
 };
@@ -46,7 +46,7 @@ const getConversationsByUser = async (pool, userId, paging = {}) => {
     .input("us01_user_id", sql.BigInt, userId)
     .input("page", sql.Int, paging.page)
     .input("page_size", sql.Int, paging.pageSize)
-    .execute("usp_sel_conversations_by_user");
+    .execute("bes.usp_sel_conversations_by_user");
 
   return result.recordset;
 };
@@ -66,7 +66,7 @@ const getConversationById = async (pool, conversationId, userId, { before = null
     .input("us01_user_id", sql.BigInt, userId)
     .input("before_message_id", sql.BigInt, before)
     .input("limit", sql.Int, limit)
-    .execute("usp_sel_conversation_by_id");
+    .execute("bes.usp_sel_conversation_by_id");
 
   const [header = [], messages = [], more = []] = result.recordsets ?? [];
 
@@ -85,7 +85,7 @@ const markConversationRead = async (pool, conversationId, userId, lastReadMessag
     .input("conversation_id", sql.BigInt, conversationId)
     .input("us01_user_id", sql.BigInt, userId)
     .input("last_read_message_id", sql.BigInt, lastReadMessageId)
-    .execute("usp_upd_conversation_read");
+    .execute("bes.usp_upd_conversation_read");
 };
 
 // For HR, conversations with something unread; for an employee, unread
@@ -94,7 +94,7 @@ const getUnreadCountByUser = async (pool, userId) => {
   const result = await pool
     .request()
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_sel_conversation_unread_count_by_user");
+    .execute("bes.usp_sel_conversation_unread_count_by_user");
 
   return result.recordset[0]?.unread_count ?? 0;
 };

@@ -33,6 +33,11 @@ const BY_ID = "sec.us01_usp_sel_user_by_id";
 const EMPLOYERS = "sec.us08_usp_sel_employers_by_user";
 const FAILED = "sec.us01_usp_login_failed";
 const SUCCEEDED = "sec.us01_usp_login_succeeded";
+const SESSION = "sec.us06_usp_ins_session";
+
+// What sec.us06_usp_ins_session answers, read from the procedure on 2026-10-28:
+// one row, no output parameter.
+const SESSION_OPENED = [{ success: 1, sessionId: 77, message: "session created successfully." }];
 
 // What sec.us01_usp_login_failed answers for an attempt that did not lock.
 const NOT_LOCKED = [{ us01_failed_login_attempts: 1, lock_seconds_remaining: 0 }];
@@ -116,7 +121,12 @@ const ADMIN_DOOR = {
 // lookups are answered for the same person the login procedure returns.
 // `row` is the user the login procedure returns, null for no row, or a
 // function standing in for the procedure itself (unknownUsername).
-const login = (row, credentials, door = EMPLOYEE_DOOR, { failed = NOT_LOCKED } = {}) => {
+const login = (
+  row,
+  credentials,
+  door = EMPLOYEE_DOOR,
+  { failed = NOT_LOCKED, session = SESSION_OPENED } = {},
+) => {
   const procedureAnswers = typeof row === "function";
 
   const { pool, calls } = fakePool({
@@ -125,6 +135,7 @@ const login = (row, credentials, door = EMPLOYEE_DOOR, { failed = NOT_LOCKED } =
     [EMPLOYERS]: [COFORGE],
     [FAILED]: failed,
     [SUCCEEDED]: [],
+    [SESSION]: session,
   });
 
   return {
@@ -457,6 +468,110 @@ describe("authService — the session", () => {
     await result;
 
     assert.equal(inputsFor(calls, LOGIN).us01_username, "EMP-020");
+  });
+
+  // The audit trail, 2026-10-28. sec.usp_ins_audit_log refuses a session id that
+  // is not a row of sec.us06_sessions, and nothing else creates one.
+  describe("opens a session for the audit trail", () => {
+    const client = { ipAddress: "203.0.113.7", userAgent: "Mozilla/5.0 (test)" };
+
+    test("for the person who signed in, and puts its id in the token", async () => {
+      const { calls, result } = login(employeeRow(), { ...good, client });
+      const { token } = await result;
+
+      const opened = callTo(calls, SESSION).inputs;
+
+      assert.equal(opened.us01_user_id, 12);
+      assert.equal(opened.us06_ip_address, "203.0.113.7");
+      assert.equal(opened.us06_user_agent, "Mozilla/5.0 (test)");
+      assert.equal(opened.us06_created_by, "EMP-020");
+      assert.equal(jwt.verify(token, config.jwtSecret).session_id, 77);
+    });
+
+    test("without storing the token itself: it carries the session's id, so it cannot be stored in it", async () => {
+      const { calls, result } = login(employeeRow(), { ...good, client });
+      const { token } = await result;
+
+      const opened = callTo(calls, SESSION).inputs;
+
+      assert.ok(opened.us06_access_token && opened.us06_refresh_token, "both are required by the table");
+      assert.notEqual(opened.us06_access_token, token);
+      assert.notEqual(opened.us06_access_token, opened.us06_refresh_token);
+    });
+
+    test("that ends when the token does", async () => {
+      const { calls, result } = login(employeeRow(), { ...good, client });
+      const { token } = await result;
+
+      const expires = callTo(calls, SESSION).inputs.us06_expiration_date.getTime();
+      const claims = jwt.verify(token, config.jwtSecret);
+
+      assert.ok(Math.abs(expires - claims.exp * 1000) < 2000, "the session and the token end at different times");
+    });
+
+    test("cutting the address and the browser to the widths of the columns", async () => {
+      const { calls, result } = login(employeeRow(), {
+        ...good,
+        client: { ipAddress: "x".repeat(60), userAgent: "y".repeat(900) },
+      });
+      await result;
+
+      const opened = callTo(calls, SESSION).inputs;
+
+      assert.equal(opened.us06_ip_address.length, 45);
+      assert.equal(opened.us06_user_agent.length, 500);
+    });
+
+    test("and none without a request to read them from", async () => {
+      const { calls, result } = login(employeeRow(), good);
+      await result;
+
+      const opened = callTo(calls, SESSION).inputs;
+
+      assert.equal(opened.us06_ip_address, null);
+      assert.equal(opened.us06_user_agent, null);
+    });
+
+    // A closed audit trail is not a reason to lock somebody out.
+    test("but a session that cannot be opened does not stop the sign-in", async (t) => {
+      t.mock.method(console, "error", () => {});
+      const { calls, result } = login(employeeRow(), good, EMPLOYEE_DOOR, {
+        session: () => {
+          throw new Error("the database is down");
+        },
+      });
+
+      const { token, mustChangePassword } = await result;
+      const claims = jwt.verify(token, config.jwtSecret);
+
+      assert.equal(mustChangePassword, false);
+      assert.equal(claims.user_id, 12);
+      assert.equal(claims.session_id, undefined);
+      assert.ok(callTo(calls, SUCCEEDED), "the login was not recorded");
+    });
+
+    test("nor does a procedure that says it created none", async () => {
+      const { result } = login(employeeRow(), good, EMPLOYEE_DOOR, {
+        session: [{ success: 0, sessionId: null, message: "no" }],
+      });
+      const { token } = await result;
+
+      assert.equal(jwt.verify(token, config.jwtSecret).session_id, undefined);
+    });
+
+    test("none for the forced password change, which is not a session", async () => {
+      const { calls, result } = login(employeeRow({ us01_must_change_password: true }), good);
+      await result;
+
+      assert.equal(callTo(calls, SESSION), undefined);
+    });
+
+    test("none for a wrong password", async () => {
+      const { calls, result } = login(employeeRow(), { ...good, password: "not-the-password" });
+      await assert.rejects(() => result);
+
+      assert.equal(callTo(calls, SESSION), undefined);
+    });
   });
 });
 

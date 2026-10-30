@@ -69,7 +69,7 @@ const PAGE = { width: 612, height: 792 };
 const EXAMPLE = {
   policyNo: "G-TLI-26-136-2600030",
   groupPolicyNo: "G-TLI-26-136-2600030",
-  companyName: "Coforge BPS Philippines, Inc.",
+  coveredUnder: "Coforge BPS Philippines, Inc.",
   insuredName: "Lorenz Adrian Artillagas",
   address: "Celina Homes 5, Tagapo, City Of Santa Rosa, Laguna, Region IV-A (CALABARZON), 4026",
   coverageDate: "September 11, 2026",
@@ -175,6 +175,59 @@ describe("renderCertificate — what the example does not show", () => {
 
     assert.equal(pageCount(pdf), 1);
     assert.ok(pdfText(pdf).includes(compact("GTLP2012v01")), "the footer was pushed off the page");
+  });
+
+  // Branch 7: an affiliate's employee. The tallest certificate again, with
+  // ABCC's longest affiliate in the sentence and an affiliate-series number at
+  // the top. Measured 2026-10-15: the sentence's third line held only
+  // "below:", so the affiliate adds no line.
+  const TALLEST = {
+    ...EXAMPLE,
+    address: `${"Block 12 Lot 34, Phase 5, Some Very Long Subdivision Name, ".repeat(3)}${EXAMPLE.address}`,
+    dependents: Array.from({ length: 10 }, (_, i) => dependent(i + 1)),
+  };
+  const QUAD_ALPHA = "Quad Alpha Centrum Condominium Corporation, an affiliate of Abacus Book and Card Corporation,";
+
+  test("an affiliate's employee: the sentence names the affiliate, and the tallest certificate stays one page", async () => {
+    const pdf = await renderCertificate({
+      ...TALLEST,
+      policyNo: "G-TLI-26-177-5-2600001",
+      groupPolicyNo: "G-TLI-26-177",
+      coveredUnder: QUAD_ALPHA,
+    });
+
+    assert.equal(pageCount(pdf), 1);
+    assert.ok(pdfText(pdf).includes(compact("GTLP2012v01")), "the footer was pushed off the page");
+    assert.ok(
+      pdfText(pdf).includes(compact(`accepted for coverage under ${QUAD_ALPHA} with Group Policy No. G-TLI-26-177 (herein`)),
+      "the sentence does not read as decided",
+    );
+  });
+
+  // The column allows 200 characters. Under ABCC that adds one line to the
+  // sentence, which the 12 points of slack hold.
+  test("a 200-character affiliate name under ABCC still fits one page", async () => {
+    const longest = `${"Long Affiliate Name ".repeat(10).slice(0, 200)}, an affiliate of Abacus Book and Card Corporation,`;
+    const pdf = await renderCertificate({ ...TALLEST, coveredUnder: longest });
+
+    assert.equal(pageCount(pdf), 1);
+    assert.ok(pdfText(pdf).includes(compact("GTLP2012v01")), "the footer was pushed off the page");
+  });
+
+  // 22 characters for an affiliate (G-TLI-26-177-1-2600001), where it has
+  // always been 20, and up to 28 for a 20-character reference. Right-aligned
+  // on its own line, so it grows to the left, towards the mark.
+  test("a longer policy number stays on its line, clear of the mark", async () => {
+    const [mark] = imagePlacements(await renderCertificate(EXAMPLE));
+
+    for (const policyNo of ["G-TLI-26-177-1-2600001", "ABCDEFGHIJKLMNOPQRST-2600001"]) {
+      const runs = pdfRuns(await renderCertificate({ ...EXAMPLE, policyNo }));
+      const number = runs.find((run) => run.text !== undefined && compact(run.text).startsWith(compact("No.")));
+
+      assert.equal(compact(number.text), compact(`No.   ${policyNo}`), policyNo);
+      assert.equal(number.y, policyNumberRun.y, policyNo);
+      assert.ok(number.x > mark.x + mark.width, `${policyNo} starts at ${number.x}, into the mark`);
+    }
   });
 
   test("the dependents table grows by one fifteen-point row per dependent", async () => {

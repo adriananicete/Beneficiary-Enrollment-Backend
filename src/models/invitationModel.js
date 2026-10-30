@@ -3,7 +3,7 @@ import { sql } from '../config/db.js';
 const getInvitationByToken = async (pool, token) => {
     const result = await pool.request()
     .input('token', sql.NVarChar(64), token)
-    .execute('usp_sel_enrollment_invitation_by_token');
+    .execute('bes.usp_sel_enrollment_invitation_by_token');
 
     return result.recordset[0];
 };
@@ -20,7 +20,7 @@ const getInvitationsByUser = async (pool, userId, filters = {}) => {
     .input('status', sql.VarChar(1), filters.status ?? null)
     .input('send_status', sql.VarChar(10), filters.sendStatus ?? null)
     .input('search', sql.VarChar(150), filters.search ?? null)
-    .execute('usp_sel_enrollment_invitations_by_user')
+    .execute('bes.usp_sel_enrollment_invitations_by_user')
 
     return result.recordset;
 };
@@ -39,7 +39,7 @@ const getInvitationById = async (pool, userId, invitationId) => {
     const result = await pool.request()
     .input('invitation_id', sql.BigInt, invitationId)
     .input('us01_user_id', sql.BigInt, userId)
-    .execute('usp_sel_enrollment_invitation_by_id')
+    .execute('bes.usp_sel_enrollment_invitation_by_id')
 
     return result.recordset[0];
 };
@@ -52,14 +52,20 @@ const getEmployersByUser = async (pool, userId) => {
     return result.recordset;
 };
 
+// The class and the affiliate HR assigned to this row (branch 6). Both are
+// optional in the procedure (= NULL, DBA requests 23 and 25), which checks
+// that each is the company's and active: 50181, 50209. A NULL affiliate is
+// the company itself.
 const createInvitation = async (pool, invitationData) => {
     const result = await pool.request()
     .input('employer_id', sql.BigInt, invitationData.employer_id)
     .input('email_address', sql.VarChar(150), invitationData.email_address)
     .input('token', sql.NVarChar(64), invitationData.token)
     .input('created_by', sql.VarChar(50), invitationData.created_by)
+    .input('classification_id', sql.BigInt, invitationData.classification_id ?? null)
+    .input('affiliate_id', sql.BigInt, invitationData.affiliate_id ?? null)
     .output('invitation_id', sql.BigInt)
-    .execute('usp_ins_enrollment_invitation')
+    .execute('bes.usp_ins_enrollment_invitation')
 
     return result.output.invitation_id
 };
@@ -68,14 +74,14 @@ const revokeInvitation = async (pool, invitationId, modifiedBy) => {
     const result = await pool.request()
     .input('invitation_id', sql.BigInt, invitationId)
     .input('modified_by', sql.VarChar(50), modifiedBy)
-    .execute('usp_del_enrollment_invitation')
+    .execute('bes.usp_del_enrollment_invitation')
 };
 
 const resendInvitation = async (pool, invitationId, modifiedBy) => {
     const result = await pool.request()
     .input('invitation_id', sql.BigInt, invitationId)
     .input('modified_by', sql.VarChar(50), modifiedBy)
-    .execute('usp_upd_enrollment_invitation_resend')
+    .execute('bes.usp_upd_enrollment_invitation_resend')
 };
 
 const updateSendStatus = async (pool, invitationId, sendStatus, lastSendError, modifiedBy) => {
@@ -84,7 +90,7 @@ const updateSendStatus = async (pool, invitationId, sendStatus, lastSendError, m
     .input('send_status', sql.VarChar(20), sendStatus)
     .input('last_send_error', sql.VarChar(500), lastSendError)
     .input('modified_by', sql.VarChar(50), modifiedBy)
-    .execute('usp_upd_enrollment_invitation_send_status')
+    .execute('bes.usp_upd_enrollment_invitation_send_status')
 };
 
 export default {

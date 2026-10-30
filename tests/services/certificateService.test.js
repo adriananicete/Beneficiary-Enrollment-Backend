@@ -25,11 +25,11 @@ const {
 // rows below are the real ones for enrollment 74, the example the format was
 // copied from: pasted from GET /admin/enrollments/96 on 2026-09-11.
 
-const DETAILS = "usp_get_insurance_enrollment_by_id";
-const BENEFITS = "usp_get_enrollment_benefits_by_id";
-const BENEFICIARIES = "usp_sel_beneficiaries";
+const DETAILS = "bes.usp_get_insurance_enrollment_by_id";
+const BENEFITS = "bes.usp_get_enrollment_benefits_by_id";
+const BENEFICIARIES = "bes.usp_sel_beneficiaries";
 // The company's automatic-certificate setting, DBA request 19.
-const SETTING = "usp_sel_coc_email_by_client";
+const SETTING = "bes.usp_sel_coc_email_by_client";
 const COC_ON = [{ employer_id: "1", send_coc_email: true }];
 const COC_OFF = [{ employer_id: "1", send_coc_email: false }];
 
@@ -84,7 +84,7 @@ describe("certificateService — what the certificate says", () => {
     const data = await buildCertificateData(pool, 96);
 
     assert.equal(data.policyNo, "G-TLI-26-136-2600030");
-    assert.equal(data.companyName, "Coforge BPS Philippines, Inc.");
+    assert.equal(data.coveredUnder, "Coforge BPS Philippines, Inc.");
     assert.equal(data.insuredName, "Lorenz Adrian Artillagas");
     assert.equal(
       data.address,
@@ -114,6 +114,63 @@ describe("certificateService — what the certificate says", () => {
 
     assert.equal(data.groupPolicyNo, "G-TLI-26-136");
     assert.notEqual(data.groupPolicyNo, data.policyNo);
+  });
+
+  // Branch 7: an employee of one of ABCC's affiliates (DBA request 25) is
+  // covered under the affiliate, named as one. The Group Policy No. stays the
+  // company's master number.
+  test("an affiliate's employee is covered under the affiliate, an affiliate of the company", async () => {
+    const { pool } = poolFor({
+      details: [
+        enrollmentRow({
+          policy_no: "G-TLI-26-177-1-2600001",
+          group_policy_no: "G-TLI-26-177",
+          company_name: "Abacus Book and Card Corporation",
+          affiliate_id: "7",
+          affiliate_name: "Alakor Corporation",
+        }),
+      ],
+    });
+
+    const data = await buildCertificateData(pool, 96);
+
+    assert.equal(data.coveredUnder, "Alakor Corporation, an affiliate of Abacus Book and Card Corporation,");
+    assert.equal(data.groupPolicyNo, "G-TLI-26-177");
+    assert.equal(data.policyNo, "G-TLI-26-177-1-2600001");
+  });
+
+  // ABCC itself, and every company without affiliates: unchanged.
+  test("an employee of the company itself is covered under the company alone", async () => {
+    for (const affiliate_name of [null, undefined, ""]) {
+      const { pool } = poolFor({ details: [enrollmentRow({ affiliate_id: null, affiliate_name })] });
+
+      assert.equal((await buildCertificateData(pool, 96)).coveredUnder, "Coforge BPS Philippines, Inc.", String(affiliate_name));
+    }
+  });
+
+  test("the printed sentence names the affiliate", async () => {
+    const { pool } = poolFor({
+      details: [
+        enrollmentRow({
+          policy_no: "G-TLI-26-177-1-2600001",
+          group_policy_no: "G-TLI-26-177",
+          company_name: "Abacus Book and Card Corporation",
+          affiliate_name: "Alakor Corporation",
+        }),
+      ],
+    });
+
+    const { content, name } = await buildCertificate(pool, 96);
+
+    assert.ok(
+      pdfText(content).includes(
+        compact(
+          "accepted for coverage under Alakor Corporation, an affiliate of Abacus Book and Card Corporation, with Group Policy No. G-TLI-26-177 (herein referred to as the Policy)",
+        ),
+      ),
+    );
+    // The longer number goes into the filename as it is.
+    assert.equal(name, "G-TLI-26-177-1-2600001-Lorenz-Artillagas.pdf");
   });
 
   // Decided on 2026-09-11: the formula prints as stored, not as the example's
@@ -228,8 +285,9 @@ describe("certificateService — refusing to print a wrong certificate", () => {
     });
   }
 
-  // The benefits procedure filters on the classification being active, so a
-  // classification deactivated after enrollment returns nothing at all.
+  // An enrollment with no active benefit rows. The benefits procedure no longer
+  // filters on the classification being active (DBA request 23), so a retired
+  // class is not what empties it now; an enrollment snapshotted with no rows is.
   test("refuses an enrollment whose benefits came back empty", async () => {
     const { pool } = poolFor({ benefits: [] });
 

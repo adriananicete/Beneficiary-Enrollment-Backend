@@ -1,6 +1,7 @@
 import { getPool } from "../config/db.js";
 import ReferenceModel from "../models/referenceModel.js";
 import EnrollmentService from "../services/enrollmentService.js";
+import ClassificationService from "../services/classificationService.js";
 import InvitationModel from '../models/invitationModel.js';
 import UserModel from "../models/userModel.js";
 import { AppError } from "../utils/AppError.js";
@@ -8,6 +9,7 @@ import { isInvitationToken } from "../middlewares/validateIdParam.js";
 import AgreementModel from "../models/agreementModel.js"
 import SignatureModel from "../models/signatureModel.js";
 import { sendSignature } from "../utils/signatureResponse.js";
+import { invitationExtras } from "../gcli/creditSubmission.js";
 
 export const submitEnrollment = async (req, res, next) => {
   try {
@@ -38,48 +40,35 @@ export const submitEnrollment = async (req, res, next) => {
   }
 };
 
-// export const getEmployeeClassifications = async (req, res, next) => {
-//   try {
-//     const pool = await getPool();
-//     const employeeClassifications = await ReferenceModel.getEmployeeClassifications(pool);
-
-//     return res.status(200).json({
-//       success: true,
-//       data: employeeClassifications,
-//     })
-//   } catch (error) {
-//     next(error);
-//   }
-// };
-
-
+// The invitation's company's classes, and no other company's. Needs the token
+// since DBA request 23: before it, every company's classes were one list and
+// this answered anybody. The token is checked the way GET /invitation checks
+// it, and before the database for the same reason.
 export const getEmployeeClassifications = async (req, res, next) => {
   try {
-    const employerId = req.query.employer_id;
-
-    if (
-      typeof employerId !== "string" ||
-      !/^[1-9]\d*$/.test(employerId) ||
-      employerId.length > 19 ||
-      BigInt(employerId) > 9223372036854775807n
-    ) {
-      throw new AppError("Valid employer_id is required", 400);
-    }
+    const { token } = req.query;
+    if(!token) throw new AppError('Token is required', 400);
+    if(!isInvitationToken(token)) throw new AppError('Invitation not found', 404);
 
     const pool = await getPool();
-    const employeeClassifications =
-      await ReferenceModel.getEmployeeClassifications(pool, employerId);
+    const classifications = await ClassificationService.getForInvitation(pool, token);
 
     return res.status(200).json({
       success: true,
-      data: employeeClassifications,
-    });
+      data: classifications,
+    })
   } catch (error) {
     next(error);
   }
 };
 
-
+// What the public employer list may show, named field by field. This route
+// needs no account. It used to return the procedure's rows as they came, so a
+// column added to usp_sel_employers would have gone straight to anybody who
+// asked. bes.employers gained send_coc_email on 2026-10-06 (DBA request 19).
+// The procedure names its columns, so it did not leak, but that was the
+// procedure's choice and not this route's. The four fields are the ones it
+// returns today, so the response is unchanged.
 export const publicEmployer = (row) => ({
   employer_id: row.employer_id,
   company_code: row.company_code,
@@ -165,6 +154,49 @@ export const getBarangaysByCity = async (req, res, next) => {
   }
 };
 
+// What the public invitation lookup may show, named field by field, as
+// publicEmployer does above. The route needs no account: anybody holding a
+// link gets this answer. It used to send the procedure's row as it came, so a
+// column added to usp_sel_enrollment_invitation_by_token went straight out.
+// Requests 23 and 25 add some (the class, the company's age limit, the
+// affiliate), and none of them leaves unless it is named here.
+//
+// The ten fields are the ones the procedure returned on 2026-10-14 and
+// FRONTEND-API.md documents. Branch 6 of the onboarding effort adds the class
+// and the affiliate HR assigned, each an object or null, for the form to show
+// read-only. The company's age limit still stays out.
+export const publicInvitation = (row) => ({
+  invitation_id: row.invitation_id,
+  employer_id: row.employer_id,
+  company_code: row.company_code,
+  company_name: row.company_name,
+  email_address: row.email_address,
+  sent_date: row.sent_date,
+  expiry_date: row.expiry_date,
+  is_valid: row.is_valid,
+  is_enrolled: row.is_enrolled,
+  client_id: row.client_id,
+  // null for an invitation sent before branch 6: the form then shows the
+  // class dropdown, as before.
+  classification:
+    row.classification_id == null
+      ? null
+      : {
+          classification_id: row.classification_id,
+          classification_code: row.classification_code,
+          classification_desc: row.classification_desc,
+        },
+  // null when the employee is the company's own, not an affiliate's.
+  affiliate:
+    row.affiliate_id == null
+      ? null
+      : {
+          affiliate_id: row.affiliate_id,
+          affiliate_code: row.affiliate_code,
+          affiliate_name: row.affiliate_name,
+        },
+});
+
 export const getInvitationByToken = async (req, res, next) => {
   try {
     const { token } = req.query;
@@ -193,7 +225,8 @@ export const getInvitationByToken = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      data: invitation
+      // The company's plan and loan limits, while the dev store is on (src/gcli).
+      data: { ...publicInvitation(invitation), ...invitationExtras(invitation, token) }
     })
   } catch (error) {
     next(error);

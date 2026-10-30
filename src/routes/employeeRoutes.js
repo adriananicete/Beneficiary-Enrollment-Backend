@@ -18,6 +18,7 @@ import {
 import { getMyAgreements, getMySignature } from '../controllers/enrollmentController.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
+import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
 import { cancelMyChangeRequest, getMyChangeRequests, submitChangeRequest } from '../controllers/changeRequestController.js';
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import {
@@ -29,6 +30,7 @@ import {
     resubmitMyClaim,
     submitMyClaim,
 } from '../controllers/claimController.js';
+import { getMessagingAvailability } from '../controllers/messagingAccessController.js';
 
 const router = express.Router();
 
@@ -50,6 +52,7 @@ router.get('/agreements', verifyToken, allowedRoles(EMPLOYEE), getMyAgreements);
 // No id in the path and nothing to scope: the client_id comes from the
 // caller's own user row.
 router.get('/signature', verifyToken, allowedRoles(EMPLOYEE), getMySignature);
+router.get('/messaging-access', verifyToken, allowedRoles(EMPLOYEE), getMessagingAvailability);
 router.post('/change-requests', verifyToken, allowedRoles(EMPLOYEE), validateEnrollmentUpdate, submitChangeRequest);
 router.get('/change-requests', verifyToken, allowedRoles(EMPLOYEE), getMyChangeRequests);
 router.patch('/change-requests/:request_id/cancel', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('request_id', 'Change request not found'), cancelMyChangeRequest);
@@ -75,12 +78,12 @@ router.post('/claims/:claim_id/resubmit', verifyToken, allowedRoles(EMPLOYEE), v
 // so the badge is never read as an id.
 const conversationId = validateIdParam('conversation_id', 'Conversation not found');
 
-router.post('/conversation', verifyToken, allowedRoles(EMPLOYEE), openMyConversation);
-router.get('/conversations/unread-count', verifyToken, allowedRoles(EMPLOYEE), pendingCountLimiter, getUnreadMessageCount);
-router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, getConversation);
-router.post('/conversations/:conversation_id/attachments', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, parseMessageAttachment, sendMessageAttachment);
-router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, validateIdParam('attachment_id', 'Attachment not found'), getMessageAttachment);
-router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, sendMessage);
-router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, markConversationRead);
+router.post('/conversation', verifyToken, allowedRoles(EMPLOYEE), requireCompanyMessaging, openMyConversation);
+router.get('/conversations/unread-count', verifyToken, allowedRoles(EMPLOYEE), requireCompanyMessaging, pendingCountLimiter, getUnreadMessageCount);
+router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, getConversation);
+router.post('/conversations/:conversation_id/attachments', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, messageSendLimiter, parseMessageAttachment, sendMessageAttachment);
+router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, validateIdParam('attachment_id', 'Attachment not found'), getMessageAttachment);
+router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, messageSendLimiter, sendMessage);
+router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, markConversationRead);
 
 export default router;

@@ -5,6 +5,7 @@ import { changeRequestEmailTemplate } from "../utils/changeRequestEmailTemplate.
 import { credentialsEmailTemplate } from "../utils/credentialsEmailTemplate.js";
 import { certificateEmailTemplate } from "../utils/certificateEmailTemplate.js";
 import { claimDecisionEmailTemplate } from "../utils/claimDecisionEmailTemplate.js";
+import { hrAccountEmailTemplate } from "../utils/hrAccountEmailTemplate.js";
 
 // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
@@ -193,27 +194,85 @@ export const sendInvitationEmail = async ({ to, companyName, enrollmentUrl }) =>
   }
 }
 
-// Carries a new temporary password after HR reissues an employee's credentials.
+// Carries a new temporary password after HR reissues an employee's credentials,
+// or the Administrator reissues an HR account's.
 //
 // Unlike every other sender here, a failure on this one must NOT be swallowed.
 // The password has already been changed by the time this runs, and this message
 // is the only copy of it — reporting success on a send that did not happen
 // leaves the employee worse off than before, with a password nobody knows.
+//
+// The sign-in page comes from the caller: an employee signs in at
+// /employee-login, and HR at APP_URL itself (Adrian, 2026-10-14).
 export const sendCredentialsEmail = async ({
   to,
   firstName,
   username,
   password,
+  loginUrl,
+  issuedBy,
+  contact,
 }) => {
   const accessToken = await getAccessToken();
   const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${config.smtp.user}/sendMail`;
-  const loginUrl = `${config.appUrl}/employee-login`;
 
   const mailPayload = {
     message: {
       subject: "Your new sign-in details",
       body: credentialsEmailTemplate({
         firstName,
+        username,
+        password,
+        loginUrl,
+        issuedBy,
+        contact,
+      }),
+      toRecipients: [
+        {
+          emailAddress: {
+            address: to,
+          },
+        },
+      ],
+    },
+    saveToSentItems: "false",
+  };
+
+  const response = await fetch(sendMailUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(mailPayload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw graphSendError(response, errorText);
+  }
+};
+
+// A new company's HR account, once, after the account is committed. Thrown
+// rather than swallowed, so the caller can say whether it went: the account
+// exists either way, and the Administrator reissues if it did not.
+export const sendHrAccountEmail = async ({
+  to,
+  firstName,
+  companyName,
+  username,
+  password,
+  loginUrl,
+}) => {
+  const accessToken = await getAccessToken();
+  const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${config.smtp.user}/sendMail`;
+
+  const mailPayload = {
+    message: {
+      subject: "Your HR account is ready",
+      body: hrAccountEmailTemplate({
+        firstName,
+        companyName,
         username,
         password,
         loginUrl,

@@ -18,3 +18,5 @@ export const SUPER_ADMIN = 'Administrator';
 export const ADMIN = 'HR';
 export const EMPLOYEE = 'Employee';
 export const EMPLOYEE_ROLE_ID = 3;
+// sec.us02_roles, read 2026-10-15: 1 Administrator, 2 HR, 3 Employee.
+export const HR_ROLE_ID = 2;

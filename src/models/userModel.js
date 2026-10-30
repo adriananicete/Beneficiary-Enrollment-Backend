@@ -111,6 +111,31 @@ const endSessions = async (pool, userId) => {
     .execute('sec.us01_usp_end_sessions');
 };
 
+// A row of sec.us06_sessions, for the audit trail: sec.usp_ins_audit_log refuses
+// a session id that is not in that table. sec.us06_usp_ins_session answers one
+// row, { success, sessionId, message }, and no output parameter. Every column
+// is required by the procedure, so the device is passed as NULL (the table
+// allows it) and the rest come from the login. Returns the session's id, or
+// null when the procedure said it did not create one.
+const createSession = async (
+  pool,
+  { userId, accessKey, refreshKey, ipAddress, userAgent, expiresAt, createdBy },
+) => {
+  const result = await pool.request()
+    .input('us01_user_id', sql.BigInt, userId)
+    .input('us06_access_token', sql.NVarChar(sql.MAX), accessKey)
+    .input('us06_refresh_token', sql.NVarChar(sql.MAX), refreshKey)
+    .input('us06_device_id', sql.VarChar(100), null)
+    .input('us06_ip_address', sql.VarChar(45), ipAddress)
+    .input('us06_user_agent', sql.VarChar(500), userAgent)
+    .input('us06_expiration_date', sql.DateTime, expiresAt)
+    .input('us06_created_by', sql.VarChar(50), createdBy)
+    .execute('sec.us06_usp_ins_session');
+
+  const row = result.recordset?.[0];
+  return row?.success ? row.sessionId : null;
+};
+
 // Retrieves the active user linked to a client through its stored procedure.
 const findUserByClientId = async (pool, clientId) => {
   const result = await pool.request()
@@ -132,7 +157,7 @@ const resetPassword = async (pool, resetData) => {
   return result.recordset[0].affected_count;
 };
 
-// Keeps sec.us01_users in step with dbo.clients after an approved change.
+// Keeps sec.us01_users in step with bes.clients after an approved change.
 //
 // The procedure COALESCEs every field, so NULL means "leave alone" rather than
 // "clear". A middle name the employee cleared cannot be cleared here — see the
@@ -168,6 +193,7 @@ export default {
     recordFailedLogin,
     recordSuccessfulLogin,
     endSessions,
+    createSession,
     checkUsernameExists,
     findUserByClientId,
     updateUserRecord,

@@ -13,9 +13,9 @@ const { setRealtimeServer } = await import("../../src/realtime/realtime.js");
 // What is tested is that the announcement reaches both sides with the right
 // payload, and that it can never fail the call.
 
-const INSERT = "usp_ins_message";
-const READ = "usp_upd_conversation_read";
-const DETAIL = "usp_sel_conversation_by_id";
+const INSERT = "bes.usp_ins_message";
+const READ = "bes.usp_upd_conversation_read";
+const DETAIL = "bes.usp_sel_conversation_by_id";
 
 const SAVED = {
   message_id: "120",

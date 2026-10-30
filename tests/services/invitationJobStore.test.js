@@ -29,11 +29,14 @@ describe("createJob", () => {
     // own count silently stayed at zero, so the totals would stop adding up.
     const job = InvitationJobStore.createJob(newUser(), 0);
 
+    // invalid since branch 6: a class or affiliate that stopped being
+    // available while the job ran.
     assert.deepEqual(Object.keys(job.counts).sort(), [
       "already_enrolled",
       "already_invited",
       "email_failed",
       "failed",
+      "invalid",
       "sent",
     ]);
   });

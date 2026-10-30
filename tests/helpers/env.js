@@ -31,4 +31,10 @@ for (const [name, value] of Object.entries(REQUIRED)) {
   process.env[name] ??= value;
 }
 
+// The Group Credit Life dev store is off for every test that does not switch it on itself
+// (tests/helpers/gcliStore.js), whatever the shell has exported: with it on, the public router
+// has a route more and the company has plan fields.
+delete process.env.GCLI_DEV_STORE;
+delete process.env.GCLI_DEV_STORE_FILE;
+
 export const JWT_SECRET = process.env.JWT_SECRET;
