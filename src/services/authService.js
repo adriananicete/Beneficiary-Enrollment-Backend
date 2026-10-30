@@ -1,4 +1,5 @@
 import bcrypt from "bcrypt";
+import { randomUUID } from "crypto";
 import jwt from "jsonwebtoken";
 import UserModel from "../models/userModel.js";
 import InvitationModel from "../models/invitationModel.js";
@@ -204,9 +205,36 @@ const logout = async (pool, token) => {
   endUserSessions(session.user_id);
 };
 
+// The audit trail needs a row in sec.us06_sessions: sec.usp_ins_audit_log refuses
+// a session id that is not there, and nothing else in the app creates one.
+//
+// The token carries the session's id, so it cannot also be what the row stores:
+// an opaque key stands in for the access token, and another for the refresh
+// token, which this app does not have but the table requires.
+//
+// A session that could not be opened must not stop anyone signing in. The token
+// then has no session_id, and the audit trail skips that person's actions until
+// they sign in again, and says so (middlewares/auditTrail.js).
+const openSession = async (pool, user, maxAge, { ipAddress, userAgent } = {}) => {
+  try {
+    return await UserModel.createSession(pool, {
+      userId: user.us01_user_id,
+      accessKey: randomUUID(),
+      refreshKey: randomUUID(),
+      ipAddress: ipAddress ? String(ipAddress).slice(0, 45) : null,
+      userAgent: userAgent ? String(userAgent).slice(0, 500) : null,
+      expiresAt: new Date(Date.now() + maxAge),
+      createdBy: String(user.us01_username).slice(0, 50),
+    });
+  } catch (error) {
+    console.error("Could not open a session for the audit trail:", error);
+    return null;
+  }
+};
+
 const login = async (
   pool,
-  { username, password, rememberMe = false, allowedRoles, wrongDoorMessage },
+  { username, password, rememberMe = false, allowedRoles, wrongDoorMessage, client = {} },
 ) => {
   // Text only. Neither login route has a body validator, so the caller's JSON
   // arrives here as sent. bcrypt.compare throws on anything that is not a
@@ -332,6 +360,8 @@ const login = async (
     role_name: user.us02_role_name,
   });
 
+  const sessionId = await openSession(pool, user, maxAge, client);
+
   const token = jwt.sign(
     {
       user_id: user.us01_user_id,
@@ -341,6 +371,8 @@ const login = async (
       // Checked by verifySession on every request. From sec.us01_usp_login,
       // the same row the password was checked against.
       token_version: user.us01_token_version,
+      // For the audit trail. Absent when the session could not be opened.
+      ...(sessionId ? { session_id: sessionId } : {}),
     },
     config.jwtSecret,
     { expiresIn: asSeconds(maxAge) },

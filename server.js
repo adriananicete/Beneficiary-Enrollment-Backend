@@ -14,6 +14,7 @@ import adminRoutes from './src/routes/adminRoutes.js';
 import employeeRoutes from './src/routes/employeeRoutes.js';
 import { listenOnFreePort } from './src/utils/listenOnFreePort.js';
 import { verifyToken } from './src/middlewares/verifyToken.js';
+import { auditTrail } from './src/middlewares/auditTrail.js';
 import { createGcliRoutes } from './src/gcli/routes.js';
 import { assertDevStoreAllowed, devStoreOn } from './src/gcli/devStore.js';
 import {errorHandler} from './src/middlewares/errorHandler.js';
@@ -75,6 +76,10 @@ app.use((req, res, next) => {
 });
 
 app.use(cookieParser());
+
+// Before every route, so it sees each request that creates, changes or deletes
+// something and writes its audit row once the response has gone (src/utils/auditCatalog.js).
+app.use(auditTrail);
 
 app.get('/', (req, res) => {
     res.send('Beneficiary Enrollment API v1');

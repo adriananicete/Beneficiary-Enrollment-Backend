@@ -24,6 +24,7 @@ export const login = async (req, res, next) => {
       password,
       allowedRoles: [EMPLOYEE],
       wrongDoorMessage: "Admin and HR must use the admin login",
+      client: { ipAddress: req.ip, userAgent: req.headers?.["user-agent"] },
     });
 
     if (result.mustChangePassword) {

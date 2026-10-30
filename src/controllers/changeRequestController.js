@@ -9,6 +9,7 @@ import { AppError } from "../utils/AppError.js";
 import { sendChangeRequestDecisionEmail } from "../services/emailService.js";
 import { certificateForDecision } from "../services/certificateService.js";
 import { buildPage, parsePaging } from "../utils/parsePaging.js";
+import { changeRequestAuditEntry } from "../utils/changeRequestAudit.js";
 import {
   assertAddressBelongs,
   buildAddressChange,
@@ -214,6 +215,14 @@ export const reviewChangeRequest = async (req, res, next) => {
     if (approved)
       await ChangeRequestModel.approveChangeRequest(pool, reviewData);
     else await ChangeRequestModel.rejectChangeRequest(pool, reviewData);
+
+    // Neither procedure writes an audit row, so the audit trail is told what was
+    // decided and, for an approval, what changed. `details` is from before the
+    // decision, which is the only time the old values are still there.
+    res.locals.auditEntry = changeRequestAuditEntry(details, {
+      approved,
+      reviewRemarks: reviewData.review_remarks,
+    });
 
     if (approved) await syncUserRecord(pool, details, reviewData.reviewed_by);
 

@@ -16,6 +16,7 @@ import SignatureModel from "../../src/models/signatureModel.js";
 import EmployerModel from "../../src/models/employerModel.js";
 import ClaimModel from "../../src/models/claimModel.js";
 import MessageModel from "../../src/models/messageModel.js";
+import AuditTrailModel from "../../src/models/auditTrailModel.js";
 import DeathModel from "../../src/models/deathModel.js";
 import { sql } from "../../src/config/db.js";
 
@@ -666,5 +667,236 @@ describe("model bindings — the invitation's class and affiliate", () => {
     assert.equal(assigned.inputs.affiliate_id, "7");
     assert.equal(bare.inputs.affiliate_id, null);
     assert.deepEqual(Object.keys(assigned.outputs), ["client_employer_id"]);
+  });
+});
+
+// The audit row is written by an INSERT of our own, because sec.usp_ins_audit_log
+// cannot insert one (docs/dba-handoff/AUDIT-LOG-SP.md); the session is opened by
+// sec.us06_usp_ins_session. Both read on 2026-10-28.
+//
+// Going round the procedure means going round its checks, which were probed in
+// transactions that were rolled back: an action other than I, U or D is refused
+// (50203, L included), so is a record id that is not above zero (50205), and so
+// is a session that is not a row of sec.us06_sessions (50206). insertAuditLog
+// applies the first two itself, and needs a session.
+describe("model bindings — the audit trail", () => {
+  const AUDIT = { userId: 3, objectName: "Claim", recordId: "120", action: "U", ipAddress: "203.0.113.7", sessionId: 77 };
+
+  // Answers the INSERT with the id it made, as OUTPUT inserted.* does.
+  const auditPool = () => {
+    const calls = [];
+    const request = () => {
+      const inputs = {};
+      const bindings = {};
+      const chain = {
+        input(name, type, value) {
+          inputs[name] = value;
+          bindings[name] = { type, value };
+          return chain;
+        },
+        async execute(procedure) {
+          calls.push({ procedure, inputs, bindings });
+          return { recordset: [], output: {} };
+        },
+        async query(text) {
+          calls.push({ query: String(text).trim(), inputs, bindings });
+          return { recordset: [{ audit_log_id: "9" }] };
+        },
+      };
+      return chain;
+    };
+
+    return { pool: { request }, calls };
+  };
+
+  test("insertAuditLog inserts into sec.us07_audit_logs, and does not call the procedure that cannot", async () => {
+    const { pool, calls } = auditPool();
+
+    await AuditTrailModel.insertAuditLog(pool, AUDIT);
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].procedure, undefined);
+    assert.match(calls[0].query, /^INSERT INTO sec\.us07_audit_logs/);
+    assert.match(calls[0].query, /OUTPUT inserted\.us07_audit_log_id/);
+  });
+
+  test("insertAuditLog hands back the id of the row it made", async () => {
+    const { pool } = auditPool();
+
+    assert.equal(await AuditTrailModel.insertAuditLog(pool, AUDIT), "9");
+  });
+
+  test("it sends every NOT NULL column: the six it is given, and {} for the old and new values", async () => {
+    const { pool, calls } = auditPool();
+
+    await AuditTrailModel.insertAuditLog(pool, AUDIT);
+
+    const { inputs } = calls[0];
+
+    assert.deepEqual(Object.keys(inputs).sort(), [
+      "us01_user_id",
+      "us06_session_id",
+      "us07_action",
+      "us07_ip_address",
+      "us07_new_values",
+      "us07_object_name",
+      "us07_old_values",
+      "us07_record_id",
+    ]);
+    // The cause of the procedure's failure: these two are NOT NULL.
+    assert.equal(inputs.us07_old_values, "{}");
+    assert.equal(inputs.us07_new_values, "{}");
+  });
+
+  test("what the caller gives as the old and new values is written, as JSON text", async () => {
+    const { pool, calls } = auditPool();
+
+    await AuditTrailModel.insertAuditLog(pool, {
+      ...AUDIT,
+      oldValues: { Status: "PENDING", "First Name": "Ana" },
+      newValues: { Status: "APPROVED", "First Name": "Anna" },
+    });
+
+    const { inputs } = calls[0];
+
+    assert.deepEqual(JSON.parse(inputs.us07_old_values), { Status: "PENDING", "First Name": "Ana" });
+    assert.deepEqual(JSON.parse(inputs.us07_new_values), { Status: "APPROVED", "First Name": "Anna" });
+  });
+
+  // The columns are NOT NULL and the Audit Trail parses them as an object: a value
+  // that is not one must not reach the table as "null" or "[]".
+  for (const [name, values] of [["null", null], ["a list", [1, 2]], ["text", "changed"], ["a number", 5]])
+    test(`old and new values that are ${name} are written as {}`, async () => {
+      const { pool, calls } = auditPool();
+
+      await AuditTrailModel.insertAuditLog(pool, { ...AUDIT, oldValues: values, newValues: values });
+
+      assert.equal(calls[0].inputs.us07_old_values, "{}");
+      assert.equal(calls[0].inputs.us07_new_values, "{}");
+    });
+
+  test("the ids are BigInt, the action is one character, and the widths are the columns'", async () => {
+    const { pool, calls } = auditPool();
+
+    await AuditTrailModel.insertAuditLog(pool, AUDIT);
+
+    const { bindings } = calls[0];
+
+    for (const field of ["us01_user_id", "us07_record_id", "us06_session_id"])
+      assert.equal(declarationOf(bindings[field].type), declarationOf(sql.BigInt), field);
+
+    assert.equal(declarationOf(bindings.us07_action.type), "char");
+    assert.equal(bindings.us07_action.type.length, 1);
+    assert.equal(declarationOf(bindings.us07_object_name.type), "varchar");
+    assert.equal(bindings.us07_object_name.type.length, 100);
+    assert.equal(declarationOf(bindings.us07_ip_address.type), "varchar");
+    assert.equal(bindings.us07_ip_address.type.length, 45);
+    for (const field of ["us07_old_values", "us07_new_values"]) {
+      assert.equal(declarationOf(bindings[field].type), "nvarchar", field);
+      assert.equal(bindings[field].type.length, sql.MAX, field);
+    }
+  });
+
+  test("a record id is sent as the text it came as, so a large one is not rounded", async () => {
+    const { pool, calls } = auditPool();
+
+    await AuditTrailModel.insertAuditLog(pool, { ...AUDIT, recordId: "9007199254740993" });
+
+    assert.equal(calls[0].inputs.us07_record_id, "9007199254740993");
+  });
+
+  for (const action of ["I", "U", "D"])
+    test("the action " + action + " is accepted", async () => {
+      const { pool, calls } = auditPool();
+
+      await AuditTrailModel.insertAuditLog(pool, { ...AUDIT, action });
+
+      assert.equal(calls[0].inputs.us07_action, action);
+    });
+
+  // Each of these reaches the database as nothing: the refusal comes first.
+  const refused = [
+    ["an action of L (a login), which the procedure refuses", { action: "L" }, /Unsupported audit action/],
+    ["a lower-case action", { action: "u" }, /Unsupported audit action/],
+    ["an action of two letters", { action: "UU" }, /Unsupported audit action/],
+    ["no action", { action: undefined }, /Unsupported audit action/],
+    ["a record id of 0", { recordId: 0 }, /Invalid record ID/],
+    ["a record id of \"0\"", { recordId: "0" }, /Invalid record ID/],
+    ["a negative record id", { recordId: "-4" }, /Invalid record ID/],
+    ["a record id with text in it", { recordId: "12abc" }, /Invalid record ID/],
+    ["a record id with a fraction", { recordId: "1.5" }, /Invalid record ID/],
+    ["an empty record id", { recordId: "" }, /Invalid record ID/],
+    ["no record id", { recordId: undefined }, /Invalid record ID/],
+    ["a session of null", { sessionId: null }, /Invalid session ID/],
+    ["a session of 0", { sessionId: 0 }, /Invalid session ID/],
+    ["no session", { sessionId: undefined }, /Invalid session ID/],
+  ];
+
+  for (const [label, change, message] of refused)
+    test("refuses " + label + ", before the database is asked", async () => {
+      const { pool, calls } = auditPool();
+
+      await assert.rejects(() => AuditTrailModel.insertAuditLog(pool, { ...AUDIT, ...change }), message);
+      assert.equal(calls.length, 0);
+    });
+
+  test("createSession calls sec.us06_usp_ins_session with every column the procedure requires", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await UserModel.createSession(pool, {
+      userId: 12,
+      accessKey: "a",
+      refreshKey: "r",
+      ipAddress: "203.0.113.7",
+      userAgent: "agent",
+      expiresAt: new Date("2026-10-29T08:00:00Z"),
+      createdBy: "EMP-020",
+    });
+
+    const call = callTo(calls, "sec.us06_usp_ins_session");
+
+    assert.ok(call, "createSession does not call sec.us06_usp_ins_session");
+    assert.deepEqual(Object.keys(call.inputs).sort(), [
+      "us01_user_id",
+      "us06_access_token",
+      "us06_created_by",
+      "us06_device_id",
+      "us06_expiration_date",
+      "us06_ip_address",
+      "us06_refresh_token",
+      "us06_user_agent",
+    ]);
+    assert.deepEqual(Object.keys(call.outputs), []);
+  });
+
+  test("the session's tokens are unbounded text, and the device is sent as NULL", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await UserModel.createSession(pool, {
+      userId: 12, accessKey: "a", refreshKey: "r", ipAddress: null, userAgent: null,
+      expiresAt: new Date(), createdBy: "EMP-020",
+    });
+
+    const { bindings, inputs } = callTo(calls, "sec.us06_usp_ins_session");
+
+    assert.equal(declarationOf(bindings.us06_access_token.type), "nvarchar");
+    assert.equal(bindings.us06_access_token.type.length, sql.MAX);
+    assert.equal(inputs.us06_device_id, null);
+    assert.equal(bindings.us06_user_agent.type.length, 500);
+    assert.equal(bindings.us06_created_by.type.length, 50);
+  });
+
+  test("createSession answers the new id, and null when the procedure says it made none", async () => {
+    const answers = (row) => ({
+      request: () => {
+        const chain = { input: () => chain, output: () => chain, execute: async () => ({ recordset: row ? [row] : [], output: {} }) };
+        return chain;
+      },
+    });
+    const args = { userId: 1, accessKey: "a", refreshKey: "r", ipAddress: null, userAgent: null, expiresAt: new Date(), createdBy: "x" };
+
+    assert.equal(await UserModel.createSession(answers({ success: 1, sessionId: 5 }), args), 5);
+    assert.equal(await UserModel.createSession(answers({ success: 0, sessionId: null }), args), null);
+    assert.equal(await UserModel.createSession(answers(null), args), null);
   });
 });
