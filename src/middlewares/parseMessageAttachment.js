@@ -12,7 +12,9 @@ export const parseMessageAttachment = (req, res, next) => {
   upload(req, res, (error) => {
     if (error) {
       if (error.code === "LIMIT_FILE_SIZE") return next(new AppError("Each attachment must be 5MB or smaller", 413));
-      if (error.code === "LIMIT_FILE_COUNT") return next(new AppError("Only one attachment is allowed per message", 400));
+      if (error.code === "LIMIT_FILE_COUNT" || error.code === "LIMIT_UNEXPECTED_FILE") {
+        return next(new AppError("Only one attachment is allowed per message", 400));
+      }
       return next(new AppError("The attachment could not be read", 400));
     }
 
