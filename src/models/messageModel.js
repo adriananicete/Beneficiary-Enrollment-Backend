@@ -38,21 +38,37 @@ const insertMessage = async (pool, { conversationId, userId, body }) => {
   return result.recordset[0];
 };
 
-// The DBA should publish this transaction-owning procedure before file sends
-// are enabled. It stores the message and its attachment atomically and returns
-// the saved message fields with attachment metadata in one row.
+// Save the message and file together. usp_ins_message has its own short
+// transaction; SQL Server nests it inside this transaction, so an attachment
+// insert failure still rolls back the message.
 const insertMessageWithAttachment = async (pool, { conversationId, userId, body, attachment }) => {
-  const result = await pool.request()
-    .input("conversation_id", sql.BigInt, conversationId)
-    .input("us01_user_id", sql.BigInt, userId)
-    .input("body", sql.NVarChar(4000), body)
-    .input("file_name", sql.NVarChar(200), attachment.fileName)
-    .input("mime_type", sql.VarChar(100), attachment.mimeType)
-    .input("byte_size", sql.Int, attachment.byteSize)
-    .input("sha256", sql.Char(64), attachment.sha256)
-    .input("content", sql.VarBinary(sql.MAX), attachment.content)
-    .execute("bes.usp_ins_message_with_attachment");
-  return result.recordset[0];
+  const transaction = new sql.Transaction(pool);
+  await transaction.begin();
+
+  try {
+    const messageResult = await transaction.request()
+      .input("conversation_id", sql.BigInt, conversationId)
+      .input("us01_user_id", sql.BigInt, userId)
+      .input("body", sql.NVarChar(4000), body)
+      .execute("bes.usp_ins_message");
+    const message = messageResult.recordset[0];
+
+    const attachmentResult = await transaction.request()
+      .input("conversation_id", sql.BigInt, conversationId)
+      .input("message_id", sql.BigInt, message.message_id)
+      .input("file_name", sql.NVarChar(200), attachment.fileName)
+      .input("mime_type", sql.VarChar(100), attachment.mimeType)
+      .input("byte_size", sql.Int, attachment.byteSize)
+      .input("sha256", sql.Char(64), attachment.sha256)
+      .input("content", sql.VarBinary(sql.MAX), attachment.content)
+      .execute("bes.usp_ins_message_attachment");
+
+    await transaction.commit();
+    return { ...message, ...attachmentResult.recordset[0] };
+  } catch (error) {
+    try { await transaction.rollback(); } catch { /* The procedure may already have rolled it back. */ }
+    throw error;
+  }
 };
 
 const getMessageAttachment = async (pool, conversationId, attachmentId) => {
