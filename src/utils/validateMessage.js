@@ -14,17 +14,22 @@ export const MAX_MESSAGE_LENGTH = 2000;
 // The message, trimmed. JavaScript's trim() also takes newlines and tabs off
 // the ends, which the procedure's LTRIM/RTRIM would leave; newlines inside the
 // message are kept.
-export const messageBodyOf = (value) => {
+export const messageBodyOf = (value, { allowEmpty = false } = {}) => {
   if (typeof value !== "string") throw new AppError("body must be text", 400);
 
   const body = value.trim();
 
-  if (!body) throw new AppError("A message cannot be empty", 400);
+  if (!body && !allowEmpty) throw new AppError("A message cannot be empty", 400);
 
   if (body.length > MAX_MESSAGE_LENGTH)
     throw new AppError(`A message can be at most ${MAX_MESSAGE_LENGTH} characters`, 400);
 
   return body;
+};
+
+export const messageBodyIfPresentOf = (value, { allowEmpty = false } = {}) => {
+  if (value === undefined || value === null || value === "") return null;
+  return messageBodyOf(value, { allowEmpty });
 };
 
 // A whole-number id given as text or as a number, or null. Text and numbers

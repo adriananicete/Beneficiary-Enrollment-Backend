@@ -11,6 +11,9 @@ import {
     markConversationRead,
     openMyConversation,
     sendMessage,
+    editMessage,
+    unsendMessage,
+    getMessageAttachment,
 } from '../controllers/messageController.js';
 import { getMyAgreements, getMySignature } from '../controllers/enrollmentController.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
@@ -28,6 +31,7 @@ import {
     submitMyClaim,
 } from '../controllers/claimController.js';
 import { getMessagingAvailability } from '../controllers/messagingAccessController.js';
+import { parseMessageAttachment } from '../middlewares/parseMessageAttachment.js';
 
 const router = express.Router();
 
@@ -70,7 +74,10 @@ const conversationId = validateIdParam('conversation_id', 'Conversation not foun
 router.post('/conversation', verifyToken, allowedRoles(EMPLOYEE), requireCompanyMessaging, openMyConversation);
 router.get('/conversations/unread-count', verifyToken, allowedRoles(EMPLOYEE), requireCompanyMessaging, pendingCountLimiter, getUnreadMessageCount);
 router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, getConversation);
-router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, messageSendLimiter, sendMessage);
+router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, messageSendLimiter, parseMessageAttachment, sendMessage);
+router.patch('/conversations/:conversation_id/messages/:message_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, validateIdParam('message_id', 'Message not found'), requireCompanyMessaging, editMessage);
+router.delete('/conversations/:conversation_id/messages/:message_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, validateIdParam('message_id', 'Message not found'), requireCompanyMessaging, unsendMessage);
+router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, validateIdParam('attachment_id', 'Attachment not found'), requireCompanyMessaging, getMessageAttachment);
 router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, markConversationRead);
 
 export default router;

@@ -7,8 +7,10 @@ import {
   conversationClientIdOf,
   lastReadIdOf,
   messageBodyOf,
+  messageBodyIfPresentOf,
   messageCursorOf,
 } from "../utils/validateMessage.js";
+import { sendStoredFile } from "../utils/storedFileResponse.js";
 
 // HR ↔ employee messaging over REST, branch 8 of
 // md/CLAIMS-AND-MESSAGING-DECISIONS.md. Branch 9 added the socket, which only
@@ -132,7 +134,25 @@ export const getConversation = async (req, res, next) => {
       success: true,
       data: {
         conversation: conversationOf(conversation),
-        messages: messages.map(messageOf),
+        messages: await (async () => {
+          const visibleMessages = messages.filter((message) =>
+            message.is_deleted !== true && message.is_deleted !== 1 && message.is_deleted !== "1",
+          );
+          const attachments = await MessageModel.getMessageAttachmentMetadata(
+            pool, req.params.conversation_id, visibleMessages.map((message) => message.message_id),
+          );
+          const byMessage = new Map();
+          for (const attachment of attachments) {
+            const key = String(attachment.message_id);
+            byMessage.set(key, [...(byMessage.get(key) ?? []), {
+              attachment_id: attachment.attachment_id,
+              file_name: attachment.file_name,
+              mime_type: attachment.mime_type,
+              byte_size: attachment.byte_size,
+            }]);
+          }
+          return messages.map((row) => ({ ...messageOf(row), attachments: byMessage.get(String(row.message_id)) ?? [] }));
+        })(),
         has_more: hasMore,
       },
     });
@@ -143,7 +163,8 @@ export const getConversation = async (req, res, next) => {
 
 export const sendMessage = async (req, res, next) => {
   try {
-    const body = messageBodyOf(req.body?.body);
+    const body = messageBodyIfPresentOf(req.body?.body, { allowEmpty: Boolean(req.attachment) });
+    if (!body && !req.attachment) throw new AppError("A message or attachment is required", 400);
 
     const pool = await getPool();
 
@@ -151,13 +172,56 @@ export const sendMessage = async (req, res, next) => {
     const message = await MessageService.sendMessage(pool, {
       conversationId: req.params.conversation_id,
       userId: req.user.user_id,
-      body,
+      body: body ?? "",
+      attachment: req.attachment,
     });
 
     return res.status(201).json({ success: true, data: message });
   } catch (error) {
     next(error);
   }
+};
+
+export const editMessage = async (req, res, next) => {
+  try {
+    const body = messageBodyOf(req.body?.body);
+    const pool = await getPool();
+    const message = await MessageService.editMessage(pool, {
+      conversationId: req.params.conversation_id,
+      messageId: req.params.message_id,
+      userId: req.user.user_id,
+      body,
+    });
+    if (!message) throw new AppError("Message not found", 404);
+    return res.status(200).json({ success: true, data: message });
+  } catch (error) { next(error); }
+};
+
+export const unsendMessage = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const message = await MessageService.unsendMessage(pool, {
+      conversationId: req.params.conversation_id,
+      messageId: req.params.message_id,
+      userId: req.user.user_id,
+    });
+    if (!message) throw new AppError("Message not found", 404);
+    return res.status(200).json({ success: true, data: message });
+  } catch (error) { next(error); }
+};
+
+export const getMessageAttachment = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const file = await MessageModel.getMessageAttachment(pool, req.params.conversation_id, req.params.attachment_id);
+    if (!file) throw new AppError("Attachment not found", 404);
+    return sendStoredFile(res, {
+      content: file.content,
+      mimeType: file.mime_type,
+      byteSize: file.byte_size,
+      fileName: file.file_name,
+    });
+  } catch (error) { next(error); }
 };
 
 export const markConversationRead = async (req, res, next) => {

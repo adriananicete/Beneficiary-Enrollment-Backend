@@ -38,6 +38,50 @@ const insertMessage = async (pool, { conversationId, userId, body }) => {
   return result.recordset[0];
 };
 
+// The DBA should publish this transaction-owning procedure before file sends
+// are enabled. It stores the message and its attachment atomically and returns
+// the saved message fields with attachment metadata in one row.
+const insertMessageWithAttachment = async (pool, { conversationId, userId, body, attachment }) => {
+  const result = await pool.request()
+    .input("conversation_id", sql.BigInt, conversationId)
+    .input("us01_user_id", sql.BigInt, userId)
+    .input("body", sql.NVarChar(4000), body)
+    .input("file_name", sql.NVarChar(200), attachment.fileName)
+    .input("mime_type", sql.VarChar(100), attachment.mimeType)
+    .input("byte_size", sql.Int, attachment.byteSize)
+    .input("sha256", sql.Char(64), attachment.sha256)
+    .input("content", sql.VarBinary(sql.MAX), attachment.content)
+    .execute("bes.usp_ins_message_with_attachment");
+  return result.recordset[0];
+};
+
+const getMessageAttachment = async (pool, conversationId, attachmentId) => {
+  const result = await pool.request()
+    .input("conversation_id", sql.BigInt, conversationId)
+    .input("attachment_id", sql.BigInt, attachmentId)
+    .execute("bes.usp_sel_message_attachment");
+  return result.recordset[0];
+};
+
+const updateMessage = async (pool, { conversationId, messageId, userId, body }) => {
+  const result = await pool.request()
+    .input("conversation_id", sql.BigInt, conversationId)
+    .input("message_id", sql.BigInt, messageId)
+    .input("us01_user_id", sql.BigInt, userId)
+    .input("body", sql.NVarChar(4000), body)
+    .execute("bes.usp_upd_message");
+  return result.recordset[0];
+};
+
+const softDeleteMessage = async (pool, { conversationId, messageId, userId }) => {
+  const result = await pool.request()
+    .input("conversation_id", sql.BigInt, conversationId)
+    .input("message_id", sql.BigInt, messageId)
+    .input("us01_user_id", sql.BigInt, userId)
+    .execute("bes.usp_del_message");
+  return result.recordset[0];
+};
+
 // HR's list, unread first. `page_size` undefined reaches it as NULL, the
 // whole set, as with the other HR lists.
 const getConversationsByUser = async (pool, userId, paging = {}) => {
@@ -77,6 +121,22 @@ const getConversationById = async (pool, conversationId, userId, { before = null
   };
 };
 
+const getMessageAttachmentMetadata = async (pool, conversationId, messageIds) => {
+  if (!messageIds.length) return [];
+  try {
+    const result = await pool.request()
+      .input("conversation_id", sql.BigInt, conversationId)
+      .input("message_ids_json", sql.NVarChar(sql.MAX), JSON.stringify(messageIds.map(String)))
+      .execute("bes.usp_sel_message_attachment_metadata");
+    return result.recordset;
+  } catch (error) {
+    // Keep older database environments readable while the procedure rollout
+    // is pending there.
+    if (error.number === 2812) return [];
+    throw error;
+  }
+};
+
 // Moves the caller's own read marker. Never backwards and never past the
 // newest message; the procedure sees to both. "Not yours" is 50172.
 const markConversationRead = async (pool, conversationId, userId, lastReadMessageId) => {
@@ -102,8 +162,13 @@ const getUnreadCountByUser = async (pool, userId) => {
 export default {
   openConversation,
   insertMessage,
+  insertMessageWithAttachment,
+  getMessageAttachment,
+  updateMessage,
+  softDeleteMessage,
   getConversationsByUser,
   getConversationById,
+  getMessageAttachmentMetadata,
   markConversationRead,
   getUnreadCountByUser,
 };

@@ -17,7 +17,7 @@ import { getEmployerSettings, updateEmployerSettings } from '../controllers/empl
 import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
 import { closeDeathClaim, fileClaimForEmployee, fileDeathClaim, getClaimDetails, getClaimDocument, getClaims, getHrClaimTypes, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
 import { parseDocuments } from '../middlewares/parseDocuments.js';
-import { getConversation, getConversations, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
+import { editMessage, getConversation, getConversations, getMessageAttachment, getUnreadMessageCount, markConversationRead, openConversation, sendMessage, unsendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
 import { createAffiliate, createClassification, createCompany, createHrAccount, deleteCompany, getAffiliates, getClassificationSchedule, getCompanies, getCompany, resendHrCredentials, updateAffiliate, updateClassification, updateCompany } from '../controllers/companyController.js';
 import { validateHrAccount } from '../middlewares/validateHrAccount.js';
@@ -26,6 +26,7 @@ import { validateClassificationChanges, validateNewClassification } from '../mid
 import { validateAffiliateChanges, validateNewAffiliate } from '../middlewares/validateAffiliate.js';
 import { getAuditTrail } from '../controllers/auditTrailController.js';
 import { getMessagingAvailability } from '../controllers/messagingAccessController.js';
+import { parseMessageAttachment } from '../middlewares/parseMessageAttachment.js';
 
 const router = express.Router();
 
@@ -167,7 +168,10 @@ router.get('/conversations', verifyToken, allowedRoles(ADMIN), requireCompanyMes
 router.post('/conversations', verifyToken, allowedRoles(ADMIN), requireCompanyMessaging, openConversation);
 router.get('/conversations/unread-count', verifyToken, allowedRoles(ADMIN), requireCompanyMessaging, pendingCountLimiter, getUnreadMessageCount);
 router.get('/conversations/:conversation_id', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, getConversation);
-router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, messageSendLimiter, sendMessage);
+router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, messageSendLimiter, parseMessageAttachment, sendMessage);
+router.patch('/conversations/:conversation_id/messages/:message_id', verifyToken, allowedRoles(ADMIN), conversationId, validateIdParam('message_id', 'Message not found'), requireCompanyMessaging, editMessage);
+router.delete('/conversations/:conversation_id/messages/:message_id', verifyToken, allowedRoles(ADMIN), conversationId, validateIdParam('message_id', 'Message not found'), requireCompanyMessaging, unsendMessage);
+router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(ADMIN), conversationId, validateIdParam('attachment_id', 'Attachment not found'), requireCompanyMessaging, getMessageAttachment);
 router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, markConversationRead);
 
 
