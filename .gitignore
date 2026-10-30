@@ -17,3 +17,7 @@ test.html
 
 # Hand-off notes and reports, kept local, as in the frontend
 docs/
+.env.*
+!.env.example
+*.bak
+*.log

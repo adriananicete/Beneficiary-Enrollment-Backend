@@ -54,6 +54,7 @@ export const AUDITED_ROUTES = {
 
   "POST /admin/conversations": entry("Conversation", "I", "data.conversation_id"),
   "POST /admin/conversations/:conversation_id/messages": entry("Message", "I", "data.message_id", "param.conversation_id"),
+  "POST /admin/conversations/:conversation_id/attachments": entry("Message attachment", "I", "data.message_id", "param.conversation_id"),
   "POST /admin/conversations/:conversation_id/read": entry("Conversation", "U", "param.conversation_id"),
 
   // Group Credit Life applications, on the development store (src/gcli).
@@ -70,6 +71,7 @@ export const AUDITED_ROUTES = {
   "POST /employee/claims/:claim_id/resubmit": entry("Claim", "U", "param.claim_id"),
   "POST /employee/conversation": entry("Conversation", "I", "data.conversation_id"),
   "POST /employee/conversations/:conversation_id/messages": entry("Message", "I", "data.message_id", "param.conversation_id"),
+  "POST /employee/conversations/:conversation_id/attachments": entry("Message attachment", "I", "data.message_id", "param.conversation_id"),
   "POST /employee/conversations/:conversation_id/read": entry("Conversation", "U", "param.conversation_id"),
 };
 

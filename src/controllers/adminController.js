@@ -251,6 +251,17 @@ export const resendCertificate = async (req, res, next) => {
 // Company scoping is verifyClientAccess in front of this route and nothing
 // else — usp_sel_client_signature_by_client takes a client_id and trusts it,
 // exactly like usp_sel_hr_employees. That middleware is the whole of the rule.
+export const downloadCertificate = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const certificate = await CertificateService.buildCertificate(pool, req.params.client_id);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.attachment(certificate.name);
+    return res.status(200).send(certificate.content);
+  } catch (error) { next(error); }
+};
+
 export const getEnrollmentSignature = async (req, res, next) => {
   try {
     const { client_id } = req.params;

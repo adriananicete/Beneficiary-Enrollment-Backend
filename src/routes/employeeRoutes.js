@@ -1,3 +1,6 @@
+import { parseMessageAttachment } from "../middlewares/parseMessageAttachment.js";
+import { sendMessageAttachment, getMessageAttachment } from "../controllers/messageController.js";
+import { isClaimsPath } from "../utils/claimsAvailability.js";
 import express from 'express';
 import { getMyEnrollment, login, logout, changePassword } from '../controllers/employeeController.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
@@ -30,6 +33,14 @@ import {
 import { getMessagingAvailability } from '../controllers/messagingAccessController.js';
 
 const router = express.Router();
+
+// Claims are temporarily unavailable during this UAT rollout.
+router.use((req, res, next) => {
+    if (isClaimsPath(req.path)) {
+        return res.status(503).json({ success: false, message: "Claims are temporarily unavailable during UAT." });
+    }
+    next();
+});
 
 router.post('/login', authIpLimiter, strictLimiter, login);
 router.post('/logout', logout);
@@ -70,6 +81,8 @@ const conversationId = validateIdParam('conversation_id', 'Conversation not foun
 router.post('/conversation', verifyToken, allowedRoles(EMPLOYEE), requireCompanyMessaging, openMyConversation);
 router.get('/conversations/unread-count', verifyToken, allowedRoles(EMPLOYEE), requireCompanyMessaging, pendingCountLimiter, getUnreadMessageCount);
 router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, getConversation);
+router.post('/conversations/:conversation_id/attachments', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, messageSendLimiter, parseMessageAttachment, sendMessageAttachment);
+router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, validateIdParam('attachment_id', 'Attachment not found'), getMessageAttachment);
 router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, messageSendLimiter, sendMessage);
 router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, markConversationRead);
 

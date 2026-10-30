@@ -53,7 +53,7 @@ const invitationAnswer = (inputs) => {
 
 const HR_ANSWERS = {
   usp_sel_hr_employees: HR_EMPLOYEES,
-  usp_sel_client_change_request_pending_count: [{ pendingCount: 3 }],
+  usp_sel_client_change_request_pending_count: [{ pending_count: 3 }],
   usp_sel_enrollment_invitations_by_user: invitationAnswer,
 };
 

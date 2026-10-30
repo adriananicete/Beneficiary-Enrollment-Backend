@@ -363,30 +363,44 @@ describe("model bindings — output parameters", () => {
     assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
   });
 
-  // Resend-credentials is HR's way to unlock somebody at once. A reissued
-  // password with any of these left set is a working password and a closed
-  // door, with everything appearing to have worked.
-  // The shared fakePool, because resetPassword reads rowsAffected and the local
-  // recorder does not supply it.
-  test("resetPassword clears the permanent lock, the count and the temporary lock", async () => {
-    const { pool, calls } = fakePool({});
+  // Lockout reset and token-version changes are implemented by the SP.
+  // Verify their actual effects separately against the UAT database.
+  test("resetPassword calls its SP with the correct inputs and types", async () => {
+    const procedure = "sec.usp_upd_user_password_reset";
+    const { pool, calls } = fakePool({
+      [procedure]: [{ affected_count: 1 }],
+    });
+    const data = {
+      us01_user_id: 12,
+      us01_password: "test-password-hash",
+      us01_modified_by: "test-reviewer",
+    };
 
-    await UserModel.resetPassword(pool, { us01_user_id: 12 });
+    const affected = await UserModel.resetPassword(pool, data);
 
-    const { query } = calls[0];
-
-    assert.match(query, /us01_is_locked\s*=\s*0/);
-    assert.match(query, /us01_failed_login_attempts\s*=\s*0/);
-    assert.match(query, /us01_locked_until\s*=\s*NULL/);
+    assert.equal(calls.length, 1);
+    const call = callTo(calls, procedure);
+    assert.ok(call, "Expected the password-reset stored procedure");
+    assert.deepEqual(call.inputs, data);
+    const { bindings } = call;
+    assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
+    assert.equal(declarationOf(bindings.us01_password.type), declarationOf(sql.VarChar));
+    assert.equal(bindings.us01_password.type.length, 255);
+    assert.equal(declarationOf(bindings.us01_modified_by.type), declarationOf(sql.VarChar));
+    assert.equal(bindings.us01_modified_by.type.length, 50);
+    assert.equal(affected, 1);
   });
 
-  // And ends the sessions the old password had, in the same statement.
-  test("resetPassword raises the token version", async () => {
-    const { pool, calls } = fakePool({});
-
-    await UserModel.resetPassword(pool, { us01_user_id: 12 });
-
-    assert.match(calls[0].query, /us01_token_version\s*=\s*us01_token_version\s*\+\s*1/);
+  test("resetPassword returns zero when the SP updates no active user", async () => {
+    const { pool } = fakePool({
+      "sec.usp_upd_user_password_reset": [{ affected_count: 0 }],
+    });
+    const affected = await UserModel.resetPassword(pool, {
+      us01_user_id: 12,
+      us01_password: "test-password-hash",
+      us01_modified_by: "test-reviewer",
+    });
+    assert.equal(affected, 0);
   });
 
   // The thresholds are ints, and the id is a BigInt like every user id.

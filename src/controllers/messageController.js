@@ -1,3 +1,6 @@
+import AttachmentModel, { attachmentOf } from "../models/messageAttachmentModel.js";
+import AttachmentService from "../services/messageAttachmentService.js";
+import { contentDisposition } from "../utils/storedFileResponse.js";
 import { getPool } from "../config/db.js";
 import MessageModel from "../models/messageModel.js";
 import MessageService, { messageOf } from "../services/messageService.js";
@@ -128,11 +131,17 @@ export const getConversation = async (req, res, next) => {
     // answered exactly like one that does not exist.
     if (!conversation) throw new AppError("Conversation not found", 404);
 
+    const files = await AttachmentModel.listMetadata(pool, req.params.conversation_id, messages.map(row => row.message_id));
+    const byMessage = new Map();
+    for (const file of files) {
+      const key = String(file.message_id);
+      byMessage.set(key, [...(byMessage.get(key) || []), attachmentOf(file)]);
+    }
     return res.status(200).json({
       success: true,
       data: {
         conversation: conversationOf(conversation),
-        messages: messages.map(messageOf),
+        messages: messages.map(row => ({ ...messageOf(row), ...(byMessage.has(String(row.message_id)) ? {attachments:byMessage.get(String(row.message_id))} : {}) })),
         has_more: hasMore,
       },
     });
@@ -190,4 +199,27 @@ export const getUnreadMessageCount = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+};
+
+export const sendMessageAttachment = async (req,res,next) => {
+  try {
+    if(!req.messageAttachment) throw new AppError("An attachment is required",400);
+    const caption = req.body?.body;
+    const body = typeof caption === "string" && caption.trim() ? messageBodyOf(caption) : "Attachment";
+    const pool=await getPool();
+    const message=await AttachmentService.send(pool,{conversationId:req.params.conversation_id,userId:req.user.user_id,body,file:req.messageAttachment});
+    return res.status(201).json({success:true,data:message});
+  } catch(error){next(error);}
+};
+export const getMessageAttachment = async (req,res,next) => {
+  try {
+    const pool=await getPool();
+    const file=await AttachmentService.get(pool,{conversationId:req.params.conversation_id,attachmentId:req.params.attachment_id,userId:req.user.user_id});
+    // Download, rather than execute or render uploaded documents in the app origin.
+    res.setHeader("Content-Disposition",contentDisposition(file.file_name).replace(/^inline/,"attachment"));
+    res.setHeader("Content-Type",file.mime_type);
+    res.setHeader("Content-Length",file.byte_size);
+    res.setHeader("Cache-Control","private, no-store");
+    return res.status(200).send(file.content);
+  }catch(error){next(error);}
 };

@@ -35,7 +35,7 @@ const insertChangeRequest = async (pool, changeRequestData) => {
     .input(
       "signature_path",
       sql.NVarChar(500),
-      changeRequestData.signature_path,
+      changeRequestData.signature_path ?? "",
     )
     .input(
       "addresses_json",
@@ -109,7 +109,7 @@ const getPendingCountByUser = async (pool, userId) => {
     .input("us01_user_id", sql.BigInt, userId)
     .execute("bes.usp_sel_client_change_request_pending_count");
 
-  return result.recordset[0]?.pendingCount ?? 0;
+	return result.recordset[0]?.pending_count ?? 0;
 };
 
 // The only procedure in this codebase that returns more than one result set, so
