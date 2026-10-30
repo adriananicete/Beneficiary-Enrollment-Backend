@@ -111,16 +111,11 @@ const endSessions = async (pool, userId) => {
     .execute('sec.us01_usp_end_sessions');
 };
 
-// Raw query, following checkUsernameExists below. There is no procedure that
-// reaches a user by client_id.
+// Retrieves the active user linked to a client through its stored procedure.
 const findUserByClientId = async (pool, clientId) => {
-  const result = await pool
-    .request()
+  const result = await pool.request()
     .input("client_id", sql.BigInt, clientId)
-    .query(`SELECT us01_user_id, us01_username, us01_email_address,
-                   us01_first_name, us01_last_name
-            FROM sec.us01_users
-            WHERE client_id = @client_id AND us01_is_active = 1`);
+    .execute("sec.usp_sel_user_by_client_id");
 
   return result.recordset[0];
 };
