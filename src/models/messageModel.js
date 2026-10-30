@@ -2,8 +2,9 @@ import { sql } from "../config/db.js";
 
 // HR ↔ employee messaging, DBA request 22. Every procedure was read back on
 // 2026-10-12 and is in md/DBA-PROCEDURES.md. None declares an OUTPUT
-// parameter, and none is called inside a transaction of ours:
-// usp_ins_conversation and usp_ins_message each own a short one.
+// parameter. usp_ins_conversation owns its short transaction. Attachment sends
+// wrap usp_ins_message and usp_ins_message_attachment in an outer transaction,
+// so the message and its file are committed or rolled back together.
 //
 // Every procedure scopes by the caller's own roles. An employee reaches only
 // their own conversation; HR reaches those of the companies mapped to them; the
@@ -46,10 +47,14 @@ const insertMessageWithAttachment = async (pool, { conversationId, userId, body,
   await transaction.begin();
 
   try {
+    // usp_ins_message refuses an empty body (50174). For a file-only message,
+    // use the uploaded name to pass that guard, save the attachment, then clear
+    // the body in the same transaction so no placeholder reaches the history.
+    const bodyToInsert = body || attachment.fileName || "Attachment";
     const messageResult = await transaction.request()
       .input("conversation_id", sql.BigInt, conversationId)
       .input("us01_user_id", sql.BigInt, userId)
-      .input("body", sql.NVarChar(4000), body)
+      .input("body", sql.NVarChar(4000), bodyToInsert)
       .execute("bes.usp_ins_message");
     const message = messageResult.recordset[0];
 
@@ -62,6 +67,21 @@ const insertMessageWithAttachment = async (pool, { conversationId, userId, body,
       .input("sha256", sql.Char(64), attachment.sha256)
       .input("content", sql.VarBinary(sql.MAX), attachment.content)
       .execute("bes.usp_ins_message_attachment");
+
+    if (!body) {
+      const cleared = await transaction.request()
+        .input("conversation_id", sql.BigInt, conversationId)
+        .input("message_id", sql.BigInt, message.message_id)
+        .query(`
+          UPDATE bes.messages
+          SET body = N''
+          OUTPUT INSERTED.message_id
+          WHERE conversation_id = @conversation_id
+            AND message_id = @message_id;
+        `);
+      if (!cleared.recordset[0]) throw new Error("The attachment message could not be finalized");
+      message.body = "";
+    }
 
     await transaction.commit();
     return { ...message, ...attachmentResult.recordset[0] };

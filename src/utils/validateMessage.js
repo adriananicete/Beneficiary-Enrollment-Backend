@@ -1,9 +1,9 @@
 import { AppError } from "./AppError.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
 
-// Validate the text part of a message request. A file can be sent without
-// text, but the current bes.usp_ins_message still rejects an empty body (50174),
-// so the database procedure must be updated before file-only sends can succeed.
+// Validate the text part of a message request. The controller accepts an empty
+// body only when a file is present; the model clears its temporary insert text
+// within the same transaction before saving a file-only message.
 //
 // The procedure checks the 2,000 character limit (50175). This check runs first
 // so an overlong message is refused without a round trip. JavaScript's `length`
