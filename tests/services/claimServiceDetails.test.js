@@ -34,7 +34,7 @@ const EMPLOYEE_TYPES = {
   types: [
     { claim_type_id: "10", claim_type_code: "DEATH", claim_type_desc: "Death claim", ends_coverage: true },
     { claim_type_id: "11", claim_type_code: "TPD", claim_type_desc: "Total and Permanent Disability", ends_coverage: true },
-    { claim_type_id: "1", claim_type_code: "TEST-CLAIM", claim_type_desc: "Test claim", ends_coverage: false },
+    { claim_type_id: "1", claim_type_code: "NO-DOCS", claim_type_desc: "Test claim", ends_coverage: false },
   ],
   requirements: [
     { requirement_id: "91", claim_type_id: "10", requirement_desc: "Death certificate", is_required: true },

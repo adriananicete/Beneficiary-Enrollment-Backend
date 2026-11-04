@@ -69,7 +69,10 @@ describe("the shared cases", () => {
     });
 
   test("the copy in docs/, where there is one, is this file", { skip: !fs.existsSync(SOURCE) }, () => {
-    assert.equal(fs.readFileSync(SOURCE, "utf8"), fs.readFileSync(FIXTURE, "utf8"));
+    // a checkout may turn the line endings of one of the two into CRLF; the cases are what must match
+    const text = (file) => fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
+
+    assert.equal(text(SOURCE), text(FIXTURE));
   });
 });
 

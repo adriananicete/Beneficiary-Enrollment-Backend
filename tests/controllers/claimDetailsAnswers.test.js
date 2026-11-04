@@ -17,8 +17,8 @@ const PROFILES = [
   ["TPD", "tpd"],
   ["TERMINAL_ILLNESS", "terminal_illness"],
   ["DISMEMBERMENT", "dismemberment"],
-  ["TEST-CLAIM", "general"],
-  ["TEST-DEATH", "general"],
+  ["NO-DOCS", "general"],
+  ["OTHER", "general"],
 ];
 
 describe("every claim type carries its profile", () => {
