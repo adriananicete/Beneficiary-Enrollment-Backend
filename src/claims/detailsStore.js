@@ -74,6 +74,8 @@ export const getDetails = (claimId) => {
     claimant: kept.details.claimant,
     event: kept.details.event,
     condition: kept.details.condition,
+    // a claim kept before the section existed has none
+    ...(kept.details.agent_location ? { agent_location: kept.details.agent_location } : {}),
     insured: kept.insured,
     computed: kept.computed,
     coverage: kept.coverage,

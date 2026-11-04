@@ -16,7 +16,7 @@ import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCoun
 import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { getEmployerSettings, updateEmployerSettings } from '../controllers/employerSettingsController.js';
 import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
-import { closeDeathClaim, fileClaimForEmployee, fileDeathClaim, getClaimDetails, getClaimDocument, getClaims, getHrClaimTypes, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
+import { closeDeathClaim, fileClaimForEmployee, fileDeathClaim, getClaimDetails, getClaimDocument, getClaims, getHrClaimTypes, getInsuredForEmployee, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { editMessage, getConversation, getConversations, getMessageAttachment, getUnreadMessageCount, markConversationRead, openConversation, sendMessage, sendMessageAttachment, unsendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
@@ -96,6 +96,7 @@ router.delete('/enrollments/:client_id/deceased', verifyToken, allowedRoles(SUPE
 router.post('/enrollments/:client_id/death-claim', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, claimSubmitLimiter, parseDocuments, fileDeathClaim);
 // Any other claim, filed for an employee who is alive. The same chain as the
 // death claim, for the same reasons.
+router.get('/enrollments/:client_id/claims/insured', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, getInsuredForEmployee);
 router.post('/enrollments/:client_id/claims', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, claimSubmitLimiter, parseDocuments, fileClaimForEmployee);
 // /pending-count is declared before /:request_id on purpose. Express matches in
 // order, so the param route would otherwise swallow it and try to read

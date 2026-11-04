@@ -55,7 +55,7 @@ const detailsOf = (testCase) => {
 
 describe("the shared cases", () => {
   test("the file was read (a guard against this passing on nothing)", () => {
-    assert.equal(shared.cases.length, 59);
+    assert.equal(shared.cases.length, 69);
   });
 
   for (const testCase of shared.cases)
@@ -85,7 +85,7 @@ describe("what comes back", () => {
     assert.deepEqual({ ...errors }, {});
     // other_conditions is "" in the base: an empty string means not given.
     assert.equal("other_conditions" in value.condition, false);
-    assert.deepEqual(Object.keys(value), ["claimant", "event", "condition"]);
+    assert.deepEqual(Object.keys(value), ["claimant", "event", "condition", "agent_location"]);
     assert.equal(value.condition.immediate_cause, "Myocardial infarction");
   });
 

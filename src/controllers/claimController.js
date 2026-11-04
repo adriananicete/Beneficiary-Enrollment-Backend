@@ -2,7 +2,7 @@ import { getPool } from "../config/db.js";
 import { claimDetailsOn, getDetails } from "../claims/detailsStore.js";
 import { profileOf } from "../claims/profiles.js";
 import ClaimModel from "../models/claimModel.js";
-import ClaimService, { clientIdOf, reviewDecisionOf } from "../services/claimService.js";
+import ClaimService, { clientIdOf, insuredFor, reviewDecisionOf } from "../services/claimService.js";
 import { AppError } from "../utils/AppError.js";
 import { requirementField } from "../utils/claimDocuments.js";
 import { buildPage, parsePaging } from "../utils/parsePaging.js";
@@ -283,6 +283,30 @@ export const getMyClaims = async (req, res, next) => {
       success: true,
       data: claims.map(employeeClaimOf),
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// What the filing form shows about the insured before anything is sent: the snapshot a filed claim
+// keeps (claims/computed.js), for the signed-in employee, and for HR a chosen one.
+export const getMyInsured = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    const clientId = await clientIdOf(pool, req.user.user_id);
+
+    return res.status(200).json({ success: true, data: await insuredFor(pool, clientId) });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getInsuredForEmployee = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    return res.status(200).json({ success: true, data: await insuredFor(pool, req.params.client_id) });
   } catch (error) {
     next(error);
   }

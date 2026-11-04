@@ -6,6 +6,7 @@ import { AppError } from "../utils/AppError.js";
 import { matchDocuments } from "../utils/claimDocuments.js";
 import { localIsoDate } from "../utils/localDate.js";
 import { keepDetails, prepareDetails, queueTransfer } from "../claims/claimDetails.js";
+import { coverageOf, insuredOf } from "../claims/computed.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
 import { sendClaimDecisionEmail } from "./emailService.js";
 import { endClientSessions } from "../realtime/realtime.js";
@@ -25,6 +26,17 @@ const HR_FILER = "HR";
 
 const NOT_FILEABLE = "This claim type cannot be filed here";
 const DEATH_CLAIM_EXISTS = "A death claim has already been filed for this employee";
+
+// What a claim filed for this employee will record about the insured and the coverage, so the filing
+// form can show it before anything is sent. Nothing is written.
+export const insuredFor = async (pool, clientId) => {
+  const [enrollment] = await ClientModel.getEnrollmentByClientId(pool, clientId);
+  if (!enrollment) throw new AppError("Enrollment not found", 404);
+
+  const benefits = await ClientModel.getEnrollmentBenefitsByClientId(pool, clientId);
+
+  return { insured: insuredOf(enrollment), coverage: coverageOf(benefits) };
+};
 
 // A DATE column arrives as "YYYY-MM-DD" text (config/db.js), a datetime as a Date.
 const dayOf = (value) => (value instanceof Date ? localIsoDate(value) : String(value).slice(0, 10));

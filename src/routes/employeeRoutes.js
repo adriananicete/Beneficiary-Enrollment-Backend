@@ -29,6 +29,7 @@ import {
     getMyClaimDocument,
     getMyClaims,
     getMyClaimTypes,
+    getMyInsured,
     resubmitMyClaim,
     submitMyClaim,
 } from '../controllers/claimController.js';
@@ -67,6 +68,8 @@ router.patch('/change-requests/:request_id/cancel', verifyToken, allowedRoles(EM
 router.get('/claim-types', verifyToken, allowedRoles(EMPLOYEE), getMyClaimTypes);
 router.post('/claims', verifyToken, allowedRoles(EMPLOYEE), claimSubmitLimiter, parseDocuments, submitMyClaim);
 router.get('/claims', verifyToken, allowedRoles(EMPLOYEE), getMyClaims);
+// before /claims/:claim_id, which would take "insured" for an id
+router.get('/claims/insured', verifyToken, allowedRoles(EMPLOYEE), getMyInsured);
 router.get('/claims/:claim_id', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('claim_id', 'Claim not found'), getMyClaim);
 router.get('/claims/:claim_id/documents/:document_id', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('claim_id', 'Document not found'), validateIdParam('document_id', 'Document not found'), getMyClaimDocument);
 router.patch('/claims/:claim_id/cancel', verifyToken, allowedRoles(EMPLOYEE), validateIdParam('claim_id', 'No open claim found'), cancelMyClaim);

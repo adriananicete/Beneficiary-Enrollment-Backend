@@ -40,10 +40,20 @@ const event = (dateLabel, placeLabel, placeRequired = false) => ({
   place: text(placeLabel, 200, { required: placeRequired }),
 });
 
+// ARDCI's "Agent & Location": where the claim comes from, and the agent who serves the insured when
+// the filer knows who that is. The same for every claim type.
+const agentLocation = {
+  agent: text("the agent", 150),
+  city_municipality: text("the city or municipality", 100, { required: true }),
+  province: text("the province", 100, { required: true }),
+  region: text("the region", 100),
+};
+
 const SPECS = {
   death: {
     claimant: claimant({ refuse: { SELF: "The insured cannot be the claimant of a death claim. Choose the claimant's relationship to the insured." } }),
     event: event("the date of death", "the place of death"),
+    agent_location: agentLocation,
     condition: {
       immediate_cause: text("the immediate cause of death", 200, { required: true }),
       antecedent_cause: text("the antecedent cause", 200),
@@ -56,6 +66,7 @@ const SPECS = {
   tpd: {
     claimant: claimant(),
     event: event("the date the disability began", "the place"),
+    agent_location: agentLocation,
     condition: {
       disabling_condition: text("the disabling condition", 300, { required: true }),
       cause: choice("the cause", ["ACCIDENT", "SICKNESS"], { required: true }),
@@ -71,6 +82,7 @@ const SPECS = {
   terminal_illness: {
     claimant: claimant(),
     event: event("the date of diagnosis", "the place"),
+    agent_location: agentLocation,
     condition: {
       diagnosis: text("the diagnosis", 300, { required: true }),
       attending_physician: text("the attending physician", 150, { required: true }),
@@ -81,6 +93,7 @@ const SPECS = {
   dismemberment: {
     claimant: claimant(),
     event: event("the date of the accident", "the place of the accident", true),
+    agent_location: agentLocation,
     condition: {
       type_of_loss: choice(
         "the type of loss",
@@ -96,7 +109,7 @@ const SPECS = {
   },
 };
 
-const SECTIONS = ["claimant", "event", "condition"];
+const SECTIONS = ["claimant", "event", "condition", "agent_location"];
 
 const UNKNOWN_KEY = "This field is not part of the form.";
 

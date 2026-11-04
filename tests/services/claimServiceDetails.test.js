@@ -73,12 +73,14 @@ const DEATH_DETAILS = {
   claimant: { name: "Carlos Santos", relationship: "SPOUSE", contact_no: "09171234567", email_address: "carlos@example.com" },
   event: { date: "2026-03-01", place: "Pasay City" },
   condition: { immediate_cause: "Myocardial infarction", manner_of_death: "NATURAL", covid_related: "NO" },
+  agent_location: { city_municipality: "Pasay City", province: "Metro Manila" },
 };
 
 const TPD_DETAILS = {
   claimant: { name: "Maria Santos", relationship: "SELF", contact_no: "09171234567" },
   event: { date: "2026-03-10" },
   condition: { disabling_condition: "Loss of use of both legs", cause: "ACCIDENT" },
+  agent_location: { city_municipality: "Pasay City", province: "Metro Manila" },
 };
 
 const HEADER = {

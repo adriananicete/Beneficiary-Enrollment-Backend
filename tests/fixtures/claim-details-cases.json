@@ -5,21 +5,25 @@
     "death": {
       "claimant": { "name": "Carlos Santos", "relationship": "SPOUSE", "contact_no": "09171234567", "email_address": "carlos@example.com" },
       "event": { "date": "2026-10-02", "place": "Pasay City" },
+      "agent_location": { "city_municipality": "Pasay City", "province": "Metro Manila", "region": "NCR" },
       "condition": { "immediate_cause": "Myocardial infarction", "antecedent_cause": "Coronary artery disease", "underlying_cause": "Hypertension", "other_conditions": "", "manner_of_death": "NATURAL", "covid_related": "NO" }
     },
     "tpd": {
       "claimant": { "name": "Maria Santos", "relationship": "SELF", "contact_no": "09171234567" },
       "event": { "date": "2026-09-10" },
+      "agent_location": { "city_municipality": "Pasay City", "province": "Metro Manila", "region": "NCR" },
       "condition": { "disabling_condition": "Loss of use of both legs", "cause": "ACCIDENT", "diagnosis": "Spinal cord injury", "attending_physician": "Dr. Ramon Cruz", "hospital_or_clinic": "Manila Medical Center" }
     },
     "terminal_illness": {
       "claimant": { "name": "Maria Santos", "relationship": "SELF", "contact_no": "09171234567" },
       "event": { "date": "2026-09-20" },
+      "agent_location": { "city_municipality": "Pasay City", "province": "Metro Manila", "region": "NCR" },
       "condition": { "diagnosis": "Stage 4 carcinoma", "attending_physician": "Dr. Lea Tan", "hospital_or_clinic": "St. Luke's", "prognosis": "Under 12 months" }
     },
     "dismemberment": {
       "claimant": { "name": "Maria Santos", "relationship": "SELF", "contact_no": "09171234567" },
       "event": { "date": "2026-08-15", "place": "Quezon City" },
+      "agent_location": { "city_municipality": "Pasay City", "province": "Metro Manila", "region": "NCR" },
       "condition": { "type_of_loss": "ONE_HAND", "accident_description": "Hand caught in a press at the workplace.", "police_report_filed": "NO" }
     },
     "general": null
@@ -90,6 +94,17 @@
     { "name": "an unknown key in the claimant is refused", "profile": "death", "set": { "claimant.age": 40 }, "error_keys": ["claimant.age"] },
     { "name": "an unknown key in the condition is refused", "profile": "death", "set": { "condition.blood_type": "O" }, "error_keys": ["condition.blood_type"] },
     { "name": "a key of another profile is refused", "profile": "tpd", "set": { "condition.immediate_cause": "x" }, "error_keys": ["condition.immediate_cause"] },
-    { "name": "several problems are all named", "profile": "death", "set": { "claimant.name": "", "event.date": "2026-11-05", "condition.manner_of_death": "" }, "error_keys": ["claimant.name", "condition.manner_of_death", "event.date"] }
+    { "name": "several problems are all named", "profile": "death", "set": { "claimant.name": "", "event.date": "2026-11-05", "condition.manner_of_death": "" }, "error_keys": ["claimant.name", "condition.manner_of_death", "event.date"] },
+
+    { "name": "an agent may be given", "profile": "death", "set": { "agent_location.agent": "Juan Dela Cruz" }, "error_keys": [] },
+    { "name": "agent too long", "profile": "death", "set": { "agent_location.agent": { "$repeat": ["x", 151] } }, "error_keys": ["agent_location.agent"] },
+    { "name": "city or municipality is required", "profile": "tpd", "set": { "agent_location.city_municipality": "" }, "error_keys": ["agent_location.city_municipality"] },
+    { "name": "city_municipality too long", "profile": "death", "set": { "agent_location.city_municipality": { "$repeat": ["x", 101] } }, "error_keys": ["agent_location.city_municipality"] },
+    { "name": "province is required", "profile": "terminal_illness", "remove": ["agent_location.province"], "error_keys": ["agent_location.province"] },
+    { "name": "province too long", "profile": "death", "set": { "agent_location.province": { "$repeat": ["x", 101] } }, "error_keys": ["agent_location.province"] },
+    { "name": "region is optional", "profile": "dismemberment", "remove": ["agent_location.region"], "error_keys": [] },
+    { "name": "region too long", "profile": "death", "set": { "agent_location.region": { "$repeat": ["x", 101] } }, "error_keys": ["agent_location.region"] },
+    { "name": "a missing agent and location section names the required fields", "profile": "death", "remove": ["agent_location"], "error_keys": ["agent_location.city_municipality", "agent_location.province"] },
+    { "name": "an unknown key in the agent and location section is refused", "profile": "death", "set": { "agent_location.fax": "x" }, "error_keys": ["agent_location.fax"] }
   ]
 }
