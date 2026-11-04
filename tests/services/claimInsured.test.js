@@ -10,6 +10,7 @@ const { default: employeeRoutes } = await import("../../src/routes/employeeRoute
 
 const ENROLLMENT = "bes.usp_get_insurance_enrollment_by_id";
 const BENEFITS = "bes.usp_get_enrollment_benefits_by_id";
+const BENEFICIARIES = "bes.usp_sel_beneficiaries";
 
 const ROW = {
   client_id: "75",
@@ -24,6 +25,8 @@ const ROW = {
   policy_no: "G-TLI-26-177",
   classification_desc: "Rank and file",
   enrollment_date: new Date(2026, 0, 5, 9, 0),
+  contact_no: "09171234567",
+  email_address: "maria@acme.example",
 };
 
 // What the filing form shows before anything is sent: the snapshot a filed claim keeps.
@@ -32,6 +35,11 @@ describe("insuredFor", () => {
     const { pool } = fakePool({
       [ENROLLMENT]: [ROW],
       [BENEFITS]: [{ benefit_name: "GTLIP", benefit_description: "Group Term Life Insurance Plan", coverage_amount: 500000, coverage_formula: null }],
+      [BENEFICIARIES]: [
+        { full_name: "Carlos Santos", relationship: "Husband", age: 36, coverage_percent: 60 },
+        { full_name: "Ana Santos", relationship: "Daughter", age: 8, coverage_percent: 40 },
+        { full_name: "Luz Reyes", relationship: "Aunt", age: 61, coverage_percent: 0 },
+      ],
     });
 
     assert.deepEqual(await insuredFor(pool, "75"), {
@@ -48,11 +56,31 @@ describe("insuredFor", () => {
         effective_date: "2026-01-05",
       },
       coverage: [{ code: "GTLIP", description: "Group Term Life Insurance Plan", amount: 500000, formula: null }],
+      claimants: {
+        employee: { name: "Maria Reyes Santos", contact_no: "09171234567", email_address: "maria@acme.example" },
+        beneficiaries: [
+          { name: "Carlos Santos", relationship: "SPOUSE" },
+          { name: "Ana Santos", relationship: "CHILD" },
+          { name: "Luz Reyes", relationship: "OTHER_BENEFICIARY" },
+        ],
+      },
+    });
+  });
+
+  test("an employee with no contact details and no beneficiary offers only themselves", async () => {
+    const { contact_no, email_address, ...bare } = ROW;
+    const { pool } = fakePool({ [ENROLLMENT]: [bare], [BENEFITS]: [], [BENEFICIARIES]: [] });
+
+    const { claimants } = await insuredFor(pool, "75");
+
+    assert.deepEqual(claimants, {
+      employee: { name: "Maria Reyes Santos", contact_no: null, email_address: null },
+      beneficiaries: [],
     });
   });
 
   test("an employee with no enrollment is 404", async () => {
-    const { pool } = fakePool({ [ENROLLMENT]: [], [BENEFITS]: [] });
+    const { pool } = fakePool({ [ENROLLMENT]: [], [BENEFITS]: [], [BENEFICIARIES]: [] });
 
     await assert.rejects(insuredFor(pool, "75"), (error) => error instanceof AppError && error.statusCode === 404);
   });

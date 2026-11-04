@@ -1,5 +1,6 @@
 import { sql } from "../config/db.js";
 import ClaimModel from "../models/claimModel.js";
+import BeneficiaryModel from "../models/beneficiaryModel.js";
 import ClientModel from "../models/clientModel.js";
 import UserModel from "../models/userModel.js";
 import { AppError } from "../utils/AppError.js";
@@ -7,6 +8,7 @@ import { matchDocuments } from "../utils/claimDocuments.js";
 import { localIsoDate } from "../utils/localDate.js";
 import { keepDetails, prepareDetails, queueTransfer } from "../claims/claimDetails.js";
 import { coverageOf, insuredOf } from "../claims/computed.js";
+import { relationshipOf } from "../claims/relationships.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
 import { sendClaimDecisionEmail } from "./emailService.js";
 import { endClientSessions } from "../realtime/realtime.js";
@@ -28,14 +30,29 @@ const NOT_FILEABLE = "This claim type cannot be filed here";
 const DEATH_CLAIM_EXISTS = "A death claim has already been filed for this employee";
 
 // What a claim filed for this employee will record about the insured and the coverage, so the filing
-// form can show it before anything is sent. Nothing is written.
+// form can show it before anything is sent, and who the form may offer as the claimant: the employee,
+// for a claim of a living employee (with the contact details of their own record), and the enrolled
+// beneficiaries, for a death claim (BES keeps no contact details for a beneficiary). Nothing is written.
 export const insuredFor = async (pool, clientId) => {
   const [enrollment] = await ClientModel.getEnrollmentByClientId(pool, clientId);
   if (!enrollment) throw new AppError("Enrollment not found", 404);
 
   const benefits = await ClientModel.getEnrollmentBenefitsByClientId(pool, clientId);
+  const beneficiaries = await BeneficiaryModel.getBeneficiariesByEnrollmentId(pool, enrollment.enrollment_id);
+  const insured = insuredOf(enrollment);
 
-  return { insured: insuredOf(enrollment), coverage: coverageOf(benefits) };
+  return {
+    insured,
+    coverage: coverageOf(benefits),
+    claimants: {
+      employee: {
+        name: insured.full_name,
+        contact_no: enrollment.contact_no ?? null,
+        email_address: enrollment.email_address ?? null,
+      },
+      beneficiaries: beneficiaries.map((row) => ({ name: row.full_name, relationship: relationshipOf(row.relationship) })),
+    },
+  };
 };
 
 // A DATE column arrives as "YYYY-MM-DD" text (config/db.js), a datetime as a Date.
