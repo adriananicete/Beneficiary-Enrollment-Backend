@@ -37,4 +37,11 @@ for (const [name, value] of Object.entries(REQUIRED)) {
 delete process.env.GCLI_DEV_STORE;
 delete process.env.GCLI_DEV_STORE_FILE;
 
+// The same for the claim details store and the hand-off API's settings (tests/helpers/claimStore.js):
+// with the switch on, claims are filed with details and the integration routes exist.
+delete process.env.CLAIM_DETAILS_DEV_STORE;
+delete process.env.INTEGRATION_API_KEY_HASHES;
+delete process.env.INTEGRATION_ALLOWED_IPS;
+delete process.env.INTEGRATION_RATE_LIMIT_PER_MINUTE;
+
 export const JWT_SECRET = process.env.JWT_SECRET;

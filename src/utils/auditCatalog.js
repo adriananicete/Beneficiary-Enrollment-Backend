@@ -84,6 +84,8 @@ const NO_AUDIT_FOR_LOGIN =
   "sec.usp_ins_audit_log refuses the action L, so a sign-in or sign-out cannot be recorded";
 const NO_USER =
   "the person is not signed in, and an audit row needs a user and a session";
+const SERVICE_CALL =
+  "a service call with no user or session: the claims web app comes in with an API key, and an audit row needs a user and a session";
 
 export const SKIPPED_ROUTES = {
   "POST /auth/login": NO_AUDIT_FOR_LOGIN,
@@ -94,6 +96,7 @@ export const SKIPPED_ROUTES = {
   "POST /employee/change-password": NO_USER,
   "POST /enrollment/submit": NO_USER,
   "PUT /enrollment/application": NO_USER,
+  "POST /integration/claims/:claim_id/transfer": SERVICE_CALL,
 };
 
 export default { AUDITED_ROUTES, SKIPPED_ROUTES };

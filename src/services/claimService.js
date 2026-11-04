@@ -4,6 +4,8 @@ import ClientModel from "../models/clientModel.js";
 import UserModel from "../models/userModel.js";
 import { AppError } from "../utils/AppError.js";
 import { matchDocuments } from "../utils/claimDocuments.js";
+import { localIsoDate } from "../utils/localDate.js";
+import { keepDetails, prepareDetails, queueTransfer } from "../claims/claimDetails.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
 import { sendClaimDecisionEmail } from "./emailService.js";
 import { endClientSessions } from "../realtime/realtime.js";
@@ -23,6 +25,9 @@ const HR_FILER = "HR";
 
 const NOT_FILEABLE = "This claim type cannot be filed here";
 const DEATH_CLAIM_EXISTS = "A death claim has already been filed for this employee";
+
+// A DATE column arrives as "YYYY-MM-DD" text (config/db.js), a datetime as a Date.
+const dayOf = (value) => (value instanceof Date ? localIsoDate(value) : String(value).slice(0, 10));
 
 // The employee's own client id, from their user row and never from the
 // request. Both the submit and the cancel are scoped by it.
@@ -56,17 +61,19 @@ export const asOpenClaimConflict = (error, message = "You already have an open c
 // The claim type, checked against the filer's active list before its id is
 // bound to anything, and the documents matched to that type's requirements.
 // `filedBy` is 'EMPLOYEE' or 'HR', so neither side can reach the other's types
-// by naming an id.
+// by naming an id. Answers the type as well, for the profile of its details.
 const matchedForType = async (pool, filedBy, typeId, documents) => {
   const { types, requirements } = await ClaimModel.getClaimTypes(pool, filedBy);
 
-  if (!types.some((type) => String(type.claim_type_id) === typeId))
-    throw new AppError(NOT_FILEABLE, 400);
+  const type = types.find((candidate) => String(candidate.claim_type_id) === typeId);
+  if (!type) throw new AppError(NOT_FILEABLE, 400);
 
-  return matchDocuments(
+  const matched = matchDocuments(
     requirements.filter((requirement) => String(requirement.claim_type_id) === typeId),
     documents,
   );
+
+  return { type, matched };
 };
 
 // One transaction, committed or rolled back whole, with the open-claim race
@@ -117,17 +124,22 @@ const insertClaimWithDocuments = async (transaction, { clientId, typeId, userId,
 
 // documents: req.documents from parseDocuments, each
 //   { field, fileName, content, mimeType, byteSize, sha256 }
-const submitClaim = async (pool, { userId, claimTypeId, documents }) => {
+// details: the multipart text field of that name, kept only while CLAIM_DETAILS_DEV_STORE is on.
+const submitClaim = async (pool, { userId, claimTypeId, documents, details }) => {
   const typeId = claimTypeIdOf(claimTypeId);
   if (!typeId) throw new AppError("claim_type_id is required", 400);
 
   const clientId = await clientIdOf(pool, userId);
 
-  const matched = await matchedForType(pool, EMPLOYEE_FILER, typeId, documents);
+  const { type, matched } = await matchedForType(pool, EMPLOYEE_FILER, typeId, documents);
+
+  const prepared = await prepareDetails(pool, { claimTypeCode: type.claim_type_code, details, clientId });
 
   const claimId = await inClaimTransaction(pool, "Claim", undefined, (transaction) =>
     insertClaimWithDocuments(transaction, { clientId, typeId, userId, roleName: EMPLOYEE_ROLE, matched }),
   );
+
+  keepDetails(claimId, prepared);
 
   return { claimId };
 };
@@ -142,7 +154,7 @@ const submitClaim = async (pool, { userId, claimTypeId, documents }) => {
 // `roleName` is the filer's real role, HR or Administrator (decided
 // 2026-10-12). The route is behind verifyClientAccess, and the procedure
 // scopes HR to their companies again.
-const fileDeathClaim = async (pool, { userId, roleName, clientId, claimTypeId, documents }) => {
+const fileDeathClaim = async (pool, { userId, roleName, clientId, claimTypeId, documents, details }) => {
   const typeId = claimTypeIdOf(claimTypeId);
   if (!typeId) throw new AppError("claim_type_id is required", 400);
 
@@ -153,7 +165,15 @@ const fileDeathClaim = async (pool, { userId, roleName, clientId, claimTypeId, d
   if (!enrollment) throw new AppError("Enrollment not found", 404);
   if (!enrollment.date_of_death) throw new AppError("This employee is not marked deceased", 409);
 
-  const matched = await matchedForType(pool, HR_FILER, typeId, documents);
+  const { type, matched } = await matchedForType(pool, HR_FILER, typeId, documents);
+
+  const prepared = await prepareDetails(pool, {
+    claimTypeCode: type.claim_type_code,
+    details,
+    clientId,
+    enrollment,
+    recordedDeathDate: dayOf(enrollment.date_of_death),
+  });
 
   const claimId = await inClaimTransaction(pool, "Death claim", DEATH_CLAIM_EXISTS, async (transaction) => {
     const newClaimId = await insertClaimWithDocuments(transaction, { clientId, typeId, userId, roleName, matched });
@@ -162,6 +182,11 @@ const fileDeathClaim = async (pool, { userId, roleName, clientId, claimTypeId, d
 
     return newClaimId;
   });
+
+  keepDetails(claimId, prepared);
+
+  // Approved on filing, so it is ready for the claims web app now.
+  queueTransfer(claimId, { readerUserId: userId, claimTypeCode: type.claim_type_code });
 
   return { claimId };
 };
@@ -175,7 +200,7 @@ const fileDeathClaim = async (pool, { userId, roleName, clientId, claimTypeId, d
 //
 // usp_ins_claim must let an HR filer file an employee type for this to work;
 // until it does, it answers 50151 here. See docs/backend-handoff.md.
-const fileClaimForEmployee = async (pool, { userId, roleName, clientId, claimTypeId, documents }) => {
+const fileClaimForEmployee = async (pool, { userId, roleName, clientId, claimTypeId, documents, details }) => {
   const typeId = claimTypeIdOf(claimTypeId);
   if (!typeId) throw new AppError("claim_type_id is required", 400);
 
@@ -185,7 +210,9 @@ const fileClaimForEmployee = async (pool, { userId, roleName, clientId, claimTyp
   if (enrollment.date_of_death)
     throw new AppError("This employee is marked deceased. File a death claim instead", 409);
 
-  const matched = await matchedForType(pool, EMPLOYEE_FILER, typeId, documents);
+  const { type, matched } = await matchedForType(pool, EMPLOYEE_FILER, typeId, documents);
+
+  const prepared = await prepareDetails(pool, { claimTypeCode: type.claim_type_code, details, clientId, enrollment });
 
   const claimId = await inClaimTransaction(
     pool,
@@ -193,6 +220,8 @@ const fileClaimForEmployee = async (pool, { userId, roleName, clientId, claimTyp
     "This employee already has an open claim of this type",
     (transaction) => insertClaimWithDocuments(transaction, { clientId, typeId, userId, roleName, matched }),
   );
+
+  keepDetails(claimId, prepared);
 
   return { claimId };
 };
@@ -237,8 +266,8 @@ const rollbackQuietly = async (transaction, what) => {
 // 2026-10-12, so that new documents never land on a claim that is then not
 // resubmitted, or the reverse.
 //
-// documents: req.documents from parseDocuments, as for submitClaim.
-const resubmitClaim = async (pool, { userId, claimId, documents }) => {
+// documents: req.documents from parseDocuments, as for submitClaim. details replace the ones kept.
+const resubmitClaim = async (pool, { userId, claimId, documents, details }) => {
   // HR returned it for missing documents, so a resubmit adds at least one
   // (decided 2026-10-12). Checked before the database is asked.
   if (documents.length === 0) throw new AppError("Add at least one document to resubmit", 400);
@@ -265,6 +294,14 @@ const resubmitClaim = async (pool, { userId, claimId, documents }) => {
   );
 
   const clientId = await clientIdOf(pool, userId);
+
+  // Filed on the day it first was: a resubmit gives the claim more to read, not a new filing date.
+  const prepared = await prepareDetails(pool, {
+    claimTypeCode: claim.claim_type_code,
+    details,
+    clientId,
+    filedOn: claim.filed_date instanceof Date ? localIsoDate(claim.filed_date) : undefined,
+  });
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
@@ -293,6 +330,8 @@ const resubmitClaim = async (pool, { userId, claimId, documents }) => {
     await rollbackQuietly(transaction, "Claim resubmit");
     throw error;
   }
+
+  keepDetails(claimId, prepared);
 };
 
 export const REVIEW_STATUSES = ["APPROVED", "REJECTED", "RETURNED"];
@@ -367,6 +406,10 @@ const reviewClaim = async (pool, { userId, claimId, status, remarks }) => {
   if (accountClosed) endClientSessions(claim.client_id);
 
   await notifyClaimDecision(claim, status, remarks, accountClosed);
+
+  // Last, so nothing the decision still owes the employee waits on the store. An approved claim is
+  // ready for the claims web app, which reads it as the person who approved it.
+  if (status === "APPROVED") queueTransfer(claimId, { readerUserId: userId, claimTypeCode: claim.claim_type_code });
 
   return { accountClosed };
 };

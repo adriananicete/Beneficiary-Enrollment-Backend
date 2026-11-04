@@ -320,6 +320,30 @@ export const jobStatusLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// The claims web app's calls to the hand-off API (src/routes/integrationRoutes.js). One program
+// per key, so they count against the key's name, not an address: behind a proxy every caller can
+// share one. It runs after integrationAuth, so the name is there. 120 a minute by default, about
+// ten claims a minute with a full set of documents each; INTEGRATION_RATE_LIMIT_PER_MINUTE changes it.
+// Not built with the wrapper above: that skips every limit in development, and UAT runs as development.
+const integrationPerMinute = Number.parseInt(process.env.INTEGRATION_RATE_LIMIT_PER_MINUTE, 10);
+
+export const INTEGRATION_CALLS_PER_MINUTE = integrationPerMinute > 0 ? integrationPerMinute : 120;
+
+export const integrationKey = (req) =>
+  req.integration?.name ? `integration:${req.integration.name}` : ipKeyGenerator(req.ip);
+
+export const integrationLimiter = baseRateLimit({
+  windowMs: 60 * 1000,
+  max: INTEGRATION_CALLS_PER_MINUTE,
+  keyGenerator: integrationKey,
+  message: {
+    success: false,
+    message: "Too many requests, please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // The IP side of the login pair. Its job is a caller trying many DIFFERENT
 // usernames from one machine; a single username is already capped at ten per
 // fifteen minutes by strictLimiter, which keys on ip:username.

@@ -21,11 +21,12 @@ const encodeExtValue = (value) =>
 const asciiFallback = (value) => value.replace(/[^\x20-\x7e]|["\\]/g, "_");
 
 // "inline" renders in the page rather than downloading. A file name, when
-// there is one, is offered for "save as".
-export const contentDisposition = (fileName) =>
+// there is one, is offered for "save as". The hand-off API asks for
+// "attachment", so a program saves the file and a browser never renders it.
+export const contentDisposition = (fileName, disposition = "inline") =>
   fileName
-    ? `inline; filename="${asciiFallback(fileName)}"; filename*=UTF-8''${encodeExtValue(fileName)}`
-    : "inline";
+    ? `${disposition}; filename="${asciiFallback(fileName)}"; filename*=UTF-8''${encodeExtValue(fileName)}`
+    : disposition;
 
 export const sendStoredFile = (res, { content, mimeType, byteSize, fileName }) => {
   // The stored type, resolved from the file's own first bytes when it was

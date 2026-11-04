@@ -77,3 +77,22 @@ describe("contentDisposition — the file name offered for saving", () => {
     assert.match(contentDisposition("it's (1)*.pdf"), /filename\*=UTF-8''it%27s%20%281%29%2A\.pdf$/);
   });
 });
+
+// The hand-off API sends a document as an attachment: a program saves it, and a browser never shows it.
+describe("contentDisposition as an attachment", () => {
+  test("the same name encoding, with attachment in place of inline", () => {
+    assert.equal(
+      contentDisposition("Peña ID.pdf", "attachment"),
+      "attachment; filename=\"Pe_a ID.pdf\"; filename*=UTF-8''Pe%C3%B1a%20ID.pdf",
+    );
+  });
+
+  test("with no name it is plain attachment", () => {
+    assert.equal(contentDisposition(undefined, "attachment"), "attachment");
+  });
+
+  test("the default is still inline, as the signature and the claim screens had it", () => {
+    assert.equal(contentDisposition("scan.pdf"), "inline; filename=\"scan.pdf\"; filename*=UTF-8''scan.pdf");
+    assert.equal(contentDisposition(undefined), "inline");
+  });
+});

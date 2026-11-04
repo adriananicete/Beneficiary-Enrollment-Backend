@@ -29,6 +29,7 @@ const libraryStatus = (err) => {
 export const errorHandler = (err, req, res, next) => {
   let message;
   let statusCode;
+  let errors;
 
   const number = err?.number ?? err?.originalError?.number;
   const mapped = sqlErrorMap[number];
@@ -40,6 +41,7 @@ export const errorHandler = (err, req, res, next) => {
   if (err instanceof AppError) {
     statusCode = err.statusCode;
     message = err.message;
+    errors = err.errors;
   } else if (mapped) {
     statusCode = mapped.statusCode;
     message = mapped.message;
@@ -54,5 +56,6 @@ export const errorHandler = (err, req, res, next) => {
   res.status(statusCode).json({
     success: false,
     message: message,
+    ...(errors && { errors }),
   });
 };

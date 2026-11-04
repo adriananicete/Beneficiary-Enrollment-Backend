@@ -17,6 +17,8 @@ import { verifyToken } from './src/middlewares/verifyToken.js';
 import { auditTrail } from './src/middlewares/auditTrail.js';
 import { createGcliRoutes } from './src/gcli/routes.js';
 import { assertDevStoreAllowed, devStoreOn } from './src/gcli/devStore.js';
+import { checkIntegrationAtStart } from './src/claims/startup.js';
+import { createIntegrationRoutes } from './src/routes/integrationRoutes.js';
 import {errorHandler} from './src/middlewares/errorHandler.js';
 import helmet from 'helmet';
 
@@ -94,10 +96,20 @@ if (devStoreOn()) {
     app.use(`${API_PREFIX}/admin`, createGcliRoutes({ verifyToken, getPool }));
 }
 
+// Claim details and the hand-off to the claims web app before the database has them
+// (src/claims/detailsStore.js). Off unless CLAIM_DETAILS_DEV_STORE=true, and never in production.
+// A malformed INTEGRATION_API_KEY_HASHES or INTEGRATION_ALLOWED_IPS, "trust proxy" true, and a key with
+// no allowed address all stop the start here, in every NODE_ENV, whenever the API is on
+// (src/claims/startup.js).
+checkIntegrationAtStart({ trustProxy: app.get('trust proxy') });
+
 app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/enrollment`, enrollmentRoutes);
 app.use(`${API_PREFIX}/admin`, adminRoutes);
 app.use(`${API_PREFIX}/employee`, employeeRoutes);
+// The claims web app's way in. A key, not a session, so none of the session checks above apply to
+// it; it answers 404 for every path unless the switch above is on.
+app.use(`${API_PREFIX}/integration`, createIntegrationRoutes({ getPool }));
 
 // Anything still calling the unversioned paths is told where to go. Without
 // this a stale caller gets a bare 404 that looks like a deleted endpoint rather

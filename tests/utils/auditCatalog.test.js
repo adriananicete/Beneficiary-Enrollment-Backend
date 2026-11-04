@@ -9,6 +9,7 @@ const { default: employeeRoutes } = await import("../../src/routes/employeeRoute
 const { default: authRoutes } = await import("../../src/routes/authRoutes.js");
 const { default: enrollmentRoutes } = await import("../../src/routes/enrollmentRoutes.js");
 const { createGcliRoutes } = await import("../../src/gcli/routes.js");
+const { createIntegrationRoutes } = await import("../../src/routes/integrationRoutes.js");
 
 // The audit trail only records a route that is listed. Without this a new
 // endpoint is unaudited until somebody notices, which is the way an audit trail
@@ -17,6 +18,7 @@ const { createGcliRoutes } = await import("../../src/gcli/routes.js");
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const gcliRoutes = createGcliRoutes({ verifyToken: () => {}, getPool: async () => ({}) });
+const integrationRoutes = createIntegrationRoutes({ getPool: async () => ({}) });
 
 const MOUNTED = [
   ["admin", adminRoutes],
@@ -24,6 +26,7 @@ const MOUNTED = [
   ["employee", employeeRoutes],
   ["auth", authRoutes],
   ["enrollment", enrollmentRoutes],
+  ["integration", integrationRoutes],
 ];
 
 const mutatingRoutes = MOUNTED.flatMap(([area, router]) =>

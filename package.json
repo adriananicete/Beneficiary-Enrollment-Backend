@@ -7,6 +7,7 @@
     "test": "node --test",
     "dev": "node --watch --env-file=.env server.js",
     "check": "node scripts/check-imports.mjs",
+    "integration-key": "node scripts/new-integration-key.mjs",
     "verify": "npm run check && npm test"
   },
   "keywords": [],

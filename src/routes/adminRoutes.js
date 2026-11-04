@@ -1,4 +1,4 @@
-import { isClaimsPath } from "../utils/claimsAvailability.js";
+import { isClaimsBlocked } from "../utils/claimsAvailability.js";
 import express from 'express';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
@@ -45,7 +45,7 @@ const invitationId = validateIdParam('invitation_id', 'Enrollment invitation doe
 
 // Claims are temporarily unavailable during this UAT rollout.
 router.use((req, res, next) => {
-    if (isClaimsPath(req.path)) {
+    if (isClaimsBlocked(req.path)) {
         return res.status(503).json({ success: false, message: "Claims are temporarily unavailable during UAT." });
     }
     next();

@@ -1,10 +1,14 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
+// First, so a shell that has INTEGRATION_RATE_LIMIT_PER_MINUTE set cannot change the default asserted below.
+import "../helpers/env.js";
 import {
   AUTH_IP_BURST,
   ENROLLMENT_BURST,
+  INTEGRATION_CALLS_PER_MINUTE,
   enrollmentTokenKey,
+  integrationKey,
   loginAttemptKey,
   passwordChangeKey,
   REFERENCE_BURST,
@@ -217,5 +221,32 @@ describe("the IP ceilings are sized from the largest burst the system can create
   test("both are derived from the invitation cap rather than fixed", () => {
     assert.equal(ENROLLMENT_BURST % MAX_INVITATION_EMAILS, 0);
     assert.equal(MAX_INVITATION_EMAILS % AUTH_IP_BURST, 0);
+  });
+});
+
+// The hand-off API counts a call against the key's name, so the claims web app has one budget
+// however many addresses it calls from.
+describe("integrationKey", () => {
+  test("counts a call against the key's name, not the address", () => {
+    const first = integrationKey(makeReq({ integration: { name: "claimsweb" }, ip: "10.0.0.1" }));
+    const second = integrationKey(makeReq({ integration: { name: "claimsweb" }, ip: "10.0.0.2" }));
+
+    assert.equal(first, "integration:claimsweb");
+    assert.equal(first, second);
+  });
+
+  test("two keys are two budgets", () => {
+    const one = integrationKey(makeReq({ integration: { name: "claimsweb" }, ip: "10.0.0.1" }));
+    const other = integrationKey(makeReq({ integration: { name: "backup" }, ip: "10.0.0.1" }));
+
+    assert.notEqual(one, other);
+  });
+
+  test("falls back to the address when there is no key's name", () => {
+    assert.doesNotMatch(integrationKey(makeReq({ ip: "10.0.0.1" })), /^integration:/);
+  });
+
+  test("allows 120 a minute unless INTEGRATION_RATE_LIMIT_PER_MINUTE says otherwise", () => {
+    assert.equal(INTEGRATION_CALLS_PER_MINUTE, 120);
   });
 });

@@ -1,0 +1,95 @@
+{
+  "about": "Shared validation cases for the claim details contract (CONTRACT.md). Each case starts from the base of its profile, applies `set` (dotted path -> value) and `remove` (dotted paths), and must produce exactly `error_keys` (sorted dotted paths; [] means valid). `details: null` means no details are sent at all. A value of the form {\"$repeat\": [\"x\", 201]} is the text \"x\" repeated 201 times. Only the keys are compared, never the messages.",
+  "context": { "today": "2026-11-04", "birthdate": "1991-03-14", "effective_date": "2026-01-05" },
+  "bases": {
+    "death": {
+      "claimant": { "name": "Carlos Santos", "relationship": "SPOUSE", "contact_no": "09171234567", "email_address": "carlos@example.com" },
+      "event": { "date": "2026-10-02", "place": "Pasay City" },
+      "condition": { "immediate_cause": "Myocardial infarction", "antecedent_cause": "Coronary artery disease", "underlying_cause": "Hypertension", "other_conditions": "", "manner_of_death": "NATURAL", "covid_related": "NO" }
+    },
+    "tpd": {
+      "claimant": { "name": "Maria Santos", "relationship": "SELF", "contact_no": "09171234567" },
+      "event": { "date": "2026-09-10" },
+      "condition": { "disabling_condition": "Loss of use of both legs", "cause": "ACCIDENT", "diagnosis": "Spinal cord injury", "attending_physician": "Dr. Ramon Cruz", "hospital_or_clinic": "Manila Medical Center" }
+    },
+    "terminal_illness": {
+      "claimant": { "name": "Maria Santos", "relationship": "SELF", "contact_no": "09171234567" },
+      "event": { "date": "2026-09-20" },
+      "condition": { "diagnosis": "Stage 4 carcinoma", "attending_physician": "Dr. Lea Tan", "hospital_or_clinic": "St. Luke's", "prognosis": "Under 12 months" }
+    },
+    "dismemberment": {
+      "claimant": { "name": "Maria Santos", "relationship": "SELF", "contact_no": "09171234567" },
+      "event": { "date": "2026-08-15", "place": "Quezon City" },
+      "condition": { "type_of_loss": "ONE_HAND", "accident_description": "Hand caught in a press at the workplace.", "police_report_filed": "NO" }
+    },
+    "general": null
+  },
+  "cases": [
+    { "name": "death: the base is valid", "profile": "death", "error_keys": [] },
+    { "name": "tpd: the base is valid", "profile": "tpd", "error_keys": [] },
+    { "name": "terminal illness: the base is valid", "profile": "terminal_illness", "error_keys": [] },
+    { "name": "dismemberment: the base is valid", "profile": "dismemberment", "error_keys": [] },
+    { "name": "general: no details is valid", "profile": "general", "details": null, "error_keys": [] },
+    { "name": "general: details are refused", "profile": "general", "details": { "claimant": { "name": "A" } }, "error_keys": ["details"] },
+    { "name": "death: no details at all", "profile": "death", "details": null, "error_keys": ["details"] },
+    { "name": "tpd: no details at all", "profile": "tpd", "details": null, "error_keys": ["details"] },
+
+    { "name": "claimant name is required", "profile": "death", "set": { "claimant.name": "" }, "error_keys": ["claimant.name"] },
+    { "name": "claimant name of spaces only", "profile": "death", "set": { "claimant.name": "   " }, "error_keys": ["claimant.name"] },
+    { "name": "claimant name too short", "profile": "death", "set": { "claimant.name": "A" }, "error_keys": ["claimant.name"] },
+    { "name": "claimant name too long", "profile": "death", "set": { "claimant.name": { "$repeat": ["x", 151] } }, "error_keys": ["claimant.name"] },
+    { "name": "relationship is required", "profile": "death", "remove": ["claimant.relationship"], "error_keys": ["claimant.relationship"] },
+    { "name": "relationship from the list only", "profile": "death", "set": { "claimant.relationship": "FRIEND" }, "error_keys": ["claimant.relationship"] },
+    { "name": "the insured is never the claimant of a death claim", "profile": "death", "set": { "claimant.relationship": "SELF" }, "error_keys": ["claimant.relationship"] },
+    { "name": "a living employee may file for themselves", "profile": "terminal_illness", "set": { "claimant.relationship": "SELF" }, "error_keys": [] },
+    { "name": "a number written with +63 is accepted", "profile": "death", "set": { "claimant.contact_no": "+63 917 123 4567" }, "error_keys": [] },
+    { "name": "contact number is required", "profile": "death", "set": { "claimant.contact_no": "" }, "error_keys": ["claimant.contact_no"] },
+    { "name": "contact number that is not one", "profile": "death", "set": { "claimant.contact_no": "123" }, "error_keys": ["claimant.contact_no"] },
+    { "name": "email is optional", "profile": "death", "remove": ["claimant.email_address"], "error_keys": [] },
+    { "name": "email must be an address", "profile": "death", "set": { "claimant.email_address": "carlos-at-example" }, "error_keys": ["claimant.email_address"] },
+
+    { "name": "event date is required", "profile": "death", "remove": ["event.date"], "error_keys": ["event.date"] },
+    { "name": "event date that does not exist", "profile": "death", "set": { "event.date": "2026-02-30" }, "error_keys": ["event.date"] },
+    { "name": "event date not in the right form", "profile": "death", "set": { "event.date": "10/02/2026" }, "error_keys": ["event.date"] },
+    { "name": "event date today is allowed", "profile": "death", "set": { "event.date": "2026-11-04" }, "error_keys": [] },
+    { "name": "event date in the future", "profile": "death", "set": { "event.date": "2026-11-05" }, "error_keys": ["event.date"] },
+    { "name": "event date before the date of birth", "profile": "death", "set": { "event.date": "1991-03-13" }, "error_keys": ["event.date"] },
+    { "name": "event date on the date of birth", "profile": "death", "set": { "event.date": "1991-03-14" }, "error_keys": [] },
+    { "name": "event before the coverage started is still accepted", "profile": "death", "set": { "event.date": "2025-12-01" }, "error_keys": [] },
+    { "name": "event place too long", "profile": "death", "set": { "event.place": { "$repeat": ["x", 201] } }, "error_keys": ["event.place"] },
+
+    { "name": "death: immediate cause is required", "profile": "death", "set": { "condition.immediate_cause": "" }, "error_keys": ["condition.immediate_cause"] },
+    { "name": "death: immediate cause too long", "profile": "death", "set": { "condition.immediate_cause": { "$repeat": ["x", 201] } }, "error_keys": ["condition.immediate_cause"] },
+    { "name": "death: other conditions up to 1000", "profile": "death", "set": { "condition.other_conditions": { "$repeat": ["x", 1000] } }, "error_keys": [] },
+    { "name": "death: other conditions over 1000", "profile": "death", "set": { "condition.other_conditions": { "$repeat": ["x", 1001] } }, "error_keys": ["condition.other_conditions"] },
+    { "name": "death: manner of death is required", "profile": "death", "remove": ["condition.manner_of_death"], "error_keys": ["condition.manner_of_death"] },
+    { "name": "death: manner of death from the list only", "profile": "death", "set": { "condition.manner_of_death": "NATURAL CAUSES" }, "error_keys": ["condition.manner_of_death"] },
+    { "name": "death: covid indicator is optional", "profile": "death", "remove": ["condition.covid_related"], "error_keys": [] },
+    { "name": "death: covid indicator from the list only", "profile": "death", "set": { "condition.covid_related": "MAYBE" }, "error_keys": ["condition.covid_related"] },
+
+    { "name": "tpd: disabling condition is required", "profile": "tpd", "set": { "condition.disabling_condition": "" }, "error_keys": ["condition.disabling_condition"] },
+    { "name": "tpd: cause is required", "profile": "tpd", "remove": ["condition.cause"], "error_keys": ["condition.cause"] },
+    { "name": "tpd: cause from the list only", "profile": "tpd", "set": { "condition.cause": "BIRTH" }, "error_keys": ["condition.cause"] },
+    { "name": "tpd: unable to work since, on or after the onset", "profile": "tpd", "set": { "condition.unable_to_work_since": "2026-09-10" }, "error_keys": [] },
+    { "name": "tpd: unable to work since, before the onset", "profile": "tpd", "set": { "condition.unable_to_work_since": "2026-09-09" }, "error_keys": ["condition.unable_to_work_since"] },
+    { "name": "tpd: unable to work since, in the future", "profile": "tpd", "set": { "condition.unable_to_work_since": "2026-12-01" }, "error_keys": ["condition.unable_to_work_since"] },
+
+    { "name": "terminal illness: diagnosis is required", "profile": "terminal_illness", "set": { "condition.diagnosis": "" }, "error_keys": ["condition.diagnosis"] },
+    { "name": "terminal illness: attending physician is required", "profile": "terminal_illness", "remove": ["condition.attending_physician"], "error_keys": ["condition.attending_physician"] },
+    { "name": "terminal illness: prognosis too long", "profile": "terminal_illness", "set": { "condition.prognosis": { "$repeat": ["x", 301] } }, "error_keys": ["condition.prognosis"] },
+
+    { "name": "dismemberment: place is required", "profile": "dismemberment", "remove": ["event.place"], "error_keys": ["event.place"] },
+    { "name": "dismemberment: type of loss is required", "profile": "dismemberment", "remove": ["condition.type_of_loss"], "error_keys": ["condition.type_of_loss"] },
+    { "name": "dismemberment: type of loss from the list only", "profile": "dismemberment", "set": { "condition.type_of_loss": "FINGER" }, "error_keys": ["condition.type_of_loss"] },
+    { "name": "dismemberment: other loss needs its description", "profile": "dismemberment", "set": { "condition.type_of_loss": "OTHER" }, "error_keys": ["condition.loss_description"] },
+    { "name": "dismemberment: other loss with its description", "profile": "dismemberment", "set": { "condition.type_of_loss": "OTHER", "condition.loss_description": "Loss of three fingers" }, "error_keys": [] },
+    { "name": "dismemberment: accident description is required", "profile": "dismemberment", "set": { "condition.accident_description": "" }, "error_keys": ["condition.accident_description"] },
+    { "name": "dismemberment: police report answer is required", "profile": "dismemberment", "remove": ["condition.police_report_filed"], "error_keys": ["condition.police_report_filed"] },
+
+    { "name": "an unknown key at the top is refused", "profile": "death", "set": { "extra": 1 }, "error_keys": ["extra"] },
+    { "name": "an unknown key in the claimant is refused", "profile": "death", "set": { "claimant.age": 40 }, "error_keys": ["claimant.age"] },
+    { "name": "an unknown key in the condition is refused", "profile": "death", "set": { "condition.blood_type": "O" }, "error_keys": ["condition.blood_type"] },
+    { "name": "a key of another profile is refused", "profile": "tpd", "set": { "condition.immediate_cause": "x" }, "error_keys": ["condition.immediate_cause"] },
+    { "name": "several problems are all named", "profile": "death", "set": { "claimant.name": "", "event.date": "2026-11-05", "condition.manner_of_death": "" }, "error_keys": ["claimant.name", "condition.manner_of_death", "event.date"] }
+  ]
+}

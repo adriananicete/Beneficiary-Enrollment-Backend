@@ -170,3 +170,41 @@ describe("errorHandler — what the libraries raise", () => {
     assert.equal(response.status, 200);
   });
 });
+
+// A refusal that names several fields (the details of a claim) carries them in `errors`. Every
+// other answer is exactly what it was.
+describe("errorHandler: an errors map", () => {
+  test("an AppError that carries one answers it beside the message", () => {
+    const errors = { "claimant.name": "Enter the claimant's name.", "event.date": "Enter the date of death." };
+    const res = handle(new AppError("Enter the claimant's name.", 400, errors));
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { success: false, message: "Enter the claimant's name.", errors });
+  });
+
+  test("an AppError without one answers no errors key at all", () => {
+    for (const err of [new AppError("Claim not found", 404), new AppError("Claim not found", 404, undefined), new AppError("Claim not found", 404, null)]) {
+      const res = handle(err);
+
+      assert.deepEqual(res.body, { success: false, message: "Claim not found" });
+      assert.equal("errors" in res.body, false);
+    }
+  });
+
+  // Only our own AppError speaks for itself; a library error with an errors property does not.
+  test("an errors property on anything else is not sent", () => {
+    const res = handle(Object.assign(new Error("boom"), { statusCode: 400, errors: { secret: "x" } }));
+
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.body, { success: false, message: "The request could not be read." });
+  });
+
+  test("an AppError keeps its status, message and map", () => {
+    const error = new AppError("Nope", 400, { a: "b" });
+
+    assert.equal(error.statusCode, 400);
+    assert.equal(error.message, "Nope");
+    assert.deepEqual(error.errors, { a: "b" });
+    assert.equal("errors" in new AppError("Nope", 400), false);
+  });
+});

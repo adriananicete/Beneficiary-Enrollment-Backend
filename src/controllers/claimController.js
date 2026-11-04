@@ -1,4 +1,6 @@
 import { getPool } from "../config/db.js";
+import { claimDetailsOn, getDetails } from "../claims/detailsStore.js";
+import { profileOf } from "../claims/profiles.js";
 import ClaimModel from "../models/claimModel.js";
 import ClaimService, { clientIdOf, reviewDecisionOf } from "../services/claimService.js";
 import { AppError } from "../utils/AppError.js";
@@ -16,12 +18,15 @@ import { sendStoredFile } from "../utils/storedFileResponse.js";
 // password hash from /auth/me.
 
 // A type with the documents it asks for. `field` is the multipart field each
-// document is sent in, so the frontend never builds the name itself.
+// document is sent in, so the frontend never builds the name itself. `profile`
+// says which details form the type is filed with, and is sent whatever the
+// CLAIM_DETAILS_DEV_STORE switch (src/claims/profiles.js).
 export const claimTypeOf = (type, requirements) => ({
   claim_type_id: type.claim_type_id,
   claim_type_code: type.claim_type_code,
   claim_type_desc: type.claim_type_desc,
   ends_coverage: type.ends_coverage,
+  profile: profileOf(type.claim_type_code),
   requirements: requirements
     .filter((requirement) => String(requirement.claim_type_id) === String(type.claim_type_id))
     .map(requirementOf),
@@ -102,6 +107,11 @@ export const claimDocumentOf = (row) => ({
   uploaded_date: row.uploaded_date,
 });
 
+// With the details switch on, the filing details of a claim ride beside it, or null when it has
+// none. With it off the answer is what it always was, with no `details` at all.
+export const withDetails = (data, claimId) =>
+  claimDetailsOn() ? { ...data, details: getDetails(claimId) } : data;
+
 // The procedure scopes a document to the caller. The claim in the path must be
 // the one it belongs to as well, or a URL could pair any claim with any of the
 // caller's documents. Compared as text: the ids arrive as strings (BigInt)
@@ -181,6 +191,7 @@ export const fileDeathClaim = async (req, res, next) => {
       clientId: req.params.client_id,
       claimTypeId: req.body?.claim_type_id,
       documents: req.documents ?? [],
+      details: req.body?.details,
     });
 
     return res.status(201).json({
@@ -205,6 +216,7 @@ export const fileClaimForEmployee = async (req, res, next) => {
       clientId: req.params.client_id,
       claimTypeId: req.body?.claim_type_id,
       documents: req.documents ?? [],
+      details: req.body?.details,
     });
 
     return res.status(201).json({
@@ -247,6 +259,7 @@ export const submitMyClaim = async (req, res, next) => {
       userId: req.user.user_id,
       claimTypeId: req.body?.claim_type_id,
       documents: req.documents ?? [],
+      details: req.body?.details,
     });
 
     return res.status(201).json({
@@ -292,11 +305,14 @@ export const getMyClaim = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      data: {
-        claim: employeeClaimDetailOf(claim),
-        documents: documents.map(claimDocumentOf),
-        requirements: requirements.map(requirementOf),
-      },
+      data: withDetails(
+        {
+          claim: employeeClaimDetailOf(claim),
+          documents: documents.map(claimDocumentOf),
+          requirements: requirements.map(requirementOf),
+        },
+        claim.claim_id,
+      ),
     });
   } catch (error) {
     next(error);
@@ -340,6 +356,7 @@ export const resubmitMyClaim = async (req, res, next) => {
       userId: req.user.user_id,
       claimId: req.params.claim_id,
       documents: req.documents ?? [],
+      details: req.body?.details,
     });
 
     return res.status(200).json({
@@ -433,11 +450,14 @@ export const getClaimDetails = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      data: {
-        claim: { ...hrClaimOf(claim), ...deathClaimFlagOf(filedBy) },
-        documents: documents.map(claimDocumentOf),
-        requirements: requirements.map(requirementOf),
-      },
+      data: withDetails(
+        {
+          claim: { ...hrClaimOf(claim), ...deathClaimFlagOf(filedBy) },
+          documents: documents.map(claimDocumentOf),
+          requirements: requirements.map(requirementOf),
+        },
+        claim.claim_id,
+      ),
     });
   } catch (error) {
     next(error);

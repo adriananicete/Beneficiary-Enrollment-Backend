@@ -154,3 +154,34 @@ describe("parseDocuments", () => {
     assert.deepEqual(await response.json(), { body: { x: 1 }, documents: [] });
   });
 });
+
+// The claim's details travel as one text field beside the documents (docs/claims-details/CONTRACT.md):
+// JSON of up to 12 000 characters, under the 16KB a text field may have.
+describe("parseDocuments: the details field", () => {
+  test("12 000 characters arrive whole on req.body, with the type and the documents", async () => {
+    const details = JSON.stringify({ pad: "x".repeat(12000 - '{"pad":""}'.length) });
+    assert.equal(details.length, 12000);
+
+    const form = new FormData();
+    form.append("claim_type_id", "10");
+    form.append("details", details);
+    form.append("requirement_91", new Blob([pdf()]), "death certificate.pdf");
+
+    const { status, body } = await post(form);
+
+    assert.equal(status, 200);
+    assert.deepEqual(body.body, { claim_type_id: "10", details });
+    assert.equal(body.documents.length, 1);
+  });
+
+  test("text with letters outside ASCII arrives intact", async () => {
+    const details = JSON.stringify({ claimant: { name: "Zoë Peña" } });
+
+    const form = new FormData();
+    form.append("details", details);
+
+    const { body } = await post(form);
+
+    assert.equal(body.body.details, details);
+  });
+});
