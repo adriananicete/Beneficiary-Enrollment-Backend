@@ -6,6 +6,7 @@ import { GENERAL, profileOf } from "../../src/claims/profiles.js";
 describe("profileOf", () => {
   test("the four claim types the form knows are read from the type's code", () => {
     assert.equal(profileOf("DEATH"), "death");
+    assert.equal(profileOf("DEATH_HR"), "death", "the death claim HR files has the death form too");
     assert.equal(profileOf("TPD"), "tpd");
     assert.equal(profileOf("TERMINAL_ILLNESS"), "terminal_illness");
     assert.equal(profileOf("DISMEMBERMENT"), "dismemberment");

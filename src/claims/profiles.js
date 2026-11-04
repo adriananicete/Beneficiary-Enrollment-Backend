@@ -12,6 +12,9 @@ export const GENERAL = "general";
 
 export const PROFILES = {
   DEATH: "death",
+  // the death claim HR files for an employee already marked deceased: HR's own type, since a type is
+  // filed by one of the two
+  DEATH_HR: "death",
   TPD: "tpd",
   TERMINAL_ILLNESS: "terminal_illness",
   DISMEMBERMENT: "dismemberment",
