@@ -1,5 +1,6 @@
 import { getPool } from "../config/db.js";
-import { claimDetailsOn, getDetails } from "../claims/detailsStore.js";
+import { claimDetailsOn, getDetails, getOutcome } from "../claims/detailsStore.js";
+import { outcomeView } from "../claims/outcome.js";
 import { profileOf } from "../claims/profiles.js";
 import ClaimModel from "../models/claimModel.js";
 import ClaimService, { clientIdOf, insuredFor, reviewDecisionOf } from "../services/claimService.js";
@@ -108,9 +109,13 @@ export const claimDocumentOf = (row) => ({
 });
 
 // With the details switch on, the filing details of a claim ride beside it, or null when it has
-// none. With it off the answer is what it always was, with no `details` at all.
-export const withDetails = (data, claimId) =>
-  claimDetailsOn() ? { ...data, details: getDetails(claimId) } : data;
+// none, and so does what the claims web app reported about it (claims/outcome.js): all of it with
+// `amounts`, which is HR's answer, and without the amounts for the employee. With the switch off the
+// answer is what it always was, with neither.
+export const withDetails = (data, claimId, { amounts = false } = {}) =>
+  claimDetailsOn()
+    ? { ...data, details: getDetails(claimId), outcome: outcomeView(getOutcome(claimId), { amounts }) }
+    : data;
 
 // The procedure scopes a document to the caller. The claim in the path must be
 // the one it belongs to as well, or a URL could pair any claim with any of the
@@ -481,6 +486,7 @@ export const getClaimDetails = async (req, res, next) => {
           requirements: requirements.map(requirementOf),
         },
         claim.claim_id,
+        { amounts: true },
       ),
     });
   } catch (error) {

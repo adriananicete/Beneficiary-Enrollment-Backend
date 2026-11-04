@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
-import { getDetails, getTransfer, listTransfers, recordTransfer } from "../claims/detailsStore.js";
+import { getDetails, getOutcome, getTransfer, listTransfers, recordTransfer, saveOutcome } from "../claims/detailsStore.js";
+import { checkOutcome, outcomeView } from "../claims/outcome.js";
 import { profileOf } from "../claims/profiles.js";
 import ClaimModel from "../models/claimModel.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
@@ -212,7 +213,29 @@ export const createIntegrationHandlers = ({ getPool }) => {
     }
   };
 
-  return { listClaims, getClaimPackage, downloadDocument, reportTransfer };
+  // What the claims web app says came of the claim: the status, the amounts, the reasons. It replaces
+  // the last report, and it is for a claim the claims web app can see, so the same 404s as the rest.
+  const reportOutcome = async (req, res, next) => {
+    try {
+      const { value, errors } = checkOutcome(req.body);
+      if (value === null) throw new AppError(Object.values(errors)[0], 400, errors);
+
+      const pool = await getPool();
+
+      await visibleClaim(pool, req.params.claim_id);
+
+      saveOutcome(req.params.claim_id, value);
+
+      return res.status(200).json({
+        claim_id: String(req.params.claim_id),
+        outcome: outcomeView(getOutcome(req.params.claim_id), { amounts: true }),
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  return { listClaims, getClaimPackage, downloadDocument, reportTransfer, reportOutcome };
 };
 
 export default { createIntegrationHandlers };

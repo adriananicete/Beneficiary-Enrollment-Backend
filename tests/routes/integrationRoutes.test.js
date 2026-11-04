@@ -12,7 +12,7 @@ const { createIntegrationRoutes } = await import("../../src/routes/integrationRo
 const { errorHandler } = await import("../../src/middlewares/errorHandler.js");
 const { integrationLimiter, INTEGRATION_CALLS_PER_MINUTE } = await import("../../src/middlewares/rateLimiter.js");
 const { createFailureLimiter } = await import("../../src/middlewares/integrationFailureLimiter.js");
-const { enqueueTransfer, getTransfer, recordTransfer, saveDetails } = await import("../../src/claims/detailsStore.js");
+const { enqueueTransfer, getOutcome, getTransfer, recordTransfer, saveDetails } = await import("../../src/claims/detailsStore.js");
 
 // The hand-off API over HTTP (docs/claims-details/CONTRACT.md): the claims web app's four calls, with
 // the claim read through the existing procedures as the person who approved it.
@@ -765,6 +765,81 @@ describe("POST /claims/:claim_id/transfer", () => {
 
     for (const call of current.calls)
       assert.match(call.procedure, /usp_sel_/, `${call.procedure} is not a read`);
+  });
+});
+
+describe("POST /claims/:claim_id/outcome", () => {
+  useClaimStore();
+  useKeys();
+
+  const report = (body, id = "30", options = {}) => call("POST", `/claims/${id}/outcome`, { body, ...options });
+  const FULL = { status: "Paid-Partial", status_updated: "2026-11-20", total_claim_amount: 50000, amount_paid: 35000, denial_reason: "ADB denied" };
+
+  test("is kept, and answered with all of it", async () => {
+    approved("30");
+
+    const { status, json } = await report(FULL);
+
+    assert.equal(status, 200);
+    assert.equal(json.claim_id, "30");
+    assert.equal(json.outcome.status, "Paid-Partial");
+    assert.equal(json.outcome.amount_paid, 35000);
+    assert.equal(getOutcome("30").total_claim_amount, 50000);
+  });
+
+  test("a new report replaces the last", async () => {
+    approved("30");
+    await report(FULL);
+
+    await report({ status: "Paid", amount_paid: 50000 });
+
+    assert.deepEqual(Object.keys(getOutcome("30")).sort(), ["amount_paid", "reported_at", "status"]);
+  });
+
+  test("a report that breaks a rule is 400 with every field named, and nothing is kept", async () => {
+    approved("30");
+
+    const { status, json } = await report({ status: 5, amount_paid: -1, fax: 1 });
+
+    assert.equal(status, 400);
+    assert.deepEqual(Object.keys(json.errors).sort(), ["amount_paid", "fax", "status"]);
+    assert.equal(getOutcome("30"), null);
+  });
+
+  test("an empty report is 400", async () => {
+    approved("30");
+
+    assert.equal((await report({})).status, 400);
+    assert.equal(getOutcome("30"), null);
+  });
+
+  test("a claim that was never approved, or no longer is, is 404 and nothing is kept", async () => {
+    assert.equal((await report(FULL, "31")).status, 404);
+
+    approved("30");
+    current = scripted({ header: { ...HEADER, claim_status: "RETURNED" } });
+    assert.equal((await report(FULL)).status, 404);
+    assert.equal(getOutcome("30"), null);
+  });
+
+  test("an id that cannot be one is 404", async () => {
+    assert.equal((await report(FULL, "abc")).status, 404);
+  });
+
+  test("needs the key, and a key that may only read cannot report", async () => {
+    approved("30");
+
+    assert.equal((await report(FULL, "30", { key: null })).status, 401);
+    assert.equal((await report(FULL, "30", { key: OTHER_KEY })).status, 403);
+    assert.equal(getOutcome("30"), null);
+  });
+
+  test("changes nothing but the outcome: no claim procedure that writes is called", async () => {
+    approved("30");
+
+    await report(FULL);
+
+    for (const call of current.calls) assert.match(call.procedure, /usp_sel_/, `${call.procedure} is not a read`);
   });
 });
 

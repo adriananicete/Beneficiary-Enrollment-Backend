@@ -120,7 +120,7 @@ const isPlainObject = (value) => value !== null && typeof value === "object" && 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 // Built and read back in UTC, so no time zone can move the day. 2026-02-30 is not a date.
-const isRealDate = (value) => {
+export const isRealDate = (value) => {
   const match = ISO_DATE.exec(value);
   if (!match) return false;
 

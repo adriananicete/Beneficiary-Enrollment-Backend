@@ -81,6 +81,7 @@ export const createIntegrationRoutes = ({ getPool, failures = createFailureLimit
   router.get("/claims/:claim_id", ...reads, claimId, handlers.getClaimPackage);
   router.get("/claims/:claim_id/documents/:document_id", ...reads, claimId, documentId, handlers.downloadDocument);
   router.post("/claims/:claim_id/transfer", ...transfers, claimId, handlers.reportTransfer);
+  router.post("/claims/:claim_id/outcome", ...transfers, claimId, handlers.reportOutcome);
 
   return router;
 };

@@ -1,13 +1,15 @@
 import { AppError } from "../utils/AppError.js";
 import { readStore, update as updateStore } from "../gcli/devStore.js";
 
-// The details of a claim, and the state of its hand-off to the claims web app, before the
-// database has a place for them (docs/claims-details/CLAIM-DETAILS-DBA-REQUEST.md). They live in
-// the development store's file (src/gcli/devStore.js), under two keys of their own:
+// The details of a claim, the state of its hand-off to the claims web app, and what that app reports
+// back about it, before the database has a place for them
+// (docs/claims-details/CLAIM-DETAILS-DBA-REQUEST.md). They live in the development store's file
+// (src/gcli/devStore.js), under three keys of their own:
 //
 //   claimDetails    claim_id -> { details, insured, computed, coverage, saved_at }
 //   claimTransfers  claim_id -> { status, queued_at, attempts, last_attempt_at, reference,
 //                                 last_error, reader_user_id, claim_type_code }
+//   claimOutcomes   claim_id -> { status, amounts, dates and reasons as reported, reported_at }
 //
 // Only src/claims and the integration routes read or write them, and only while
 // CLAIM_DETAILS_DEV_STORE=true. The store's own on/off check belongs to Group Credit Life and is
@@ -56,6 +58,7 @@ const update = (change) => {
 // has none: each is made when first needed.
 const detailsIn = (store) => (store.claimDetails ??= {});
 const transfersIn = (store) => (store.claimTransfers ??= {});
+const outcomesIn = (store) => (store.claimOutcomes ??= {});
 
 // Keeps the details, the insured, the computed facts and the coverage of a claim, replacing any
 // kept before: a returned claim that is resubmitted has its details replaced.
@@ -81,6 +84,15 @@ export const getDetails = (claimId) => {
     coverage: kept.coverage,
   };
 };
+
+// What the claims web app reported about the claim, replacing what it reported before (see
+// claims/outcome.js for what it holds), or null when nothing has been reported.
+export const saveOutcome = (claimId, outcome) =>
+  update((draft) => {
+    outcomesIn(draft)[String(claimId)] = { ...outcome, reported_at: now() };
+  });
+
+export const getOutcome = (claimId) => readStore().claimOutcomes?.[String(claimId)] ?? null;
 
 // An approved claim is queued once. `readerUserId` is the person who approved it: the integration
 // has no signed-in user, and the existing read procedures are scoped to one, so it reads the claim

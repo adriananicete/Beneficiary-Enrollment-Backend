@@ -97,6 +97,7 @@ export const SKIPPED_ROUTES = {
   "POST /enrollment/submit": NO_USER,
   "PUT /enrollment/application": NO_USER,
   "POST /integration/claims/:claim_id/transfer": SERVICE_CALL,
+  "POST /integration/claims/:claim_id/outcome": SERVICE_CALL,
 };
 
 export default { AUDITED_ROUTES, SKIPPED_ROUTES };

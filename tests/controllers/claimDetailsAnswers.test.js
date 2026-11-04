@@ -5,7 +5,7 @@ import "../helpers/env.js";
 import { useClaimStore } from "../helpers/claimStore.js";
 
 const { claimTypeOf, hrClaimTypesOf, withDetails } = await import("../../src/controllers/claimController.js");
-const { saveDetails } = await import("../../src/claims/detailsStore.js");
+const { saveDetails, saveOutcome } = await import("../../src/claims/detailsStore.js");
 
 // What the claim answers gain: `profile` on every claim type, whatever the switch, and `details` on
 // a claim's detail while the switch is on.
@@ -84,6 +84,7 @@ describe("withDetails: the claim's detail answer", () => {
 
       assert.equal(shown, data);
       assert.equal("details" in shown, false);
+      assert.equal("outcome" in shown, false);
     });
   });
 
@@ -95,13 +96,33 @@ describe("withDetails: the claim's detail answer", () => {
 
       const shown = withDetails(answer(), "30");
 
-      assert.deepEqual(Object.keys(shown), ["claim", "documents", "requirements", "details"]);
+      assert.deepEqual(Object.keys(shown), ["claim", "documents", "requirements", "details", "outcome"]);
       assert.deepEqual(Object.keys(shown.details), ["claimant", "event", "condition", "insured", "computed", "coverage"]);
       assert.equal(shown.details.claimant.name, "Carlos Santos");
     });
 
     test("is null for a claim that has none", () => {
       assert.equal(withDetails(answer(), "30").details, null);
+    });
+
+    test("carries what the claims web app reported: all of it for HR, without the amounts for the employee", () => {
+      saveOutcome("30", { status: "Paid-Partial", amount_paid: 35000, total_claim_amount: 50000, denial_reason: "ADB denied" });
+
+      const forHr = withDetails(answer(), "30", { amounts: true }).outcome;
+      assert.equal(forHr.status, "Paid-Partial");
+      assert.equal(forHr.amount_paid, 35000);
+      assert.equal(forHr.total_claim_amount, 50000);
+
+      for (const forEmployee of [withDetails(answer(), "30").outcome, withDetails(answer(), "30", { amounts: false }).outcome]) {
+        assert.equal(forEmployee.status, "Paid-Partial");
+        assert.equal(forEmployee.denial_reason, "ADB denied");
+        assert.equal("amount_paid" in forEmployee, false);
+        assert.equal("total_claim_amount" in forEmployee, false);
+      }
+    });
+
+    test("has no outcome until the claims web app reports one", () => {
+      assert.equal(withDetails(answer(), "30", { amounts: true }).outcome, null);
     });
 
     test("does not touch the answer it was given", () => {
