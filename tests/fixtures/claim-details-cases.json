@@ -1,6 +1,7 @@
 {
   "about": "Shared validation cases for the claim details contract (CONTRACT.md). Each case starts from the base of its profile, applies `set` (dotted path -> value) and `remove` (dotted paths), and must produce exactly `error_keys` (sorted dotted paths; [] means valid). `details: null` means no details are sent at all. A value of the form {\"$repeat\": [\"x\", 201]} is the text \"x\" repeated 201 times. Only the keys are compared, never the messages.",
   "context": { "today": "2026-11-04", "birthdate": "1991-03-14", "effective_date": "2026-01-05" },
+  "lists": { "type_of_loss": ["TWO_LIMBS", "BOTH_HANDS", "BOTH_FEET", "SIGHT_OF_BOTH_EYES", "BEDRIDDEN", "PERMANENT_TOTAL_DISABILITY", "ARM_ABOVE_ELBOW", "ARM_BELOW_ELBOW", "ONE_HAND", "FOUR_FINGERS_AND_THUMB", "FOUR_FINGERS", "THUMB", "INDEX_FINGER", "MIDDLE_FINGER", "RING_FINGER", "LITTLE_FINGER", "METACARPAL_1_2", "METACARPAL_3_5", "LEG_ABOVE_KNEE", "LEG_BELOW_KNEE", "ONE_FOOT", "ALL_TOES_OF_ONE_FOOT", "BIG_TOE", "OTHER_TOE", "SIGHT_OF_ONE_EYE", "HEARING_BOTH_EARS", "HEARING_ONE_EAR", "OTHER"] },
   "bases": {
     "death": {
       "claimant": { "name": "Carlos Santos", "relationship": "SPOUSE", "contact_no": "09171234567", "email_address": "carlos@example.com" },
@@ -85,6 +86,8 @@
     { "name": "dismemberment: place is required", "profile": "dismemberment", "remove": ["event.place"], "error_keys": ["event.place"] },
     { "name": "dismemberment: type of loss is required", "profile": "dismemberment", "remove": ["condition.type_of_loss"], "error_keys": ["condition.type_of_loss"] },
     { "name": "dismemberment: type of loss from the list only", "profile": "dismemberment", "set": { "condition.type_of_loss": "FINGER" }, "error_keys": ["condition.type_of_loss"] },
+    { "name": "dismemberment: a loss from the policy's schedule is accepted", "profile": "dismemberment", "set": { "condition.type_of_loss": "ARM_ABOVE_ELBOW" }, "error_keys": [] },
+    { "name": "dismemberment: the old hand and foot choice is not on the policy's list", "profile": "dismemberment", "set": { "condition.type_of_loss": "HAND_AND_FOOT" }, "error_keys": ["condition.type_of_loss"] },
     { "name": "dismemberment: other loss needs its description", "profile": "dismemberment", "set": { "condition.type_of_loss": "OTHER" }, "error_keys": ["condition.loss_description"] },
     { "name": "dismemberment: other loss with its description", "profile": "dismemberment", "set": { "condition.type_of_loss": "OTHER", "condition.loss_description": "Loss of three fingers" }, "error_keys": [] },
     { "name": "dismemberment: accident description is required", "profile": "dismemberment", "set": { "condition.accident_description": "" }, "error_keys": ["condition.accident_description"] },

@@ -1,6 +1,7 @@
 import { localIsoDate } from "../utils/localDate.js";
 import { normaliseContactNo, validateContactNo } from "../utils/validateContactNo.js";
 import { EMAIL_PATTERN } from "../utils/validateEmailAddress.js";
+import { LOSS_CODES } from "./policy.js";
 import { GENERAL } from "./profiles.js";
 
 // The rules for the details of a claim (docs/claims-details/CONTRACT.md, "The details object"),
@@ -97,7 +98,7 @@ const SPECS = {
     condition: {
       type_of_loss: choice(
         "the type of loss",
-        ["ONE_HAND", "BOTH_HANDS", "ONE_FOOT", "BOTH_FEET", "SIGHT_OF_ONE_EYE", "SIGHT_OF_BOTH_EYES", "HAND_AND_FOOT", "OTHER"],
+        LOSS_CODES,
         { required: true },
       ),
       loss_description: text("the description of the loss", 200, {

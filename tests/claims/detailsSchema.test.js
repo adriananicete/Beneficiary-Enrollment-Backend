@@ -2,6 +2,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
+import { LOSS_CODES } from "../../src/claims/policy.js";
 import {
   MAX_DETAILS_CHARS,
   checkDetails,
@@ -55,7 +56,11 @@ const detailsOf = (testCase) => {
 
 describe("the shared cases", () => {
   test("the file was read (a guard against this passing on nothing)", () => {
-    assert.equal(shared.cases.length, 69);
+    assert.equal(shared.cases.length, 71);
+  });
+
+  test("the loss list is the policy's, the one the frontend offers", () => {
+    assert.deepEqual(shared.lists.type_of_loss, LOSS_CODES);
   });
 
   for (const testCase of shared.cases)

@@ -121,6 +121,28 @@ describe("withDetails: the claim's detail answer", () => {
       }
     });
 
+    test("HR's answer, given the claim, also says what the policy pays for it; the employee's never does", () => {
+      saveDetails("30", {
+        ...DETAILS,
+        details: { ...DETAILS.details, condition: { manner_of_death: "ACCIDENT", immediate_cause: "Crash" } },
+        insured: { company_code: null },
+        computed: { age_at_event: 35, contestability: "INCONTESTABLE", event_before_coverage: false },
+        coverage: [
+          { code: "GTLIP", description: "Life", amount: 500000, formula: null },
+          { code: "GADDR", description: "Accidental", amount: 500000, formula: null },
+        ],
+      });
+      const claim = { claim_type_code: "DEATH", filed_date: "2026-10-12" };
+
+      const forHr = withDetails(answer(), "30", { amounts: true, claim });
+      assert.equal(forHr.policy.total, 1000000);
+      assert.deepEqual(forHr.policy.lines.map((entry) => entry.key), ["life", "accidental"]);
+
+      assert.equal("policy" in withDetails(answer(), "30", { claim }), false, "not without amounts");
+      assert.equal("policy" in withDetails(answer(), "30", { amounts: true }), false, "not without the claim to read it against");
+      assert.equal("policy" in withDetails(answer(), "31", { amounts: true, claim }), false, "not for a claim with no details");
+    });
+
     test("has no outcome until the claims web app reports one", () => {
       assert.equal(withDetails(answer(), "30", { amounts: true }).outcome, null);
     });

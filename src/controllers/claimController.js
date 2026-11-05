@@ -1,6 +1,7 @@
 import { getPool } from "../config/db.js";
 import { claimDetailsOn, getDetails, getOutcome } from "../claims/detailsStore.js";
 import { outcomeView } from "../claims/outcome.js";
+import { assessClaim } from "../claims/policy.js";
 import { profileOf } from "../claims/profiles.js";
 import ClaimModel from "../models/claimModel.js";
 import ClaimService, { clientIdOf, insuredFor, reviewDecisionOf } from "../services/claimService.js";
@@ -110,12 +111,27 @@ export const claimDocumentOf = (row) => ({
 
 // With the details switch on, the filing details of a claim ride beside it, or null when it has
 // none, and so does what the claims web app reported about it (claims/outcome.js): all of it with
-// `amounts`, which is HR's answer, and without the amounts for the employee. With the switch off the
-// answer is what it always was, with neither.
-export const withDetails = (data, claimId, { amounts = false } = {}) =>
-  claimDetailsOn()
-    ? { ...data, details: getDetails(claimId), outcome: outcomeView(getOutcome(claimId), { amounts }) }
-    : data;
+// `amounts`, which is HR's answer, and without the amounts for the employee. HR's answer, given the
+// claim's header as `claim`, also carries what the policy pays for it and what to check
+// (claims/policy.js); the employee's never does. With the switch off the answer is what it always was.
+export const withDetails = (data, claimId, { amounts = false, claim = null } = {}) => {
+  if (!claimDetailsOn()) return data;
+
+  const details = getDetails(claimId);
+  const answer = { ...data, details, outcome: outcomeView(getOutcome(claimId), { amounts }) };
+
+  if (amounts && claim && details)
+    answer.policy = assessClaim({
+      profile: profileOf(claim.claim_type_code),
+      details,
+      coverage: details.coverage,
+      computed: details.computed,
+      insured: details.insured,
+      filedOn: claim.filed_date,
+    });
+
+  return answer;
+};
 
 // The procedure scopes a document to the caller. The claim in the path must be
 // the one it belongs to as well, or a URL could pair any claim with any of the
@@ -486,7 +502,7 @@ export const getClaimDetails = async (req, res, next) => {
           requirements: requirements.map(requirementOf),
         },
         claim.claim_id,
-        { amounts: true },
+        { amounts: true, claim },
       ),
     });
   } catch (error) {
