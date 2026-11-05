@@ -5,8 +5,9 @@ import { fetchBookedList } from "./ebamClient.js";
 // there is a policy: a company with two policies appears twice, with a policy number each, and BES holds
 // one policy number per company, so a booked record is matched to a BES company by that number.
 //
-// Only what identifies the company and its policy is kept. The other system's record is much larger
-// (contact people, rates, files); none of that is passed on until a screen needs it.
+// Only what a screen uses is kept: what identifies the company and its policy, what the New company form starts
+// with (a phone number, the age limit), the renewal date, and the contact person the HR account form starts with.
+// The other system's record is much larger (rates, premiums, loans, files); none of that is passed on.
 
 // The other system pages by 100 whatever is asked for, so 100 is what is asked for.
 const PAGE_SIZE = 100;
@@ -30,6 +31,22 @@ const text = (value) => {
 
 const day = (value) => (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : null);
 
+const whole = (value) => (Number.isInteger(value) ? value : null);
+
+// The person the other system names as the company's contact, for the HR account form to start with. Only the
+// route that asks for one company passes it on. The record's own `email` is read when the person has none.
+const contactOf = (application) => {
+  const person = application.contact_person ?? {};
+  const contact = {
+    first_name: text(person.firstname),
+    middle_name: text(person.mi),
+    last_name: text(person.lastname),
+    email: text(person.email) ?? text(application.email),
+  };
+
+  return Object.values(contact).some(Boolean) ? contact : null;
+};
+
 const templateOf = (policyNo) => /^(G-[A-Z]{2,4})(?:-|$)/.exec(policyNo ?? "")?.[1] ?? null;
 
 // One record of the other system as the tab keeps it, or null when it names no company.
@@ -50,6 +67,10 @@ export const bookedCompanyOf = (application) => {
     business_address: text(application.business_address),
     business_nature: text(application.business_nature?.name),
     number_of_lives: Number.isFinite(application.number_of_lives) ? application.number_of_lives : null,
+    expiry_date: day(application.expiry_date) ?? day(application.validity?.expiry_date),
+    maximum_age: whole(application.maximum_age),
+    phone: text(application.company_contact?.company_telephone) ?? text(application.company_contact?.company_mobile),
+    contact: contactOf(application),
   };
 };
 

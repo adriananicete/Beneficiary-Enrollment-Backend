@@ -14,7 +14,7 @@ import {
 const { createGetBookedCompanies } = await import("../../src/controllers/bookedCompanyController.js");
 const { default: adminRoutes } = await import("../../src/routes/adminRoutes.js");
 
-// A record of the other system with only what matters here, and the contact people the tab must not pass on.
+// A record of the other system with only what matters here, and a contact person.
 const application = (overrides = {}) => ({
   application_id: 1375,
   group_name: "  BLOOM WITH LOOMS LOGISTIC, INC. ",
@@ -30,7 +30,7 @@ const application = (overrides = {}) => ({
 });
 
 describe("bookedCompanyOf", () => {
-  test("keeps what identifies the company and its policy, trimmed, and nothing else", () => {
+  test("keeps what a screen uses, trimmed, and nothing else", () => {
     assert.deepEqual(bookedCompanyOf(application()), {
       application_id: "1375",
       company_name: "BLOOM WITH LOOMS LOGISTIC, INC.",
@@ -41,7 +41,47 @@ describe("bookedCompanyOf", () => {
       business_address: "12 Mabini St., Pasig City",
       business_nature: "Logistics",
       number_of_lives: 240,
+      expiry_date: null,
+      maximum_age: null,
+      phone: null,
+      contact: { first_name: null, middle_name: null, last_name: null, email: "contact@bloom.example" },
     });
+  });
+
+  test("reads the renewal date, the age limit, the phone and the contact person once the record has them", () => {
+    const company = bookedCompanyOf(
+      application({
+        expiry_date: "2027-06-16T00:00:00.000Z",
+        maximum_age: 65,
+        company_contact: { company_telephone: " 02-8123-4567 ", company_mobile: "0917 000 0000" },
+        contact_person: { salutation: "Ms.", firstname: " Elena ", mi: "R", lastname: "Cruz", full_name: "Ms. Elena R Cruz", email: "elena@bloom.example" },
+        designation: "HR Manager",
+      }),
+    );
+
+    assert.equal(company.expiry_date, "2027-06-16");
+    assert.equal(company.maximum_age, 65);
+    assert.equal(company.phone, "02-8123-4567");
+    assert.deepEqual(company.contact, { first_name: "Elena", middle_name: "R", last_name: "Cruz", email: "elena@bloom.example" });
+  });
+
+  test("the renewal date is read from validity when the record has none of its own, the mobile when there is no telephone", () => {
+    const company = bookedCompanyOf(application({ expiry_date: null, validity: { expiry_date: "2027-01-31T00:00:00Z" }, company_contact: { company_telephone: null, company_mobile: "0917 000 0000" } }));
+
+    assert.equal(company.expiry_date, "2027-01-31");
+    assert.equal(company.phone, "0917 000 0000");
+  });
+
+  test("an age that is not a whole number, and a phone that is not text, are nothing", () => {
+    const company = bookedCompanyOf(application({ maximum_age: "65", company_contact: { company_telephone: 28123456 } }));
+
+    assert.equal(company.maximum_age, null);
+    assert.equal(company.phone, null);
+  });
+
+  test("a record with no contact person and no email has no contact", () => {
+    assert.equal(bookedCompanyOf(application({ email: null, contact_person: { full_name: "Somebody" } })).contact, null);
+    assert.equal(bookedCompanyOf(application({ email: "", contact_person: null })).contact, null);
   });
 
   test("reads the plan from the front of the policy number", () => {
@@ -78,10 +118,10 @@ describe("bookedCompanyOf", () => {
     assert.equal(bookedCompanyOf(null), null);
   });
 
-  test("passes none of the contact details on", () => {
-    const text = JSON.stringify(bookedCompanyOf(application()));
+  test("passes on only the contact person's name and email, not the rest of what the other system holds", () => {
+    const text = JSON.stringify(bookedCompanyOf(application({ designation: "HR Manager", contact_person_contact: { contact_person_mobile: "0917 111 1111" }, creator_email: "staff@gis.example" })));
 
-    assert.equal(/contact|email|somebody/i.test(text), false);
+    assert.equal(/somebody|hr manager|0917 111|staff@gis/i.test(text), false);
   });
 });
 
@@ -247,6 +287,33 @@ describe("the Administrator's route for it", () => {
     assert.equal(answer.body.data.configured, true);
     assert.equal(answer.body.data.fetched_at, "2026-11-05T01:00:00.000Z");
     assert.deepEqual(answer.body.data.companies[0].set_up, { employer_id: "5", company_code: "ACME", company_name: "Acme" });
+  });
+
+  test("the list carries no contact person, the answer for one company does", async () => {
+    const withContact = {
+      at: listed.at,
+      companies: [
+        { application_id: "1", company_name: "Acme", policy_no: "G-TLI-1-1", contact: { first_name: "Elena", middle_name: null, last_name: "Cruz", email: "elena@acme.example" } },
+        { application_id: "2", company_name: "Beta", policy_no: "G-TLI-1-2", contact: { first_name: null, middle_name: null, last_name: null, email: "x@beta.example" } },
+      ],
+    };
+    const options = {
+      configured: () => true,
+      list: async () => withContact,
+      poolOf: async () => ({}),
+      companiesOf: async () => [{ employer_id: 5, company_code: "ACME", company_name: "Acme", policy_no: "G-TLI-1-1" }],
+    };
+
+    const all = (await run(options)).answer.body.data.companies;
+    assert.equal(all.length, 2);
+    assert.equal(all.some((entry) => "contact" in entry), false);
+    assert.equal(withContact.companies[0].contact.email, "elena@acme.example", "the kept list is not changed");
+
+    const one = (await run(options, { employer_id: "5" })).answer.body.data.companies;
+    assert.deepEqual(one.map((entry) => entry.application_id), ["1"]);
+    assert.equal(one[0].contact.email, "elena@acme.example");
+
+    assert.deepEqual((await run(options, { employer_id: "99" })).answer.body.data.companies, []);
   });
 
   test("?refresh=1 asks for a new list and anything else does not", async () => {
