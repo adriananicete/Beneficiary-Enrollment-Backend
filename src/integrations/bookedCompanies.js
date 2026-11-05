@@ -29,6 +29,8 @@ const text = (value) => {
   return trimmed === "" ? null : trimmed;
 };
 
+const same = (value) => String(value ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+
 const day = (value) => (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : null);
 
 const whole = (value) => (Number.isInteger(value) ? value : null);
@@ -74,6 +76,12 @@ export const bookedCompanyOf = (application) => {
   };
 };
 
+const isNewer = (a, b) => {
+  const [dayA, dayB] = [a.effective_date ?? "", b.effective_date ?? ""];
+
+  return dayA > dayB || (dayA === dayB && Number(a.application_id) > Number(b.application_id));
+};
+
 // Every page of the list, as the tab keeps it, by company name and then policy number. `fetchPage` is for tests.
 export const loadBookedCompanies = async ({ fetchPage = fetchBookedList } = {}) => {
   const first = await fetchPage({ page: 1, limit: PAGE_SIZE });
@@ -89,17 +97,19 @@ export const loadBookedCompanies = async ({ fetchPage = fetchBookedList } = {}) 
     records.push(...next.data);
   }
 
-  const seen = new Set();
-  const companies = [];
+  // A renewal keeps its policy number. Should the other system add a record for one, the company's record for
+  // that number is the newest (by effective date, then by id) and not each of them. A record seen twice is one.
+  const newest = new Map();
   for (const record of records) {
     const company = bookedCompanyOf(record);
-    if (!company || seen.has(company.application_id)) continue;
+    if (!company) continue;
 
-    seen.add(company.application_id);
-    companies.push(company);
+    const key = company.policy_no ? `${same(company.policy_no)}|${same(company.company_name)}` : `id:${company.application_id}`;
+    const held = newest.get(key);
+    if (!held || isNewer(company, held)) newest.set(key, company);
   }
 
-  return companies.sort(
+  return [...newest.values()].sort(
     (a, b) => a.company_name.localeCompare(b.company_name, "en", { sensitivity: "base" }) || (a.policy_no ?? "").localeCompare(b.policy_no ?? ""),
   );
 };
@@ -120,8 +130,6 @@ export const bookedCompanies = async ({ refresh = false, now = Date.now, load = 
 export const forgetBookedCompanies = () => {
   kept = null;
 };
-
-const same = (value) => String(value ?? "").trim().replace(/\s+/g, " ").toUpperCase();
 
 // Each booked record with the BES company it is, or null. By policy number when it has one: the same name
 // with another policy is another policy. A record with no policy number is matched by name, and only when

@@ -148,6 +148,32 @@ describe("loadBookedCompanies", () => {
     assert.equal(companies.length, 1);
   });
 
+  test("a renewal that comes as a new record under the same policy number replaces the old one, and only for the same company", async () => {
+    const companies = await loadBookedCompanies({
+      fetchPage: pagesOf([
+        application({ application_id: 10, group_name: "Acme Inc", policy_no: "G-TLI-1-1", effective_date: "2025-01-01T00:00:00Z" }),
+        application({ application_id: 30, group_name: "ACME  INC", policy_no: "g-tli-1-1", effective_date: "2026-01-01T00:00:00Z" }),
+        application({ application_id: 20, group_name: "Acme Inc", policy_no: "G-TLI-1-1", effective_date: "2024-01-01T00:00:00Z" }),
+        application({ application_id: 40, group_name: "Another Company", policy_no: "G-TLI-1-1", effective_date: "2025-06-01T00:00:00Z" }),
+      ]),
+    });
+
+    assert.deepEqual(companies.map((company) => company.application_id), ["30", "40"], "the newest of Acme's, and the other company that shares the number");
+  });
+
+  test("with the same effective date the higher id is the newer, and a record with no policy number is never merged", async () => {
+    const companies = await loadBookedCompanies({
+      fetchPage: pagesOf([
+        application({ application_id: 5, group_name: "Acme Inc", policy_no: "G-TLI-1-1", effective_date: "2026-01-01T00:00:00Z" }),
+        application({ application_id: 6, group_name: "Acme Inc", policy_no: "G-TLI-1-1", effective_date: "2026-01-01T00:00:00Z" }),
+        application({ application_id: 7, group_name: "Beta Inc", policy_no: null, policy_number: null }),
+        application({ application_id: 8, group_name: "Beta Inc", policy_no: null, policy_number: null }),
+      ]),
+    });
+
+    assert.deepEqual(companies.map((company) => company.application_id), ["6", "7", "8"]);
+  });
+
   test("a list that does not say how many pages it has is one page", async () => {
     let calls = 0;
     const companies = await loadBookedCompanies({ fetchPage: async () => { calls++; return { data: [application()] }; } });
