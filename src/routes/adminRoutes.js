@@ -20,6 +20,7 @@ import { closeDeathClaim, fileClaimForEmployee, fileDeathClaim, getClaimDetails,
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { editMessage, getConversation, getConversations, getMessageAttachment, getUnreadMessageCount, markConversationRead, openConversation, sendMessage, sendMessageAttachment, unsendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
+import { getBookedCompanies } from '../controllers/bookedCompanyController.js';
 import { createAffiliate, createClassification, createCompany, createHrAccount, deleteCompany, getAffiliates, getClassificationSchedule, getCompanies, getCompany, resendHrCredentials, updateAffiliate, updateClassification, updateCompany } from '../controllers/companyController.js';
 import { validateHrAccount } from '../middlewares/validateHrAccount.js';
 import { validateCompanyChanges, validateNewCompany } from '../middlewares/validateCompany.js';
@@ -117,6 +118,8 @@ router.patch('/employers/:employer_id/settings', verifyToken, allowedRoles(ADMIN
 const companyId = validateIdParam('employer_id', 'Company not found');
 
 router.get('/companies', verifyToken, allowedRoles(SUPER_ADMIN), getCompanies);
+// The companies the other system has booked. Before /companies/:employer_id, which would take "booked" for an id.
+router.get('/companies/booked', verifyToken, allowedRoles(SUPER_ADMIN), getBookedCompanies);
 // takePlanFields is the plan and loan limits of Group Credit Life (src/gcli): it does
 // nothing unless the dev store is on, and then takes the two fields off the body before
 // the company rules, which would refuse them.
