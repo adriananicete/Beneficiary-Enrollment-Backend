@@ -9,6 +9,7 @@
     "check": "node scripts/check-imports.mjs",
     "integration-key": "node scripts/new-integration-key.mjs",
     "dev-claim-outcome": "node --env-file=.env scripts/dev-claim-outcome.mjs",
+    "ebam-probe": "node --env-file=.env scripts/ebam-probe.mjs",
     "verify": "npm run check && npm test"
   },
   "keywords": [],
