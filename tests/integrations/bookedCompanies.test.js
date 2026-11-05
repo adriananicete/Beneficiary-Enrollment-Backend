@@ -190,7 +190,7 @@ describe("markSetUp", () => {
   test("a booked record with a policy number is the BES company with that number, however it is written", () => {
     const [marked] = markSetUp([booked("Acme Holdings", "g-tli-26-177")], [bes(5, "Another Name", " G-TLI-26-177 ", "ANO")]);
 
-    assert.deepEqual(marked.set_up, { employer_id: "5", company_code: "ANO" });
+    assert.deepEqual(marked.set_up, { employer_id: "5", company_code: "ANO", company_name: "Another Name" });
   });
 
   test("the same name with another policy number is not set up", () => {
@@ -200,7 +200,7 @@ describe("markSetUp", () => {
   });
 
   test("a record with no policy number is matched by name, when exactly one BES company has it", () => {
-    assert.deepEqual(markSetUp([booked("Acme  Holdings", null)], [bes(5, "ACME HOLDINGS", "G-TLI-26-177")])[0].set_up, { employer_id: "5", company_code: "ACME" });
+    assert.deepEqual(markSetUp([booked("Acme  Holdings", null)], [bes(5, "ACME HOLDINGS", "G-TLI-26-177")])[0].set_up, { employer_id: "5", company_code: "ACME", company_name: "ACME HOLDINGS" });
     assert.equal(markSetUp([booked("Acme Holdings", null)], [bes(5, "Acme Holdings", "A"), bes(6, "Acme Holdings", "B")])[0].set_up, null, "two companies of that name: not guessed");
     assert.equal(markSetUp([booked("Acme Holdings", null)], [bes(5, "Other", "A")])[0].set_up, null);
   });
@@ -246,7 +246,7 @@ describe("the Administrator's route for it", () => {
 
     assert.equal(answer.body.data.configured, true);
     assert.equal(answer.body.data.fetched_at, "2026-11-05T01:00:00.000Z");
-    assert.deepEqual(answer.body.data.companies[0].set_up, { employer_id: "5", company_code: "ACME" });
+    assert.deepEqual(answer.body.data.companies[0].set_up, { employer_id: "5", company_code: "ACME", company_name: "Acme" });
   });
 
   test("?refresh=1 asks for a new list and anything else does not", async () => {
