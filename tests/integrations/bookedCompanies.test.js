@@ -41,17 +41,15 @@ describe("bookedCompanyOf", () => {
       business_address: "12 Mabini St., Pasig City",
       business_nature: "Logistics",
       number_of_lives: 240,
-      expiry_date: null,
       maximum_age: null,
       phone: null,
       contact: { first_name: null, middle_name: null, last_name: null, email: "contact@bloom.example" },
     });
   });
 
-  test("reads the renewal date, the age limit, the phone and the contact person once the record has them", () => {
+  test("reads the age limit, the phone and the contact person once the record has them", () => {
     const company = bookedCompanyOf(
       application({
-        expiry_date: "2027-06-16T00:00:00.000Z",
         maximum_age: 65,
         company_contact: { company_telephone: " 02-8123-4567 ", company_mobile: "0917 000 0000" },
         contact_person: { salutation: "Ms.", firstname: " Elena ", mi: "R", lastname: "Cruz", full_name: "Ms. Elena R Cruz", email: "elena@bloom.example" },
@@ -59,17 +57,27 @@ describe("bookedCompanyOf", () => {
       }),
     );
 
-    assert.equal(company.expiry_date, "2027-06-16");
     assert.equal(company.maximum_age, 65);
     assert.equal(company.phone, "02-8123-4567");
     assert.deepEqual(company.contact, { first_name: "Elena", middle_name: "R", last_name: "Cruz", email: "elena@bloom.example" });
   });
 
-  test("the renewal date is read from validity when the record has none of its own, the mobile when there is no telephone", () => {
-    const company = bookedCompanyOf(application({ expiry_date: null, validity: { expiry_date: "2027-01-31T00:00:00Z" }, company_contact: { company_telephone: null, company_mobile: "0917 000 0000" } }));
+  test("the mobile is the phone when there is no telephone", () => {
+    const company = bookedCompanyOf(application({ company_contact: { company_telephone: null, company_mobile: "0917 000 0000" } }));
 
-    assert.equal(company.expiry_date, "2027-01-31");
     assert.equal(company.phone, "0917 000 0000");
+  });
+
+  test("the age limit is the highest senior bracket the company chose, else the maximum age the record states", () => {
+    const flags = (on) => ({ borrower_age_66_70: on.includes(70), borrower_age_71_75: on.includes(75), borrower_age_76_80: on.includes(80) });
+
+    assert.equal(bookedCompanyOf(application({ maximum_age: 65, ...flags([]) })).maximum_age, 65, "the standard");
+    assert.equal(bookedCompanyOf(application({ maximum_age: 65, ...flags([70]) })).maximum_age, 70);
+    assert.equal(bookedCompanyOf(application({ maximum_age: 65, ...flags([70, 75]) })).maximum_age, 75, "the highest chosen wins");
+    assert.equal(bookedCompanyOf(application({ maximum_age: 65, ...flags([70, 75, 80]) })).maximum_age, 80);
+    assert.equal(bookedCompanyOf(application({ maximum_age: null, ...flags([75]) })).maximum_age, 75, "a bracket alone is enough");
+    assert.equal(bookedCompanyOf(application({ maximum_age: null, ...flags([]) })).maximum_age, null, "nothing said is nothing guessed");
+    assert.equal(bookedCompanyOf(application({ maximum_age: 65, borrower_age_66_70: "true" })).maximum_age, 65, "only a real true counts");
   });
 
   test("an age that is not a whole number, and a phone that is not text, are nothing", () => {

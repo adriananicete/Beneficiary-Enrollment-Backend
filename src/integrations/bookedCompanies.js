@@ -6,7 +6,7 @@ import { fetchBookedList } from "./ebamClient.js";
 // one policy number per company, so a booked record is matched to a BES company by that number.
 //
 // Only what a screen uses is kept: what identifies the company and its policy, what the New company form starts
-// with (a phone number, the age limit), the renewal date, and the contact person the HR account form starts with.
+// with (a phone number, the age limit), and the contact person the HR account form starts with.
 // The other system's record is much larger (rates, premiums, loans, files); none of that is passed on.
 
 // The other system pages by 100 whatever is asked for, so 100 is what is asked for.
@@ -34,6 +34,15 @@ const same = (value) => String(value ?? "").trim().replace(/\s+/g, " ").toUpperC
 const day = (value) => (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : null);
 
 const whole = (value) => (Number.isInteger(value) ? value : null);
+
+// The oldest age the other system covers: the highest senior age bracket the company chose (66-70, 71-75 and 76-80
+// are flags there, true when chosen), else the maximum age it states (65 is its standard). Null when it says neither.
+const SENIOR_BRACKETS = [
+  ["borrower_age_76_80", 80],
+  ["borrower_age_71_75", 75],
+  ["borrower_age_66_70", 70],
+];
+const maximumAgeOf = (application) => SENIOR_BRACKETS.find(([flag]) => application[flag] === true)?.[1] ?? whole(application.maximum_age);
 
 // The person the other system names as the company's contact, for the HR account form to start with. Only the
 // route that asks for one company passes it on. The record's own `email` is read when the person has none.
@@ -69,8 +78,7 @@ export const bookedCompanyOf = (application) => {
     business_address: text(application.business_address),
     business_nature: text(application.business_nature?.name),
     number_of_lives: Number.isFinite(application.number_of_lives) ? application.number_of_lives : null,
-    expiry_date: day(application.expiry_date) ?? day(application.validity?.expiry_date),
-    maximum_age: whole(application.maximum_age),
+    maximum_age: maximumAgeOf(application),
     phone: text(application.company_contact?.company_telephone) ?? text(application.company_contact?.company_mobile),
     contact: contactOf(application),
   };
