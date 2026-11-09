@@ -82,8 +82,9 @@ const deleteCompany = async (pool, userId, employerId) => {
 
 // Maps a new HR account to its company, inside our transaction with
 // sec.us01_usp_ins_users and sec.us04_usp_assign_role. Opens no transaction.
-// THROWs 50187 (company), 50196 (not an active HR user), 50197 (the company
-// already has one).
+// THROWs 50187 (company), 50196 (not an active HR user). A company may have
+// several HR accounts: the procedure stopped refusing a second one (50197) on
+// 2026-11-06.
 const mapHrAccount = async (transaction, userId, { hrUserId, employerId }) => {
     await transaction.request()
     .input('us01_user_id', sql.BigInt, userId)
@@ -93,15 +94,15 @@ const mapHrAccount = async (transaction, userId, { hrUserId, employerId }) => {
     .execute('sec.us08_usp_ins_user_employer');
 };
 
-// The company's HR account, for reissuing its password: id, username, name,
-// email and state. No password columns. Undefined when there is none.
-const getHrAccount = async (pool, userId, employerId) => {
+// The company's HR accounts, one row each, for listing them and reissuing a password: id, username, name, email and
+// state. No password columns. Empty when there are none.
+const getHrAccounts = async (pool, userId, employerId) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
     .input('employer_id', sql.BigInt, employerId)
     .execute('sec.us08_usp_sel_hr_by_employer');
 
-    return result.recordset[0];
+    return result.recordset;
 };
 
 export default {
@@ -111,5 +112,5 @@ export default {
     updateCompany,
     deleteCompany,
     mapHrAccount,
-    getHrAccount,
+    getHrAccounts,
 };

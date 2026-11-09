@@ -19,7 +19,12 @@ const INSERT = "bes.usp_ins_employer";
 const UPDATE = "bes.usp_upd_employer";
 const DELETE = "bes.usp_del_employer";
 
+const HR_ACCOUNTS = "sec.us08_usp_sel_hr_by_employer";
+
 const ADMIN_ID = 1;
+
+// Reading one company also asks for its HR accounts, which these tests do not care about unless they say.
+const companyPool = (answers = {}) => fakePool({ [HR_ACCOUNTS]: [], ...answers });
 
 // A row as usp_sel_employer_admin_by_id returns it, values as the driver hands
 // them over.
@@ -95,7 +100,7 @@ describe("companyOf — what leaves", () => {
 
 describe("CompanyService — reading", () => {
   test("lists every company, field by field, as the caller", async () => {
-    const { pool, calls } = fakePool({ [LIST]: [stored(), stored({ employer_id: "2", company_code: "HCL" })] });
+    const { pool, calls } = companyPool({ [LIST]: [stored(), stored({ employer_id: "2", company_code: "HCL" })] });
 
     const companies = await CompanyService.getCompanies(pool, ADMIN_ID);
 
@@ -105,12 +110,72 @@ describe("CompanyService — reading", () => {
   });
 
   test("an id that matches no company is 404", async () => {
-    const { pool } = fakePool({ [BY_ID]: [] });
+    const { pool } = companyPool({ [BY_ID]: [] });
 
     await assert.rejects(
       () => CompanyService.getCompany(pool, ADMIN_ID, "99"),
       (error) => error.statusCode === 404 && error.message === "Company not found",
     );
+  });
+});
+
+// A company may have several HR accounts. The list names one of them; the company's own page lists them all, and
+// says what the next one's username would be.
+describe("CompanyService — a company's HR accounts", () => {
+  const hr = (id, username, overrides = {}) => ({
+    us01_user_id: id,
+    us01_username: username,
+    us01_first_name: "Maria",
+    us01_middle_name: null,
+    us01_last_name: "Santos",
+    us01_email_address: `${username}@example.test`,
+    us01_is_active: true,
+    us01_is_locked: false,
+    us01_must_change_password: true,
+    us01_password: "$2b$10$never-leaves",
+    ...overrides,
+  });
+
+  const read = async (accounts, company = {}) => {
+    const { pool, calls } = companyPool({ [BY_ID]: [stored({ company_code: "COFORGE", messages_enabled: false, ...company })], [HR_ACCOUNTS]: accounts });
+
+    return { company: await CompanyService.getCompany(pool, ADMIN_ID, "1"), calls };
+  };
+
+  test("a company with none has an empty list, and hr.<code> is the next username", async () => {
+    const { company } = await read([]);
+
+    assert.deepEqual(company.hr_accounts, []);
+    assert.equal(company.next_hr_username, "hr.coforge");
+  });
+
+  test("lists every account, field by field, and nothing else a procedure returns", async () => {
+    const { company } = await read([hr("2", "hr.coforge"), hr("3", "hr.coforge.2", { us01_middle_name: "D", us01_is_active: false, us01_is_locked: true })]);
+
+    assert.deepEqual(company.hr_accounts, [
+      { user_id: "2", username: "hr.coforge", first_name: "Maria", middle_name: null, last_name: "Santos", email_address: "hr.coforge@example.test", is_active: true, is_locked: false },
+      { user_id: "3", username: "hr.coforge.2", first_name: "Maria", middle_name: "D", last_name: "Santos", email_address: "hr.coforge.2@example.test", is_active: false, is_locked: true },
+    ]);
+    assert.equal(JSON.stringify(company).includes("never-leaves"), false);
+  });
+
+  test("the next username is the first number the company has not used", async () => {
+    assert.equal((await read([hr("2", "hr.coforge")])).company.next_hr_username, "hr.coforge.2");
+    assert.equal((await read([hr("2", "hr.coforge"), hr("3", "hr.coforge.2")])).company.next_hr_username, "hr.coforge.3");
+    assert.equal((await read([hr("3", "hr.coforge.2")])).company.next_hr_username, "hr.coforge", "a gap is filled");
+  });
+
+  test("asks the procedure for this company, as the caller", async () => {
+    const { calls } = await read([]);
+
+    assert.equal(inputsFor(calls, HR_ACCOUNTS).employer_id, "1");
+    assert.equal(inputsFor(calls, HR_ACCOUNTS).us01_user_id, ADMIN_ID);
+  });
+
+  test("the list's one-account `hr_account` is still there for the Companies list", async () => {
+    const { company } = await read([hr("2", "hr.coforge")], { hr_user_id: "2", hr_username: "hr.coforge", hr_email_address: "hr@coforge.example" });
+
+    assert.deepEqual(company.hr_account, { user_id: "2", username: "hr.coforge", email_address: "hr@coforge.example" });
   });
 });
 
@@ -127,7 +192,7 @@ describe("CompanyService — the messaging switch", () => {
   };
 
   test("a company read without the column gets it from the list", async () => {
-    const { pool, calls } = fakePool({
+    const { pool, calls } = companyPool({
       [BY_ID]: [withoutColumn()],
       [LIST]: [stored({ employer_id: "2", messages_enabled: false }), stored({ messages_enabled: true })],
     });
@@ -139,7 +204,7 @@ describe("CompanyService — the messaging switch", () => {
   });
 
   test("it takes the row for THIS company, not the first in the list", async () => {
-    const { pool } = fakePool({
+    const { pool } = companyPool({
       [BY_ID]: [withoutColumn()],
       [LIST]: [stored({ employer_id: "2", messages_enabled: true }), stored({ employer_id: "1", messages_enabled: false })],
     });
@@ -148,7 +213,7 @@ describe("CompanyService — the messaging switch", () => {
   });
 
   test("NULL, which is every company until it is switched, is off", async () => {
-    const { pool } = fakePool({
+    const { pool } = companyPool({
       [BY_ID]: [withoutColumn()],
       [LIST]: [stored({ messages_enabled: null })],
     });
@@ -157,13 +222,13 @@ describe("CompanyService — the messaging switch", () => {
   });
 
   test("a company that is not in the list stays unknown, not guessed off", async () => {
-    const { pool } = fakePool({ [BY_ID]: [withoutColumn()], [LIST]: [] });
+    const { pool } = companyPool({ [BY_ID]: [withoutColumn()], [LIST]: [] });
 
     assert.strictEqual((await CompanyService.getCompany(pool, ADMIN_ID, "1")).messages_enabled, undefined);
   });
 
   test("once the procedure returns the column, the list is not asked", async () => {
-    const { pool, calls } = fakePool({ [BY_ID]: [stored({ messages_enabled: true })] });
+    const { pool, calls } = companyPool({ [BY_ID]: [stored({ messages_enabled: true })] });
 
     const company = await CompanyService.getCompany(pool, ADMIN_ID, "1");
 
@@ -172,13 +237,13 @@ describe("CompanyService — the messaging switch", () => {
   });
 
   test("and a NULL it returns is off too", async () => {
-    const { pool } = fakePool({ [BY_ID]: [stored({ messages_enabled: null })] });
+    const { pool } = companyPool({ [BY_ID]: [stored({ messages_enabled: null })] });
 
     assert.strictEqual((await CompanyService.getCompany(pool, ADMIN_ID, "1")).messages_enabled, false);
   });
 
   test("the list answers off for NULL as well", async () => {
-    const { pool } = fakePool({ [LIST]: [stored({ messages_enabled: null })] });
+    const { pool } = companyPool({ [LIST]: [stored({ messages_enabled: null })] });
 
     assert.strictEqual((await CompanyService.getCompanies(pool, ADMIN_ID))[0].messages_enabled, false);
   });
@@ -202,7 +267,7 @@ describe("CompanyService — creating", () => {
   };
 
   test("sends the company as the caller, and answers it as stored", async () => {
-    const { pool, calls } = fakePool({
+    const { pool, calls } = companyPool({
       [INSERT]: [{ employer_id: "5" }],
       [BY_ID]: ({ employer_id }) => ({ recordset: [stored({ employer_id, company_code: "ABCC" })], output: {} }),
     });
@@ -222,7 +287,7 @@ describe("CompanyService — creating", () => {
 
 describe("CompanyService — a PATCH becomes the whole company", () => {
   const editing = (row = stored()) =>
-    fakePool({
+    companyPool({
       [BY_ID]: row === null ? [] : [row],
       [UPDATE]: [{ employer_id: "1" }],
     });
@@ -295,7 +360,7 @@ describe("CompanyService — a PATCH becomes the whole company", () => {
 // the company exists (50187) and whether anything belongs to it (50212).
 describe("CompanyService — deleting", () => {
   test("asks the procedure as the caller, for that company", async () => {
-    const { pool, calls } = fakePool({ [DELETE]: [{ employer_id: "9" }] });
+    const { pool, calls } = companyPool({ [DELETE]: [{ employer_id: "9" }] });
 
     await CompanyService.deleteCompany(pool, ADMIN_ID, "9");
 
@@ -304,7 +369,7 @@ describe("CompanyService — deleting", () => {
 
   // Nothing is read first: a check here would race the procedure's own.
   test("reads nothing else first", async () => {
-    const { pool, calls } = fakePool({ [DELETE]: [{ employer_id: "9" }] });
+    const { pool, calls } = companyPool({ [DELETE]: [{ employer_id: "9" }] });
 
     await CompanyService.deleteCompany(pool, ADMIN_ID, "9");
 
@@ -313,7 +378,7 @@ describe("CompanyService — deleting", () => {
 
   test("the procedure's refusal reaches the caller as it was thrown", async () => {
     const refusal = Object.assign(new Error("Company cannot be deleted while anything belongs to it."), { number: 50212 });
-    const { pool } = fakePool({
+    const { pool } = companyPool({
       [DELETE]: () => {
         throw refusal;
       },

@@ -1,6 +1,7 @@
 import EmployerAdminModel from "../models/employerAdminModel.js";
 import { COMPANY_FIELDS } from "../utils/validateCompany.js";
 import { AppError } from "../utils/AppError.js";
+import { hrUsernameFor } from "../utils/hrUsername.js";
 import { assertPlanChange, planFieldsOf, savePlan } from "../gcli/companies.js";
 import { devStoreOn } from "../gcli/devStore.js";
 
@@ -50,6 +51,18 @@ export const companyOf = (row) => ({
   ...(devStoreOn() ? planFieldsOf(row.employer_id, row.policy_no_locked) : {}),
 });
 
+// One of the company's HR accounts, as the company's page lists it.
+export const hrAccountOf = (row) => ({
+  user_id: row.us01_user_id,
+  username: row.us01_username,
+  first_name: row.us01_first_name,
+  middle_name: row.us01_middle_name ?? null,
+  last_name: row.us01_last_name,
+  email_address: row.us01_email_address,
+  is_active: row.us01_is_active,
+  is_locked: row.us01_is_locked,
+});
+
 const getCompanies = async (pool, userId) => {
   const rows = await EmployerAdminModel.getCompanies(pool, userId);
   return rows.map(companyOf);
@@ -72,11 +85,20 @@ const withMessagesEnabled = async (pool, userId, row) => {
   return { ...row, messages_enabled: listed?.messages_enabled };
 };
 
+// One company with all its HR accounts (the list's `hr_account` is the one account the list procedure names) and the
+// username the next one would be given. Every answer about one company has them, so a page that is
+// given the company after a save keeps both.
 const getCompany = async (pool, userId, employerId) => {
   const row = await EmployerAdminModel.getCompanyById(pool, userId, employerId);
   if (!row) throw new AppError("Company not found", 404);
 
-  return companyOf(await withMessagesEnabled(pool, userId, row));
+  const accounts = await EmployerAdminModel.getHrAccounts(pool, userId, employerId);
+
+  return {
+    ...companyOf(await withMessagesEnabled(pool, userId, row)),
+    hr_accounts: accounts.map(hrAccountOf),
+    next_hr_username: hrUsernameFor(row.company_code, accounts.map((account) => account.us01_username)),
+  };
 };
 
 // Answers the company as stored, read back, rather than echoing what was

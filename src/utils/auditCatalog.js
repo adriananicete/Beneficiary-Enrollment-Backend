@@ -48,7 +48,7 @@ export const AUDITED_ROUTES = {
   "POST /admin/companies/:employer_id/classifications": entry("Classification", "I", "data.classification_id", "param.employer_id"),
   "PATCH /admin/companies/:employer_id/classifications/:classification_id": entry("Classification", "U", "param.classification_id"),
   "POST /admin/companies/:employer_id/hr-account": entry("HR account", "I", "data.user_id", "param.employer_id"),
-  "POST /admin/companies/:employer_id/hr-account/resend-credentials": entry("HR account", "U", "param.employer_id"),
+  "POST /admin/companies/:employer_id/hr-account/:user_id/resend-credentials": entry("HR account", "U", "param.user_id", "param.employer_id"),
   "POST /admin/companies/:employer_id/affiliates": entry("Affiliate", "I", "data.affiliate_id", "param.employer_id"),
   "PATCH /admin/companies/:employer_id/affiliates/:affiliate_id": entry("Affiliate", "U", "param.affiliate_id"),
 

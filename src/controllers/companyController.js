@@ -143,7 +143,7 @@ export const updateClassification = async (req, res, next) => {
   }
 };
 
-// The company's one HR account, branch 4. 201 even when the email fails: the
+// A new HR account for the company, branch 4: it may have several. 201 even when the email fails: the
 // account exists, and credentials_emailed says whether its details went.
 export const createHrAccount = async (req, res, next) => {
   try {
@@ -174,6 +174,7 @@ export const resendHrCredentials = async (req, res, next) => {
       pool,
       req.user.user_id,
       req.params.employer_id,
+      req.params.user_id,
     );
 
     return res.status(200).json({

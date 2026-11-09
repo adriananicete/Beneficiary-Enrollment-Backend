@@ -139,11 +139,13 @@ router.get('/companies/:employer_id/classifications', verifyToken, allowedRoles(
 router.post('/companies/:employer_id/classifications', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateNewClassification, createClassification);
 router.patch('/companies/:employer_id/classifications/:classification_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, classificationId, validateClassificationChanges, updateClassification);
 
-// The company's one HR account, DBA request 24, branch 4. The Administrator
-// only. The reissue shares credentialsResendLimiter with HR's employee
-// resend: both send a password by email.
+// The company's HR accounts (it may have several), DBA request 24, branch 4. The
+// Administrator only. The reissue names the account, and shares credentialsResendLimiter
+// with HR's employee resend: both send a password by email.
+const hrUserId = validateIdParam('user_id', 'HR account not found');
+
 router.post('/companies/:employer_id/hr-account', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateHrAccount, createHrAccount);
-router.post('/companies/:employer_id/hr-account/resend-credentials', verifyToken, allowedRoles(SUPER_ADMIN), companyId, credentialsResendLimiter, resendHrCredentials);
+router.post('/companies/:employer_id/hr-account/:user_id/resend-credentials', verifyToken, allowedRoles(SUPER_ADMIN), companyId, hrUserId, credentialsResendLimiter, resendHrCredentials);
 
 // A company's affiliates, DBA request 25, branch 5. The Administrator only.
 // The edit route sits under the company, as the class edit does (option A,

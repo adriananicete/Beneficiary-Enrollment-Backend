@@ -34,6 +34,7 @@ const row = (overrides = {}) => ({
 const pool = (stored = row()) =>
   fakePool({
     usp_sel_employer_admin_by_id: [stored],
+    us08_usp_sel_hr_by_employer: [],
     usp_sel_employers_admin: [{ ...stored, messages_enabled: false }],
     usp_ins_employer: [{ employer_id: "5" }],
     usp_upd_employer: [{ employer_id: "5" }],

@@ -92,6 +92,9 @@ const harness = ({ answers = {}, sendFails = false } = {}) => {
   return { pool, calls, log, sent, deps };
 };
 
+// A company with no HR account yet, so the one made is its first: hr.<code>.
+const firstAccount = ({ answers = {}, ...options } = {}) => harness({ ...options, answers: { [HR_BY_COMPANY]: [], ...answers } });
+
 const silently = async (work) => {
   const original = console.error;
   console.error = () => {};
@@ -108,11 +111,21 @@ describe("hrUsernameFor", () => {
     assert.equal(hrUsernameFor("Coforge"), "hr.coforge");
     assert.equal(hrUsernameFor("NBS-2"), "hr.nbs-2");
   });
+
+  // A dot is not in a company code (letters, digits and hyphens), so hr.abcc.2 can never be another company's hr.<code>.
+  test("a company's further accounts are numbered from 2, the first number it has not used, whatever the case", () => {
+    assert.equal(hrUsernameFor("ABCC", []), "hr.abcc");
+    assert.equal(hrUsernameFor("ABCC", ["hr.abcc"]), "hr.abcc.2");
+    assert.equal(hrUsernameFor("ABCC", ["hr.abcc", "hr.abcc.2"]), "hr.abcc.3");
+    assert.equal(hrUsernameFor("ABCC", ["HR.ABCC", "Hr.Abcc.2"]), "hr.abcc.3");
+    assert.equal(hrUsernameFor("ABCC", ["hr.abcc.2"]), "hr.abcc", "a gap is filled");
+    assert.equal(hrUsernameFor("ABCC", ["hr.abcc2", "hr.abcd"]), "hr.abcc", "another company's names are not this company's");
+  });
 });
 
 describe("HrAccountService.createHrAccount", () => {
   test("creates the user, gives it the HR role, maps it, commits, and only then emails", async () => {
-    const { pool, log, deps } = harness();
+    const { pool, log, deps } = firstAccount();
 
     await HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person }, deps);
 
@@ -120,7 +133,7 @@ describe("HrAccountService.createHrAccount", () => {
   });
 
   test("the account: hr.<code>, a hashed password, a forced change, no client", async () => {
-    const { pool, calls, deps } = harness();
+    const { pool, calls, deps } = firstAccount();
 
     await HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person }, deps);
 
@@ -143,7 +156,7 @@ describe("HrAccountService.createHrAccount", () => {
 
   // HR signs in at the site's root (Adrian, 2026-10-14).
   test("the email carries the plain password and links to APP_URL itself", async () => {
-    const { pool, sent, deps } = harness();
+    const { pool, sent, deps } = firstAccount();
 
     const result = await HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person }, deps);
 
@@ -163,7 +176,7 @@ describe("HrAccountService.createHrAccount", () => {
   // The account exists either way. The answer says the email did not go, and
   // the Administrator reissues.
   test("a failed email leaves the account committed and says so", async () => {
-    const { pool, log, deps } = harness({ sendFails: true });
+    const { pool, log, deps } = firstAccount({ sendFails: true });
 
     const result = await silently(() => HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person }, deps));
 
@@ -173,7 +186,7 @@ describe("HrAccountService.createHrAccount", () => {
   });
 
   test("a company that does not exist is 404, and nothing is begun", async () => {
-    const { pool, log, deps } = harness({ answers: { [COMPANY]: [] } });
+    const { pool, log, deps } = firstAccount({ answers: { [COMPANY]: [] } });
 
     await assert.rejects(
       () => HrAccountService.createHrAccount(pool, ADMIN_ID, "99", { ...person }, deps),
@@ -182,14 +195,37 @@ describe("HrAccountService.createHrAccount", () => {
     assert.deepEqual(log, []);
   });
 
-  test("a company that already has an HR account is 409, and nothing is begun", async () => {
-    const { pool, log, deps } = harness({ answers: { [COMPANY]: [company({ hr_user_id: "2" })] } });
+  // A company may have several HR accounts. Each is a separate sign-in, so each has its own username.
+  test("a company that already has an HR account gets another, as hr.<code>.2, and the first is left alone", async () => {
+    const { pool, calls, log, sent, deps } = harness({ answers: { [COMPANY]: [company({ hr_user_id: "2" })], [HR_BY_COMPANY]: [hrRow()] } });
 
-    await assert.rejects(
-      () => HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person }, deps),
-      (error) => error.statusCode === 409 && error.message === "This company already has an HR account",
-    );
-    assert.deepEqual(log, []);
+    const result = await HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person, email_address: "second@abcc.example" }, deps);
+
+    assert.deepEqual(log, ["begin", CREATE_USER, ASSIGN_ROLE, MAP_HR, "commit", "new-account email"]);
+    assert.equal(inputsFor(calls, CREATE_USER).us01_username, "hr.abcc.2");
+    assert.equal(result.username, "hr.abcc.2");
+    assert.equal(sent[0].username, "hr.abcc.2");
+    assert.equal(sent[0].to, "second@abcc.example");
+    assert.equal(callTo(calls, RESET), undefined, "the first account's password is not touched");
+  });
+
+  test("the next account takes the first number the company has not used", async () => {
+    const { pool, calls, deps } = harness({ answers: { [HR_BY_COMPANY]: [hrRow(), hrRow({ us01_user_id: "10", us01_username: "hr.abcc.2" })] } });
+
+    await HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person }, deps);
+
+    assert.equal(inputsFor(calls, CREATE_USER).us01_username, "hr.abcc.3");
+  });
+
+  test("asks for the company's accounts as the caller, before anything is begun", async () => {
+    const { pool, calls, log, deps } = firstAccount();
+
+    await HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person }, deps);
+
+    assert.equal(inputsFor(calls, HR_BY_COMPANY).employer_id, "5");
+    assert.equal(inputsFor(calls, HR_BY_COMPANY).us01_user_id, ADMIN_ID);
+    assert.ok(calls.findIndex((call) => call.procedure === HR_BY_COMPANY) < calls.findIndex((call) => call.procedure === CREATE_USER));
+    assert.equal(log[0], "begin");
   });
 
   // sec.us01_usp_ins_users answers 50035 and 50036 for everybody; the general
@@ -199,7 +235,7 @@ describe("HrAccountService.createHrAccount", () => {
     [50035, "The username hr.abcc is already taken by another account"],
   ])
     test(`${number} from the user insert rolls back and is 409 "${message}", with no email`, async () => {
-      const { pool, log, deps } = harness({
+      const { pool, log, deps } = firstAccount({
         answers: {
           [CREATE_USER]: () => {
             throw Object.assign(new Error("raw"), { number });
@@ -214,9 +250,31 @@ describe("HrAccountService.createHrAccount", () => {
       assert.deepEqual(log, ["begin", CREATE_USER, "rollback"]);
     });
 
+  // The procedure does not check the email: an email another account holds meets the unique index, and the
+  // database answers 2601 with the index's name, not 50036. Found 2026-11-06 with hr.phillife.2's email.
+  for (const [index, message] of [
+    ["uq_email", "That email address already belongs to another account"],
+    ["uq_username", "The username hr.abcc is already taken by another account"],
+  ])
+    test(`a duplicate on the ${index} index (2601) is the same 409 "${message}", rolled back, with no email`, async () => {
+      const { pool, log, deps } = firstAccount({
+        answers: {
+          [CREATE_USER]: () => {
+            throw Object.assign(new Error(`Cannot insert duplicate key row in object 'sec.us01_users' with unique index '${index}'.`), { number: 2601 });
+          },
+        },
+      });
+
+      await assert.rejects(
+        () => HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person }, deps),
+        (error) => error.statusCode === 409 && error.message === message,
+      );
+      assert.deepEqual(log, ["begin", CREATE_USER, "rollback"]);
+    });
+
   test("any other failure rolls back and is passed on unchanged", async () => {
     const failure = Object.assign(new Error("raw"), { number: 50197 });
-    const { pool, log, deps } = harness({
+    const { pool, log, deps } = firstAccount({
       answers: {
         [MAP_HR]: () => {
           throw failure;
@@ -234,7 +292,7 @@ describe("HrAccountService.resendHrCredentials", () => {
   test("sends first, then stores the password, then ends the sessions", async () => {
     const { pool, calls, log, deps } = harness();
 
-    const result = await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", deps);
+    const result = await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", "9", deps);
 
     assert.equal(log[0], "credentials email");
     assert.ok(callTo(calls, RESET), "the password was not stored");
@@ -245,7 +303,7 @@ describe("HrAccountService.resendHrCredentials", () => {
   test("the email links to APP_URL itself and names PhilLife as the issuer", async () => {
     const { pool, sent, deps } = harness();
 
-    await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", deps);
+    await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", "9", deps);
 
     assert.equal(sent[0].loginUrl, config.appUrl);
     assert.equal(sent[0].issuedBy, "PhilLife");
@@ -260,7 +318,7 @@ describe("HrAccountService.resendHrCredentials", () => {
 
     await silently(() =>
       assert.rejects(
-        () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", deps),
+        () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", "9", deps),
         (error) => error.statusCode === 502 && /nothing was changed/.test(error.message),
       ),
     );
@@ -272,10 +330,40 @@ describe("HrAccountService.resendHrCredentials", () => {
     const { pool, log, deps } = harness({ answers: { [HR_BY_COMPANY]: [] } });
 
     await assert.rejects(
-      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", deps),
-      (error) => error.statusCode === 404 && error.message === "This company has no HR account yet",
+      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", "9", deps),
+      (error) => error.statusCode === 404 && error.message === "HR account not found",
     );
     assert.deepEqual(log, []);
+  });
+
+  // The account is named, and found among this company's own: an id of someone else's account is not reissued here.
+  test("with several accounts, only the one named gets a new password", async () => {
+    const accounts = [hrRow(), hrRow({ us01_user_id: "10", us01_username: "hr.abcc.2", us01_email_address: "second@abcc.example" })];
+    const { pool, calls, sent, log, deps } = harness({ answers: { [HR_BY_COMPANY]: accounts } });
+
+    const result = await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", "10", deps);
+
+    assert.deepEqual(result, { email_address: "second@abcc.example" });
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].to, "second@abcc.example");
+    assert.equal(sent[0].username, "hr.abcc.2");
+    assert.equal(inputsFor(calls, RESET).us01_user_id, "10");
+    assert.equal(log.at(-1), "end sessions 10");
+    assert.ok(!log.includes("end sessions 9"), "the other account stays signed in");
+  });
+
+  test("an account that is not one of this company's is 404, and nothing is sent", async () => {
+    const { pool, calls, log, deps } = harness();
+
+    for (const userId of ["77", "abc", undefined]) {
+      await assert.rejects(
+        () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", userId, deps),
+        (error) => error.statusCode === 404 && error.message === "HR account not found",
+        String(userId),
+      );
+    }
+    assert.deepEqual(log, []);
+    assert.equal(callTo(calls, RESET), undefined);
   });
 
   // resetPassword only touches an active account, so a deactivated one would
@@ -284,7 +372,7 @@ describe("HrAccountService.resendHrCredentials", () => {
     const { pool, log, deps } = harness({ answers: { [HR_BY_COMPANY]: [hrRow({ us01_is_active: false })] } });
 
     await assert.rejects(
-      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", deps),
+      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", "9", deps),
       (error) => error.statusCode === 409 && /deactivated/.test(error.message),
     );
     assert.deepEqual(log, []);
@@ -294,7 +382,7 @@ describe("HrAccountService.resendHrCredentials", () => {
     const { pool, deps } = harness({ answers: { [COMPANY]: [] } });
 
     await assert.rejects(
-      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "99", deps),
+      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "99", "9", deps),
       (error) => error.statusCode === 404 && error.message === "Company not found",
     );
   });

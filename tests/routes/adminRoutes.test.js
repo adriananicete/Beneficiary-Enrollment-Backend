@@ -315,8 +315,8 @@ describe("the schedule routes", () => {
   });
 });
 
-// The company's one HR account, DBA request 24, branch 4. The Administrator
-// only.
+// The company's HR accounts (a company may have several), DBA request 24, branch 4. The
+// Administrator only.
 describe("the HR account routes", () => {
   test("POST /companies/:employer_id/hr-account checks the id, then the body", async () => {
     const controllers = await import("../../src/controllers/companyController.js");
@@ -333,14 +333,24 @@ describe("the HR account routes", () => {
   });
 
   // It mails a password, as HR's employee resend does, and shares its limit.
-  test("POST …/hr-account/resend-credentials is rate limited", async () => {
+  test("POST …/hr-account/:user_id/resend-credentials names the account, and is rate limited", async () => {
     const controllers = await import("../../src/controllers/companyController.js");
     const { credentialsResendLimiter } = await import("../../src/middlewares/rateLimiter.js");
-    const handlers = handlersFor("post", "/companies/:employer_id/hr-account/resend-credentials");
+    const handlers = handlersFor("post", "/companies/:employer_id/hr-account/:user_id/resend-credentials");
 
     assert.equal(handlers[0], verifyToken);
-    assert.equal(handlers[3], credentialsResendLimiter);
+    assert.equal(handlers.length, 6, "token, role, company id, account id, limiter, controller");
+    assert.equal(handlers[4], credentialsResendLimiter);
     assert.equal(handlers.at(-1), controllers.resendHrCredentials);
+
+    // an account id that is not a number is 404 before anything is sent
+    let refused;
+    handlers[3]({ params: { user_id: "abc" } }, {}, (error) => (refused = error));
+    assert.equal(refused?.statusCode, 404);
+    assert.equal(refused?.message, "HR account not found");
+    let passed = "not called";
+    handlers[3]({ params: { user_id: "10" } }, {}, (error) => (passed = error));
+    assert.equal(passed, undefined);
     assert.equal(roleAnswer(handlers, "Administrator"), "passed");
     assert.equal(roleAnswer(handlers, "HR"), 403);
     assert.equal(roleAnswer(handlers, "Employee"), 403);

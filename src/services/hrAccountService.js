@@ -8,28 +8,27 @@ import { sendCredentialsEmail, sendHrAccountEmail } from "./emailService.js";
 import { endUserSessions } from "../realtime/realtime.js";
 import { HR_ROLE_ID } from "../utils/constants.js";
 import { AppError } from "../utils/AppError.js";
+import { hrUsernameFor } from "../utils/hrUsername.js";
+import { sqlNumberOf } from "../utils/sqlErrorMap.js";
 
-// A company's one HR account, created and reissued by the Administrator.
-// Branch 4 of md/COMPANY-ONBOARDING-DECISIONS.md, on DBA request 24.
+// A company's HR accounts, created and reissued by the Administrator. A company
+// may have several (the procedures allowed it from 2026-11-06). Branch 4 of
+// md/COMPANY-ONBOARDING-DECISIONS.md, on DBA request 24.
 //
 // HR signs in at the site's root, APP_URL with no path (Adrian, 2026-10-14);
 // employees sign in at /employee-login. Each environment's APP_URL supplies
 // the host, so nothing here names one.
 
-// The username the design gives every HR account: hr. and the company code in
-// lower case, as hr.coforge and hr.hcl already are. The code is letters,
-// digits and hyphens (validateCompany), so this needs no escaping.
-export const hrUsernameFor = (companyCode) => `hr.${companyCode.toLowerCase()}`;
+export { hrUsernameFor };
 
 // The same temporary password the enrollment and the employee resend issue.
 const newTemporaryPassword = () => crypto.randomBytes(9).toString("base64").slice(0, 12);
 
-const sqlNumber = (error) => error?.number ?? error?.originalError?.number;
-
 // sec.us01_usp_ins_users answers these two for everybody, and the general map
-// words 50035 for an employee id. On this path they mean something else.
+// words 50035 for an employee id. On this path they mean something else. An email or username it lets through to
+// the unique index (2601, 2627) is read as the same two.
 const asAccountConflict = (error, username) => {
-  const number = sqlNumber(error);
+  const number = sqlNumberOf(error);
 
   if (number === 50035)
     return new AppError(`The username ${username} is already taken by another account`, 409);
@@ -59,11 +58,9 @@ const createHrAccount = async (pool, adminId, employerId, person, deps = default
   const company = await EmployerAdminModel.getCompanyById(pool, adminId, employerId);
   if (!company) throw new AppError("Company not found", 404);
 
-  // The procedure refuses this too (50197). Asked first so that nothing is
-  // hashed, opened or rolled back for a request that cannot succeed.
-  if (company.hr_user_id) throw new AppError("This company already has an HR account", 409);
-
-  const username = hrUsernameFor(company.company_code);
+  // The first account is hr.<code>; each further one takes the next number its company has not used.
+  const existing = await EmployerAdminModel.getHrAccounts(pool, adminId, employerId);
+  const username = hrUsernameFor(company.company_code, existing.map((account) => account.us01_username));
   const password = deps.newTemporaryPassword();
   const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -124,16 +121,18 @@ const createHrAccount = async (pool, adminId, employerId, person, deps = default
   };
 };
 
-// A new temporary password for the company's HR account. Sends first and
+// A new temporary password for one of the company's HR accounts. Sends first and
 // writes after, the order of adminController.resendCredentials and for its
 // reason: the email is the only copy of the password, so a failed send must
 // leave the old one working. Then ends the account's sessions and sockets.
-const resendHrCredentials = async (pool, adminId, employerId, deps = defaults) => {
+const resendHrCredentials = async (pool, adminId, employerId, hrUserId, deps = defaults) => {
   const company = await EmployerAdminModel.getCompanyById(pool, adminId, employerId);
   if (!company) throw new AppError("Company not found", 404);
 
-  const hr = await EmployerAdminModel.getHrAccount(pool, adminId, employerId);
-  if (!hr) throw new AppError("This company has no HR account yet", 404);
+  // Found among this company's own accounts, so an id of another company's account, or of anybody else, is not reissued here.
+  const accounts = await EmployerAdminModel.getHrAccounts(pool, adminId, employerId);
+  const hr = accounts.find((account) => String(account.us01_user_id) === String(hrUserId));
+  if (!hr) throw new AppError("HR account not found", 404);
 
   // resetPassword only touches an active account. Refused before the send, so
   // nobody is mailed a password that would never be stored.
