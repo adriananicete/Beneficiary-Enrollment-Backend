@@ -176,6 +176,25 @@ const updateUserRecord = async (pool, userData) => {
   return result.recordset[0];
 };
 
+// An HR person enrolling themselves has an account already. This links it to the client record the enrollment just made
+// (users.client_id) instead of making a second account, for the active HR account of that company whose email is the
+// invitation's. Run inside the enrollment's transaction.
+//
+// sec.us01_usp_link_hr_client, tried 2026-11-06, answers ONE row whatever happened: `us01_user_id` is the HR account's id
+// when there is one, and NULL when no HR account of this company has that email. And an HR account already linked to
+// another client record answers its id too, and KEEPS the older link, so a caller that trusts the id alone would leave
+// the new enrollment with no way to sign in. The caller reads the account back. Returns the id, or null.
+const linkHrClient = async (pool, { clientId, emailAddress, employerId, linkedBy }) => {
+    const result = await pool.request()
+    .input('client_id', sql.BigInt, clientId)
+    .input('email_address', sql.VarChar(150), emailAddress)
+    .input('employer_id', sql.BigInt, employerId)
+    .input('linked_by', sql.VarChar(50), linkedBy)
+    .execute('sec.us01_usp_link_hr_client');
+
+    return result.recordset[0]?.us01_user_id ?? null;
+};
+
 const checkUsernameExists = async (pool, username) => {
     const result = await pool.request()
     .input('username', sql.NVarChar, username)
@@ -195,6 +214,7 @@ export default {
     endSessions,
     createSession,
     checkUsernameExists,
+    linkHrClient,
     findUserByClientId,
     updateUserRecord,
     resetPassword

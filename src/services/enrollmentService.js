@@ -11,7 +11,7 @@ import InvitationModel from "../models/invitationModel.js";
 import SignatureModel from "../models/signatureModel.js";
 import bcrypt from "bcrypt";
 import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
-import { sendConfirmationEmail } from "./emailService.js";
+import { sendConfirmationEmail, sendHrEnrollmentEmail } from "./emailService.js";
 import { autoCertificateFor } from "./certificateService.js";
 import { AppError } from "../utils/AppError.js";
 import { ageAtLastBirthday } from "../utils/validateBirthdate.js";
@@ -64,6 +64,56 @@ export const assignedClassAndAffiliate = (invitation, body, activeClasses) => {
     throw new AppError("That classification is not available for your company", 400);
 
   return { classification_id: body.classification_id, affiliate_id };
+};
+
+// The account an enrollment gives its person, made inside the enrollment's transaction.
+//
+// An HR person of the invited company who enrolls themselves has an account already: it is linked to the client record
+// just made (sec.us01_usp_link_hr_client), no second account is created, and no password is issued. They sign in at the
+// HR login as always and see their enrollment under My Enrollment. Everybody else gets a new Employee account and a
+// temporary password. Exported so it can be tested without a transaction: it only needs something with `request()`.
+//
+// The procedure answers one row whatever happened (see UserModel.linkHrClient), and for an HR account that is already
+// linked to another client record it answers the account's id and keeps the older link. So the link is read back, and an
+// enrollment that would leave this one with no way to sign in is refused; the caller rolls the transaction back.
+export const accountFor = async (transaction, enrollmentData, clientId) => {
+  const hrUserId = await UserModel.linkHrClient(transaction, {
+    clientId,
+    emailAddress: String(enrollmentData.email_address).trim(),
+    employerId: enrollmentData.employer_id,
+    linkedBy: "system",
+  });
+
+  if (hrUserId) {
+    const linked = await UserModel.findUserById(transaction, hrUserId);
+
+    if (String(linked?.client_id) !== String(clientId))
+      throw new AppError("You are already enrolled with your HR account. Sign in as HR and open My Enrollment to see your enrollment.", 409);
+
+    return { hrUsername: linked.us01_username };
+  }
+
+  const tempPassword = crypto.randomBytes(9).toString("base64").slice(0, 12);
+  const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+  const userId = await UserModel.createUser(transaction, {
+    us01_username: enrollmentData.employee_id_number,
+    us01_password: hashedPassword,
+    us01_first_name: enrollmentData.first_name,
+    us01_middle_name: enrollmentData.middle_name,
+    us01_last_name: enrollmentData.last_name,
+    us01_must_change_password: 1,
+    us01_email_address: enrollmentData.email_address,
+    client_id: clientId,
+    us01_created_by: "system",
+  });
+
+  await UserModel.assignRole(transaction, userId, {
+    us02_role_id: EMPLOYEE_ROLE_ID,
+    us04_assigned_by: "system",
+  });
+
+  return { tempPassword };
 };
 
 // Takes the pool, like every other service since PR #102. The controller
@@ -197,25 +247,7 @@ const createEnrollment = async (pool, enrollmentData) => {
       created_by: "system",
     });
 
-    const tempPassword = crypto.randomBytes(9).toString("base64").slice(0, 12);
-    const hashedPassword = await bcrypt.hash(tempPassword, 10);
-
-    const userId = await UserModel.createUser(transaction, {
-      us01_username: enrollmentData.employee_id_number,
-      us01_password: hashedPassword,
-      us01_first_name: enrollmentData.first_name,
-      us01_middle_name: enrollmentData.middle_name,
-      us01_last_name: enrollmentData.last_name,
-      us01_must_change_password: 1,
-      us01_email_address: enrollmentData.email_address,
-      client_id: clientId,
-      us01_created_by: "system",
-    });
-
-    await UserModel.assignRole(transaction, userId, {
-      us02_role_id: EMPLOYEE_ROLE_ID,
-      us04_assigned_by: "system",
-    });
+    const account = await accountFor(transaction, enrollmentData, clientId);
 
     await transaction.commit();
     committed = true;
@@ -228,15 +260,27 @@ const createEnrollment = async (pool, enrollmentData) => {
     const certificate = await autoCertificateFor(pool, clientId);
 
     try {
-      await sendConfirmationEmail({
-        to: enrollmentData.email_address,
-        policyNo: policyNo,
-        firstName: enrollmentData.first_name,
-        username: enrollmentData.employee_id_number,
-        password: tempPassword,
-        loginUrl: `${config.appUrl}/employee-login`,
-        attachments: certificate ? [certificate] : [],
-      });
+      // An HR person is told their login is the same HR login (the site's root, as in the HR account email), with no
+      // password; anyone else gets their new account's.
+      if (account.hrUsername)
+        await sendHrEnrollmentEmail({
+          to: enrollmentData.email_address,
+          policyNo: policyNo,
+          firstName: enrollmentData.first_name,
+          username: account.hrUsername,
+          loginUrl: config.appUrl,
+          attachments: certificate ? [certificate] : [],
+        });
+      else
+        await sendConfirmationEmail({
+          to: enrollmentData.email_address,
+          policyNo: policyNo,
+          firstName: enrollmentData.first_name,
+          username: enrollmentData.employee_id_number,
+          password: account.tempPassword,
+          loginUrl: `${config.appUrl}/employee-login`,
+          attachments: certificate ? [certificate] : [],
+        });
     } catch (error) {
       console.error("Confirmation email failed:", {
         client_id: clientId,

@@ -128,6 +128,19 @@ export const getEnrollmentDetails = async (req, res, next) => {
   }
 };
 
+// An HR person who enrolled themselves has no employee account: their client record is linked to their HR account, which
+// "resend credentials" would reset and send a new temporary password for. They sign in as HR, as always, and an
+// Administrator reissues that password from the company's page.
+export const refuseHrAccount = async (pool, user) => {
+  const account = await UserModel.findUserById(pool, user.us01_user_id);
+
+  if (account?.us02_role_name === ADMIN)
+    throw new AppError(
+      "This person signs in with their HR account, so there is no separate employee password to resend. An Administrator can reissue the HR account's password from the company's page.",
+      409,
+    );
+};
+
 // HR reissues an employee's credentials. The employee cannot start this
 // themselves on purpose: the failure that matters is a wrong or unreachable
 // email address, and a self-service page would send the message to the same
@@ -146,6 +159,8 @@ export const resendCredentials = async (req, res, next) => {
     const user = await UserModel.findUserByClientId(pool, client_id);
     if (!user)
       throw new AppError("No active account found for this employee", 404);
+
+    await refuseHrAccount(pool, user);
 
     if (!user.us01_email_address)
       throw new AppError(
