@@ -438,8 +438,8 @@ export const sqlErrorMap = {
     // mapped a user that is not an active HR account: the role is assigned a
     // line earlier in the same transaction, so this is a fault on our side.
     50196: { statusCode: 500, message: 'The HR account could not be set up. Please contact PhilLife.' },
-    // hrAccountService asks first and answers the same sentence, so this is a
-    // race between two creations.
+    // The procedure stopped raising this on 2026-11-06, when a company was allowed several
+    // HR accounts. Kept so that an older copy of the procedure still answers in words.
     50197: { statusCode: 409, message: 'This company already has an HR account' },
 
     // ── Affiliates, DBA request 25, read 2026-10-15 before delivery ──
@@ -490,3 +490,23 @@ export const sqlErrorMap = {
     // the one it can name into the 50152 sentence.
     2601: {statusCode: 409, message: 'Duplicate record'},
 }
+
+// The number to look an error up by. 2627 and 2601 name no field, so they are worded as "Duplicate record" above. The
+// two unique indexes on sec.us01_users are named in the database's message, though, and stand for what the procedures
+// answer (50036, 50035) when they check first. sec.us01_usp_ins_users does not check the email: an enrollment, or an
+// HR account, with an email another account has met the raw 2601 from uq_email, and the person was told "Duplicate
+// record" with no field. Any other error keeps its own number.
+// uq_email may become uq_email_employee and uq_email_staff (one email on an HR account and on an employee account).
+const UNIQUE_INDEX_NUMBERS = [
+  [/'uq_email(_employee|_staff)?'/i, 50036],
+  [/'uq_username'/i, 50035],
+];
+
+export const sqlNumberOf = (error) => {
+  const number = error?.number ?? error?.originalError?.number;
+  if (number !== 2601 && number !== 2627) return number;
+
+  const message = String(error?.message ?? error?.originalError?.message ?? "");
+
+  return UNIQUE_INDEX_NUMBERS.find(([pattern]) => pattern.test(message))?.[1] ?? number;
+};

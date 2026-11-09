@@ -1,7 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { sqlErrorMap } from "../../src/utils/sqlErrorMap.js";
+import { sqlErrorMap, sqlNumberOf } from "../../src/utils/sqlErrorMap.js";
 
 // Each of these was mapped because somebody met it as a bare "Server Error".
 // The status code is the part worth pinning: it decides whether the frontend
@@ -302,4 +302,51 @@ describe("the numbers deliberately left unmapped", () => {
       assert.equal(sqlErrorMap[number], undefined);
     });
   }
+});
+
+// 2601 and 2627 name no field. The two unique indexes of sec.us01_users are named in the database's own message, and
+// stand for the procedures' numbers: sec.us01_usp_ins_users does not check the email first, so an email that another
+// account (an HR account, say) already holds reached the person as "Duplicate record".
+describe("sqlNumberOf", () => {
+  const uniqueIndex = (number, index) => ({
+    number,
+    message: `Cannot insert duplicate key row in object 'sec.us01_users' with unique index '${index}'. The duplicate key value is (x).`,
+  });
+
+  test("a duplicate email, on the index, is 50036 whichever way SQL Server words it", () => {
+    assert.equal(sqlNumberOf(uniqueIndex(2601, "uq_email")), 50036);
+    assert.equal(sqlNumberOf({ number: 2627, message: "Violation of UNIQUE KEY constraint 'uq_email'. Cannot insert duplicate key in object 'sec.us01_users'." }), 50036);
+    assert.equal(sqlNumberOf({ originalError: uniqueIndex(2601, "uq_email") }), 50036, "one level down");
+  });
+
+  // An HR account and an employee account may share an email: the one index would become one for each kind.
+  test("the email is still the email under the two names it may be split into", () => {
+    assert.equal(sqlNumberOf(uniqueIndex(2601, "uq_email_employee")), 50036);
+    assert.equal(sqlNumberOf(uniqueIndex(2601, "uq_email_staff")), 50036);
+    assert.equal(sqlNumberOf(uniqueIndex(2601, "uq_emailing_list")), 2601, "an index that merely starts the same way, and is not quoted whole, is not the email");
+  });
+
+  test("a duplicate username is 50035", () => {
+    assert.equal(sqlNumberOf(uniqueIndex(2601, "uq_username")), 50035);
+  });
+
+  test("any other unique index stays the generic number, so the claim indexes and the rest are as they were", () => {
+    assert.equal(sqlNumberOf(uniqueIndex(2601, "UX_claims_open")), 2601);
+    assert.equal(sqlNumberOf(uniqueIndex(2627, "UQ__clients__063B77BE284B8A51")), 2627);
+    assert.equal(sqlNumberOf({ number: 2601 }), 2601, "no message at all");
+  });
+
+  test("only the unique-violation numbers are read by name; every other error keeps its number", () => {
+    assert.equal(sqlNumberOf({ number: 50036, message: "'uq_email'" }), 50036);
+    assert.equal(sqlNumberOf({ number: 50007, message: "'uq_email'" }), 50007, "the name in a message of another error means nothing");
+    assert.equal(sqlNumberOf({ number: 547, message: "'uq_username'" }), 547);
+    assert.equal(sqlNumberOf(new Error("connect ETIMEDOUT")), undefined);
+    assert.equal(sqlNumberOf(null), undefined);
+  });
+
+  test("so a duplicate email is worded as the email, and 'Duplicate record' is left for the unnamed ones", () => {
+    assert.equal(sqlErrorMap[sqlNumberOf(uniqueIndex(2601, "uq_email"))].message, "Email address already registered");
+    assert.equal(sqlErrorMap[sqlNumberOf(uniqueIndex(2601, "uq_username"))].message, "Employee ID number already registered");
+    assert.equal(sqlErrorMap[sqlNumberOf(uniqueIndex(2601, "some_other_index"))].message, "Duplicate record");
+  });
 });

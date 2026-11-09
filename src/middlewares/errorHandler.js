@@ -1,4 +1,4 @@
-import { sqlErrorMap } from "../utils/sqlErrorMap.js";
+import { sqlErrorMap, sqlNumberOf } from "../utils/sqlErrorMap.js";
 import { AppError } from "../utils/AppError.js";
 
 // Errors a library raises before our code runs, carrying an HTTP status of
@@ -31,8 +31,7 @@ export const errorHandler = (err, req, res, next) => {
   let statusCode;
   let errors;
 
-  const number = err?.number ?? err?.originalError?.number;
-  const mapped = sqlErrorMap[number];
+  const mapped = sqlErrorMap[sqlNumberOf(err)];
 
   console.error("ErrorHandler:", err);
 

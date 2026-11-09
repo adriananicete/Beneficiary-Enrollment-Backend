@@ -208,3 +208,32 @@ describe("errorHandler: an errors map", () => {
     assert.equal("errors" in new AppError("Nope", 400), false);
   });
 });
+
+describe("errorHandler: a unique index it can name", () => {
+  const duplicate = (index, number = 2601) => ({
+    number,
+    message: `Cannot insert duplicate key row in object 'sec.us01_users' with unique index '${index}'. The duplicate key value is (secret@example.test).`,
+  });
+
+  test("a duplicate email says so, and does not echo the value", () => {
+    const res = handle(duplicate("uq_email"));
+
+    assert.equal(res.statusCode, 409);
+    assert.deepEqual(res.body, { success: false, message: "Email address already registered" });
+  });
+
+  test("a duplicate username (an employee ID) says so", () => {
+    const res = handle(duplicate("uq_username", 2627));
+
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.message, "Employee ID number already registered");
+  });
+
+  test("a unique index it cannot name is still just a duplicate record", () => {
+    const res = handle(duplicate("UX_claims_open"));
+
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.message, "Duplicate record");
+    assert.equal(JSON.stringify(res.body).includes("secret@example.test"), false);
+  });
+});
