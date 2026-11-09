@@ -3,7 +3,8 @@ import { fetchBookedList } from "./ebamClient.js";
 
 // The companies the other system has booked, as the Administrator's Companies tab shows them. Each record
 // there is a policy: a company with two policies appears twice, with a policy number each, and BES holds
-// one policy number per company, so a booked record is matched to a BES company by that number.
+// one policy number per company, so a booked record is matched to a BES company by that number, or else by
+// the company's name (see markSetUp).
 //
 // Only what a screen uses is kept: what identifies the company and its policy, what the New company form starts
 // with (a phone number, the age limit), and the contact person the HR account form starts with.
@@ -15,14 +16,6 @@ const PAGE_SIZE = 100;
 const MAX_PAGES = 50;
 const TTL_MS = 5 * 60 * 1000;
 
-// The kind of plan, from the front of the policy number ("G-TLI-14-052"). The templates are those of ref_plans.
-const PLANS = {
-  "G-TLI": "Group Term Life",
-  "G-CLI": "Group Credit Life",
-  "G-CBP": "Group Comprehensive Benefits",
-  "G-ADD": "Group Accidental Death and Disability",
-};
-
 const text = (value) => {
   const trimmed = typeof value === "string" ? value.trim() : "";
 
@@ -31,7 +24,32 @@ const text = (value) => {
 
 const same = (value) => String(value ?? "").trim().replace(/\s+/g, " ").toUpperCase();
 
-const day = (value) => (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : null);
+// The effective date is the date the other system gives: "2026-10-21T16:00:00.000Z" is 2026-10-21. Nothing is
+// converted, so the screen shows that day whatever the viewer's time zone.
+const dateOf = (value) => {
+  const date = /^\d{4}-\d{2}-\d{2}/.exec(text(value) ?? "")?.[0];
+
+  return date && Number.isFinite(Date.parse(date)) ? date : null;
+};
+
+// The other system sends no expiry date: a policy runs for a year, so it expires one year after its effective date
+// (2026-10-21 -> 2027-10-21). 29 February becomes 28 February in a year that has none.
+const oneYearAfter = (date) => {
+  if (!date) return null;
+
+  const [year, month, dayOfMonth] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year + 1, month - 1, dayOfMonth));
+  if (next.getUTCMonth() !== month - 1) next.setUTCDate(0);
+
+  return next.toISOString().slice(0, 10);
+};
+
+// A phone number, or null when the field holds only what the other system fills in by itself ("+63", the country code).
+const phoneOf = (value) => {
+  const number = text(value);
+
+  return number && number.replace(/\D/g, "").length > 4 ? number : null;
+};
 
 const whole = (value) => (Number.isInteger(value) ? value : null);
 
@@ -45,41 +63,39 @@ const SENIOR_BRACKETS = [
 const maximumAgeOf = (application) => SENIOR_BRACKETS.find(([flag]) => application[flag] === true)?.[1] ?? whole(application.maximum_age);
 
 // The person the other system names as the company's contact, for the HR account form to start with. Only the
-// route that asks for one company passes it on. The record's own `email` is read when the person has none.
+// route that asks for one company passes it on.
 const contactOf = (application) => {
   const person = application.contact_person ?? {};
   const contact = {
     first_name: text(person.firstname),
-    middle_name: text(person.mi),
+    middle_name: text(person.middlename),
     last_name: text(person.lastname),
-    email: text(person.email) ?? text(application.email),
+    email: text(person.email),
   };
 
   return Object.values(contact).some(Boolean) ? contact : null;
 };
 
-const templateOf = (policyNo) => /^(G-[A-Z]{2,4})(?:-|$)/.exec(policyNo ?? "")?.[1] ?? null;
-
-// One record of the other system as the tab keeps it, or null when it names no company.
+// One record of the other system as the tab keeps it, or null when it names no company. The plan is the name the
+// other system gives it ("Group Term Life Insurance Plan (GYRTP)"), as it gives it.
 export const bookedCompanyOf = (application) => {
   const name = text(application?.group_name);
   if (!name || application.application_id === undefined || application.application_id === null) return null;
 
-  const policyNo = text(application.policy_no) ?? text(application.policy_number);
-  const template = templateOf(policyNo);
+  const effective = dateOf(application.effective_date);
 
   return {
     application_id: String(application.application_id),
     company_name: name,
-    policy_no: policyNo,
-    plan_template: template,
-    plan: template ? (PLANS[template] ?? null) : null,
-    effective_date: day(application.effective_date),
+    policy_no: text(application.policy_no),
+    plan: text(application.plan?.name),
+    effective_date: effective,
+    expiry_date: oneYearAfter(effective),
     business_address: text(application.business_address),
     business_nature: text(application.business_nature?.name),
     number_of_lives: Number.isFinite(application.number_of_lives) ? application.number_of_lives : null,
     maximum_age: maximumAgeOf(application),
-    phone: text(application.company_contact?.company_telephone) ?? text(application.company_contact?.company_mobile),
+    phone: phoneOf(application.company_contact?.company_telephone) ?? phoneOf(application.company_contact?.company_mobile),
     contact: contactOf(application),
   };
 };
@@ -98,8 +114,9 @@ export const loadBookedCompanies = async ({ fetchPage = fetchBookedList } = {}) 
   const records = [...first.data];
   const last = Math.min(Number(first.pagination?.last_page) || 1, MAX_PAGES);
 
-  for (let page = 2; page <= last; page++) {
-    const next = await fetchPage({ page, limit: PAGE_SIZE });
+  // The first page says how many there are, so the rest are asked for together: one wait instead of one per page.
+  const rest = await Promise.all(Array.from({ length: last - 1 }, (_, index) => fetchPage({ page: index + 2, limit: PAGE_SIZE })));
+  for (const next of rest) {
     if (!Array.isArray(next?.data)) throw new AppError("The other system's answer is not in the form expected.", 502);
 
     records.push(...next.data);
@@ -139,9 +156,10 @@ export const forgetBookedCompanies = () => {
   kept = null;
 };
 
-// Each booked record with the BES company it is, or null. By policy number when it has one: the same name
-// with another policy is another policy. A record with no policy number is matched by name, and only when
-// one BES company has that name.
+// Each booked record with the BES company it is, or null. By policy number first. A record whose number no BES
+// company holds is that company's other policy when one BES company has its name: BES holds one policy number per
+// company and makes the company code from the name, so such a record could not be added as a company of its own.
+// Two BES companies of one name are not guessed between.
 export const markSetUp = (booked, companies) => {
   const byPolicy = new Map();
   const byName = new Map();
@@ -154,7 +172,7 @@ export const markSetUp = (booked, companies) => {
   return booked.map((entry) => {
     let found = entry.policy_no ? byPolicy.get(same(entry.policy_no)) : undefined;
 
-    if (!found && !entry.policy_no) {
+    if (!found) {
       const named = byName.get(same(entry.company_name));
       if (named?.length === 1) [found] = named;
     }

@@ -14,18 +14,17 @@ import {
 const { createGetBookedCompanies } = await import("../../src/controllers/bookedCompanyController.js");
 const { default: adminRoutes } = await import("../../src/routes/adminRoutes.js");
 
-// A record of the other system with only what matters here, and a contact person.
+// A record as the other system sends it, with only what matters here: a plan, and a contact person with an email only.
 const application = (overrides = {}) => ({
   application_id: 1375,
   group_name: "  BLOOM WITH LOOMS LOGISTIC, INC. ",
   policy_no: "G-CBP-14-045",
-  policy_number: null,
-  effective_date: "2014-06-17T00:00:00.000Z",
+  plan: { id: 2, name: "Group Comprehensive Benefits Plan (Retirement) (GCBPR)", acronym: "GCBPR" },
+  effective_date: "2014-06-17T16:00:00.000Z",
   business_address: " 12 Mabini St., Pasig City ",
-  business_nature: { id: 3, name: "Logistics", sub_nature: {} },
+  business_nature: { name: "Logistics" },
   number_of_lives: 240,
-  email: "contact@bloom.example",
-  contact_person: { full_name: "Somebody" },
+  contact_person: { name: null, email: "contact@bloom.example", firstname: null, middlename: null, lastname: null },
   ...overrides,
 });
 
@@ -35,9 +34,9 @@ describe("bookedCompanyOf", () => {
       application_id: "1375",
       company_name: "BLOOM WITH LOOMS LOGISTIC, INC.",
       policy_no: "G-CBP-14-045",
-      plan_template: "G-CBP",
-      plan: "Group Comprehensive Benefits",
+      plan: "Group Comprehensive Benefits Plan (Retirement) (GCBPR)",
       effective_date: "2014-06-17",
+      expiry_date: "2015-06-17",
       business_address: "12 Mabini St., Pasig City",
       business_nature: "Logistics",
       number_of_lives: 240,
@@ -52,8 +51,7 @@ describe("bookedCompanyOf", () => {
       application({
         maximum_age: 65,
         company_contact: { company_telephone: " 02-8123-4567 ", company_mobile: "0917 000 0000" },
-        contact_person: { salutation: "Ms.", firstname: " Elena ", mi: "R", lastname: "Cruz", full_name: "Ms. Elena R Cruz", email: "elena@bloom.example" },
-        designation: "HR Manager",
+        contact_person: { name: "Ms. Elena R Cruz", salutation: "Ms.", firstname: " Elena ", middlename: "R", lastname: "Cruz", email: "elena@bloom.example", designation: "HR Manager" },
       }),
     );
 
@@ -66,6 +64,64 @@ describe("bookedCompanyOf", () => {
     const company = bookedCompanyOf(application({ company_contact: { company_telephone: null, company_mobile: "0917 000 0000" } }));
 
     assert.equal(company.phone, "0917 000 0000");
+  });
+
+  test("reads a record as the other system's sample shows it: middlename, a bare +63, the date as sent", () => {
+    const company = bookedCompanyOf({
+      application_id: 1410,
+      group_name: "Sample",
+      policy_no: "G-TLI-26-206",
+      product: { id: 2, name: "Group Term Life Insurance", acronym: "GYRT" },
+      plan: { id: 2, name: "Group Term Life Insurance Plan (GYRTP)", acronym: "GYRTP" },
+      status: { id: 7, name: "Booked" },
+      effective_date: "2026-10-21T16:00:00.000Z",
+      business_address: "Ayala Makati",
+      company_contact: { contact_number: null, company_mobile: "+63", company_telephone: null },
+      maximum_age: 65,
+      number_of_lives: 201,
+      business_nature: { name: "Manufacturing" },
+      contact_person: { name: "Mr. Johns D Does", email: "johns@sample.example", salutation: "Mr.", firstname: "Johns", middlename: "D", lastname: "Does", designation: "HR Manager", contact_number: "+63" },
+      borrower_age_66_70: null,
+      borrower_age_71_75: null,
+      borrower_age_76_80: null,
+    });
+
+    assert.equal(company.effective_date, "2026-10-21");
+    assert.equal(company.phone, null, "+63 alone is no number");
+    assert.equal(company.maximum_age, 65);
+    assert.equal(company.plan, "Group Term Life Insurance Plan (GYRTP)");
+    assert.deepEqual(company.contact, { first_name: "Johns", middle_name: "D", last_name: "Does", email: "johns@sample.example" });
+  });
+
+  test("the effective date is the date the other system gives, whatever the time of day, and is nothing when it is not a date", () => {
+    const dateOf = (effective_date) => bookedCompanyOf(application({ effective_date })).effective_date;
+
+    assert.equal(dateOf("2026-10-21T16:00:00.000Z"), "2026-10-21", "the sample as given: not moved to the 22nd");
+    assert.equal(dateOf("2014-06-17T00:00:00.000Z"), "2014-06-17");
+    assert.equal(dateOf("2026-10-22T15:59:59.999Z"), "2026-10-22");
+    assert.equal(dateOf("2026-10-22"), "2026-10-22");
+    assert.equal(dateOf(" 2026-10-21T16:00:00.000Z "), "2026-10-21", "trimmed, like the rest");
+    for (const bad of ["tomorrow", "2026-13-45T00:00:00Z", "", "  ", null, undefined, 20261021, {}]) assert.equal(dateOf(bad), null, JSON.stringify(bad));
+  });
+
+  test("the policy expires one year after its effective date, and has no expiry without one", () => {
+    const expiryOf = (effective_date) => bookedCompanyOf(application({ effective_date })).expiry_date;
+
+    assert.equal(expiryOf("2026-10-21T16:00:00.000Z"), "2027-10-21", "the sample");
+    assert.equal(expiryOf("2026-12-31T16:00:00.000Z"), "2027-12-31");
+    assert.equal(expiryOf("2014-06-17"), "2015-06-17");
+    assert.equal(expiryOf("2024-02-29"), "2025-02-28", "no 29 February in the next year");
+    assert.equal(expiryOf("2027-02-28"), "2028-02-28", "28 February stays the 28th even before a leap year");
+    assert.equal(expiryOf("2023-03-01"), "2024-03-01");
+    for (const none of [null, undefined, "", "tomorrow", "2026-13-45T00:00:00Z"]) assert.equal(expiryOf(none), null, String(none));
+  });
+
+  test("a phone of only the country code is nothing, and the next field is tried", () => {
+    const phoneOf = (company_contact) => bookedCompanyOf(application({ company_contact })).phone;
+
+    assert.equal(phoneOf({ company_telephone: "+63", company_mobile: "+63" }), null);
+    assert.equal(phoneOf({ company_telephone: "+63", company_mobile: "+63 917 123 4567" }), "+63 917 123 4567");
+    assert.equal(phoneOf({ company_telephone: "8123 4567" }), "8123 4567");
   });
 
   test("the age limit is the highest senior bracket the company chose, else the maximum age the record states", () => {
@@ -87,33 +143,36 @@ describe("bookedCompanyOf", () => {
     assert.equal(company.phone, null);
   });
 
-  test("a record with no contact person and no email has no contact", () => {
-    assert.equal(bookedCompanyOf(application({ email: null, contact_person: { full_name: "Somebody" } })).contact, null);
-    assert.equal(bookedCompanyOf(application({ email: "", contact_person: null })).contact, null);
+  test("a record whose contact person is all empty, or missing, has no contact", () => {
+    const empty = { name: null, email: null, salutation: null, firstname: null, middlename: null, lastname: null, designation: null, contact_number: null };
+
+    assert.equal(bookedCompanyOf(application({ contact_person: empty })).contact, null);
+    assert.equal(bookedCompanyOf(application({ contact_person: { ...empty, email: "  " } })).contact, null);
+    assert.equal(bookedCompanyOf(application({ contact_person: null })).contact, null);
   });
 
-  test("reads the plan from the front of the policy number", () => {
-    for (const [policy, plan] of [["G-TLI-14-052", "Group Term Life"], ["G-CLI-22-503", "Group Credit Life"], ["G-ADD-14-054", "Group Accidental Death and Disability"], ["G-XYZ-1-1", null]])
-      assert.equal(bookedCompanyOf(application({ policy_no: policy })).plan, plan, policy);
+  test("the plan is the name the other system gives it, with or without a policy number", () => {
+    const planOf = (overrides) => bookedCompanyOf(application(overrides)).plan;
+
+    assert.equal(planOf({ plan: { name: "  Students Group Personal Accident Plan (STUD GPAI) " } }), "Students Group Personal Accident Plan (STUD GPAI)");
+    assert.equal(planOf({ policy_no: null, plan: { name: "Students Group Term Life Plan (STUD GTLIP)" } }), "Students Group Term Life Plan (STUD GTLIP)");
+    assert.equal(planOf({ policy_no: "G-TMR-26-001", plan: { name: "Group Term Life Insurance Plan (GYRTP)" } }), "Group Term Life Insurance Plan (GYRTP)", "whatever the policy number begins with");
   });
 
-  test("a record with no policy number, or none that reads, has no plan", () => {
-    for (const policy of [null, "", "  ", "not a policy", "TLI-14-052"]) {
-      const company = bookedCompanyOf(application({ policy_no: policy }));
-
-      assert.equal(company.plan, null, String(policy));
-      assert.equal(company.plan_template, null);
-    }
+  test("a record with no plan, or a plan with no name, has no plan", () => {
+    for (const plan of [undefined, null, {}, { id: null, name: null, acronym: null }, { name: "  " }, "GYRTP"])
+      assert.equal(bookedCompanyOf(application({ plan })).plan, null, JSON.stringify(plan));
   });
 
-  test("falls back to policy_number when policy_no is empty", () => {
-    assert.equal(bookedCompanyOf(application({ policy_no: null, policy_number: "G-TLI-26-001" })).policy_no, "G-TLI-26-001");
+  test("a record with no policy number has none, and is not given another field's", () => {
+    for (const policy_no of [null, undefined, "", "  "]) assert.equal(bookedCompanyOf(application({ policy_no, policy_number: "G-TLI-26-001" })).policy_no, null, String(policy_no));
   });
 
   test("an empty or missing detail is null, a number of lives that is not a number too", () => {
     const company = bookedCompanyOf(application({ effective_date: null, business_address: "", business_nature: null, number_of_lives: null }));
 
     assert.equal(company.effective_date, null);
+    assert.equal(company.expiry_date, null);
     assert.equal(company.business_address, null);
     assert.equal(company.business_nature, null);
     assert.equal(company.number_of_lives, null);
@@ -127,9 +186,18 @@ describe("bookedCompanyOf", () => {
   });
 
   test("passes on only the contact person's name and email, not the rest of what the other system holds", () => {
-    const text = JSON.stringify(bookedCompanyOf(application({ designation: "HR Manager", contact_person_contact: { contact_person_mobile: "0917 111 1111" }, creator_email: "staff@gis.example" })));
+    const text = JSON.stringify(
+      bookedCompanyOf(
+        application({
+          contact_person: { name: "Mr. Somebody Else", email: "contact@bloom.example", firstname: "Some", middlename: null, lastname: "Body", designation: "HR Manager", contact_number: "0917 111 1111" },
+          coverage_type: { id: 32, name: "Level Ranking" },
+          amount_of_loans: { loans_amount: 5000000 },
+          creator_email: "staff@gis.example",
+        }),
+      ),
+    );
 
-    assert.equal(/somebody|hr manager|0917 111|staff@gis/i.test(text), false);
+    assert.equal(/mr\. somebody|hr manager|0917 111|level ranking|5000000|staff@gis/i.test(text), false);
   });
 });
 
@@ -174,8 +242,8 @@ describe("loadBookedCompanies", () => {
       fetchPage: pagesOf([
         application({ application_id: 5, group_name: "Acme Inc", policy_no: "G-TLI-1-1", effective_date: "2026-01-01T00:00:00Z" }),
         application({ application_id: 6, group_name: "Acme Inc", policy_no: "G-TLI-1-1", effective_date: "2026-01-01T00:00:00Z" }),
-        application({ application_id: 7, group_name: "Beta Inc", policy_no: null, policy_number: null }),
-        application({ application_id: 8, group_name: "Beta Inc", policy_no: null, policy_number: null }),
+        application({ application_id: 7, group_name: "Beta Inc", policy_no: null }),
+        application({ application_id: 8, group_name: "Beta Inc", policy_no: null }),
       ]),
     });
 
@@ -188,6 +256,24 @@ describe("loadBookedCompanies", () => {
 
     assert.equal(companies.length, 1);
     assert.equal(calls, 1);
+  });
+
+  test("asks for the pages after the first together, not one after another", async () => {
+    let running = 0;
+    let most = 0;
+    const companies = await loadBookedCompanies({
+      fetchPage: async ({ page }) => {
+        running++;
+        most = Math.max(most, running);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        running--;
+
+        return { data: [application({ application_id: page, group_name: `Company ${String(page).padStart(2, "0")}` })], pagination: { last_page: 4 } };
+      },
+    });
+
+    assert.equal(most, 3, "pages 2, 3 and 4 at once");
+    assert.deepEqual(companies.map((company) => company.application_id), ["1", "2", "3", "4"], "in page order whichever answers first");
   });
 
   test("never asks for more than 50 pages", async () => {
@@ -267,16 +353,31 @@ describe("markSetUp", () => {
     assert.deepEqual(marked.set_up, { employer_id: "5", company_code: "ANO", company_name: "Another Name" });
   });
 
-  test("the same name with another policy number is not set up", () => {
-    const [marked] = markSetUp([booked("Acme Holdings", "G-TLI-26-178")], [bes(5, "Acme Holdings", "G-TLI-26-177")]);
+  test("a company's other policy is that company: the same name with a number no BES company holds is set up", () => {
+    const company = bes(5, "1-PENTAGON CREDIT AND LENDING CORPORATION", "G-ADD-26-301", "1-PENTAGON");
+    const [added, other] = markSetUp(
+      [booked("1-PENTAGON CREDIT AND LENDING CORPORATION", "G-ADD-26-301"), booked("1-Pentagon  Credit and Lending Corporation", "G-CLI-20-505")],
+      [company],
+    );
 
-    assert.equal(marked.set_up, null);
+    const expected = { employer_id: "5", company_code: "1-PENTAGON", company_name: "1-PENTAGON CREDIT AND LENDING CORPORATION" };
+    assert.deepEqual(added.set_up, expected);
+    assert.deepEqual(other.set_up, expected, "the second policy is not a company still to add");
   });
 
-  test("a record with no policy number is matched by name, when exactly one BES company has it", () => {
+  test("a number a BES company holds is that company, whatever the name says, before the name is looked at", () => {
+    const [marked] = markSetUp([booked("Acme Holdings", "G-TLI-26-177")], [bes(5, "Acme Holdings", "G-TLI-26-178", "ACME"), bes(6, "Another Name", "G-TLI-26-177", "ANO")]);
+
+    assert.equal(marked.set_up.employer_id, "6");
+  });
+
+  test("a record is matched by name when it has no policy number, or its company has none, when exactly one BES company has the name", () => {
     assert.deepEqual(markSetUp([booked("Acme  Holdings", null)], [bes(5, "ACME HOLDINGS", "G-TLI-26-177")])[0].set_up, { employer_id: "5", company_code: "ACME", company_name: "ACME HOLDINGS" });
+    assert.equal(markSetUp([booked("Acme Holdings", "G-TLI-26-177")], [bes(5, "Acme Holdings", null)])[0].set_up?.employer_id, "5", "the BES company was saved without a policy number");
     assert.equal(markSetUp([booked("Acme Holdings", null)], [bes(5, "Acme Holdings", "A"), bes(6, "Acme Holdings", "B")])[0].set_up, null, "two companies of that name: not guessed");
+    assert.equal(markSetUp([booked("Acme Holdings", "G-TLI-26-177")], [bes(5, "Acme Holdings", "A"), bes(6, "Acme Holdings", "B")])[0].set_up, null, "nor with a number");
     assert.equal(markSetUp([booked("Acme Holdings", null)], [bes(5, "Other", "A")])[0].set_up, null);
+    assert.equal(markSetUp([booked("Acme Holdings", "G-TLI-26-178")], [bes(5, "Other", "G-TLI-26-177")])[0].set_up, null, "another name and another number: not set up");
   });
 
   test("keeps the record as it was and does not change the companies", () => {

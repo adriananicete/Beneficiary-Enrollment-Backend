@@ -19,6 +19,8 @@ import { createGcliRoutes } from './src/gcli/routes.js';
 import { assertDevStoreAllowed, devStoreOn } from './src/gcli/devStore.js';
 import { checkIntegrationAtStart } from './src/claims/startup.js';
 import { createIntegrationRoutes } from './src/routes/integrationRoutes.js';
+import { bookedCompanies } from './src/integrations/bookedCompanies.js';
+import { ebamConfigured } from './src/integrations/ebamClient.js';
 import {errorHandler} from './src/middlewares/errorHandler.js';
 import helmet from 'helmet';
 
@@ -169,3 +171,9 @@ else
         `Port ${config.PORT} is already in use, so the server is running on port ${port} instead. ` +
         `Point the frontend at it with VITE_API_PROXY_TARGET=http://127.0.0.1:${port}.`,
     );
+
+// The other system's booked list takes a few seconds to read. Reading it now, with nobody waiting, means the
+// first visit to the Companies tab finds it kept. If it fails here, the tab asks again and gets the error itself.
+if (ebamConfigured()) {
+    bookedCompanies().catch((error) => console.warn(`The booked companies list could not be read at start: ${error.message}`));
+}
