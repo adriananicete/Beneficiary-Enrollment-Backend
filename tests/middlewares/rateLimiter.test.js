@@ -7,13 +7,15 @@ import {
   enrollmentTokenKey,
   ipsCallKey,
   ipsKeyAccepted,
+  rateLimitedHandler,
+  setRateLimitedHook,
   loginAttemptKey,
   passwordChangeKey,
   REFERENCE_BURST,
   REFERENCE_CALLS_PER_FORM,
 } from "../../src/middlewares/rateLimiter.js";
 import { MAX_INVITATION_EMAILS } from "../../src/utils/partitionInvitations.js";
-import { makeReq } from "../helpers/http.js";
+import { makeReq, makeRes } from "../helpers/http.js";
 
 // The limiters themselves are objects built at import and are not worth
 // asserting. The key generator is different: it decides WHO a request counts
@@ -241,7 +243,68 @@ describe("ipsKeyAccepted", () => {
   test("only a 401 stays counted as a failed key", () => {
     assert.equal(ipsKeyAccepted(makeReq(), { statusCode: 401 }), false);
 
-    for (const statusCode of [200, 400, 404, 429, 500])
+    for (const statusCode of [200, 400, 403, 404, 500])
       assert.equal(ipsKeyAccepted(makeReq(), { statusCode }), true, String(statusCode));
+  });
+
+  // Taken back off, the count fell to the limit after every refusal, and each
+  // later refusal was recorded as the first one of its window.
+  test("and the limiter's own 429, so the count does not fall back after a refusal", () => {
+    assert.equal(ipsKeyAccepted(makeReq(), { statusCode: 429 }), false);
+  });
+});
+// A refusal by a sign-in limiter is a security event (DBA request 28), once per
+// window. The hook is what server.js hands in; here it keeps what it is given.
+describe("rateLimitedHandler", () => {
+  const OPTIONS = { statusCode: 429, message: { success: false, message: "Too many attempts, please try again later." } };
+
+  const refuse = (rateLimit, usernameOf, req = {}) => {
+    const seen = [];
+    setRateLimitedHook((request, event) => seen.push(event));
+    const res = makeRes();
+    res.writableEnded = false;
+
+    try {
+      rateLimitedHandler("login", usernameOf)(makeReq({ rateLimit, ...req }), res, () => {}, OPTIONS);
+    } finally {
+      setRateLimitedHook(() => {});
+    }
+
+    return { seen, res };
+  };
+
+  test("answers as the default handler does: the status and the message", () => {
+    const { res } = refuse({ limit: 10, used: 11 });
+
+    assert.equal(res.statusCode, 429);
+    assert.deepEqual(res.body, OPTIONS.message);
+  });
+
+  test("the first refusal in a window is recorded, with the limiter and the username", () => {
+    const { seen } = refuse({ limit: 10, used: 11 }, (req) => req.body.username, { body: { username: "EMP-020" } });
+
+    assert.deepEqual(seen, [{ limiter: "login", username: "EMP-020" }]);
+  });
+
+  test("the refusals after it in the same window are not, so a flood is one row", () => {
+    for (const used of [12, 13, 500]) assert.deepEqual(refuse({ limit: 10, used }).seen, [], String(used));
+  });
+
+  test("a hook that throws never costs the 429", () => {
+    setRateLimitedHook(() => {
+      throw new Error("no database");
+    });
+    const res = makeRes();
+    const original = console.error;
+    console.error = () => {};
+
+    try {
+      rateLimitedHandler("login")(makeReq({ rateLimit: { limit: 10, used: 11 } }), res, () => {}, OPTIONS);
+    } finally {
+      console.error = original;
+      setRateLimitedHook(() => {});
+    }
+
+    assert.equal(res.statusCode, 429);
   });
 });

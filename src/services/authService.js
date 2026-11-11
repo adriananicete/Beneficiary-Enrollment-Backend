@@ -5,6 +5,7 @@ import InvitationModel from "../models/invitationModel.js";
 import config from "../config/env.js";
 import { AppError } from "../utils/AppError.js";
 import { endUserSessions } from "../realtime/realtime.js";
+import { NO_RECORD, SECURITY_EVENT } from "./securityEventService.js";
 import {
   EMPLOYEE,
   LOGIN_LOCK_MINUTES,
@@ -177,7 +178,10 @@ const verifySession = async (pool, session) => {
 // could raise the version, whoever held it could sign its owner out of every
 // new session, again and again. So it is checked first, and a 401 from that
 // check ends nothing.
-const logout = async (pool, token) => {
+//
+// `record` writes the security event (securityEventService.recorderFor); only
+// a logout that ended something is one.
+const logout = async (pool, token, record = NO_RECORD) => {
   let session;
 
   try {
@@ -198,11 +202,17 @@ const logout = async (pool, token) => {
   // And the sockets opened with those sessions, now rather than at their next
   // re-check.
   endUserSessions(session.user_id);
+
+  record({ type: SECURITY_EVENT.LOGOUT, userId: session.user_id, username: session.username });
 };
 
+// `record` writes the security events (securityEventService.recorderFor). It
+// is not awaited, so it adds no time to any answer, and the username in each
+// is the one typed. A request with a field missing is not a sign-in attempt
+// and records nothing.
 const login = async (
   pool,
-  { username, password, rememberMe = false, allowedRoles, wrongDoorMessage },
+  { username, password, rememberMe = false, allowedRoles, wrongDoorMessage, record = NO_RECORD },
 ) => {
   // Text only. Neither login route has a body validator, so the caller's JSON
   // arrives here as sent. bcrypt.compare throws on anything that is not a
@@ -236,8 +246,11 @@ const login = async (
 
   if (!user) {
     await bcrypt.compare(password, DUMMY_HASH);
+    record({ type: SECURITY_EVENT.LOGIN_FAILED, username, detail: "unknown_username" });
     throw new AppError(INVALID_CREDENTIALS, 401);
   }
+
+  const who = { userId: user.us01_user_id, username };
 
   // The lockout, DBA request 18. Checked BEFORE the password, and that order is
   // the whole lock: checked after, a caller would still learn which guess was
@@ -249,8 +262,10 @@ const login = async (
   // The procedure works out the seconds left against its own clock. GETDATE()
   // is local time and the driver labels it UTC, so comparing us01_locked_until
   // with Date.now() here would be eight hours off.
-  if (user.lock_seconds_remaining > 0)
+  if (user.lock_seconds_remaining > 0) {
+    record({ type: SECURITY_EVENT.LOGIN_WHILE_LOCKED, ...who });
     throw lockedOut(user.lock_seconds_remaining);
+  }
 
   const isPasswordMatch = await bcrypt.compare(password, user.us01_password);
 
@@ -263,10 +278,16 @@ const login = async (
       lockMinutes: LOGIN_LOCK_MINUTES,
     });
 
+    // Every wrong password is a failed sign-in, the one that locks included,
+    // so counting them in the log counts them all.
+    record({ type: SECURITY_EVENT.LOGIN_FAILED, ...who, detail: "wrong_password" });
+
     // The attempt that reaches the limit says so, rather than answering
     // "Invalid Credentials" and leaving the next attempt to explain a lock.
-    if (after?.lock_seconds_remaining > 0)
+    if (after?.lock_seconds_remaining > 0) {
+      record({ type: SECURITY_EVENT.ACCOUNT_LOCKED, ...who });
       throw lockedOut(after.lock_seconds_remaining);
+    }
 
     throw new AppError(INVALID_CREDENTIALS, 401);
   }
@@ -274,16 +295,20 @@ const login = async (
   // Checked after the password on purpose. Only someone who already proved they
   // know the password learns the account exists but is closed, so this tells an
   // attacker nothing they did not already have.
-  if (!user.us01_is_active || user.us01_is_locked)
+  if (!user.us01_is_active || user.us01_is_locked) {
+    record({ type: SECURITY_EVENT.LOGIN_FAILED, ...who, detail: "account_closed" });
     throw new AppError(ACCOUNT_CLOSED, 403);
+  }
 
   // An allowlist, where both controllers previously refused one role by name.
   // With three roles the two are equivalent; they stop being equivalent the day
   // a fourth is added, and an allowlist fails closed. It also matches the
   // `allowedRoles` middleware and `passwordService`, so the rule reads the same
   // way everywhere it is applied.
-  if (!allowedRoles.includes(user.us02_role_name))
+  if (!allowedRoles.includes(user.us02_role_name)) {
+    record({ type: SECURITY_EVENT.LOGIN_FAILED, ...who, detail: "wrong_door" });
     throw new AppError(wrongDoorMessage, 403);
+  }
 
   // The reset token is the whole answer here. Without it this response was a
   // dead end: the caller was told to change their password and given nothing to
@@ -306,6 +331,8 @@ const login = async (
       config.jwtSecret,
       { expiresIn: asSeconds(RESET_TOKEN_EXPIRY) },
     );
+
+    record({ type: SECURITY_EVENT.LOGIN_SUCCEEDED, ...who, detail: "must_change_password" });
 
     return {
       mustChangePassword: true,
@@ -341,6 +368,8 @@ const login = async (
 
   // Clears the failed count and any expired lock, and records the login.
   await UserModel.recordSuccessfulLogin(pool, user.us01_user_id);
+
+  record({ type: SECURITY_EVENT.LOGIN_SUCCEEDED, ...who });
 
   return { mustChangePassword: false, token, maxAge, user: profile };
 };

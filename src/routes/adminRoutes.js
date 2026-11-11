@@ -24,6 +24,7 @@ import { validateHrAccount } from '../middlewares/validateHrAccount.js';
 import { validateCompanyChanges, validateNewCompany } from '../middlewares/validateCompany.js';
 import { validateClassificationChanges, validateNewClassification } from '../middlewares/validateClassification.js';
 import { validateAffiliateChanges, validateNewAffiliate } from '../middlewares/validateAffiliate.js';
+import { getSecurityEvents } from '../controllers/securityEventController.js';
 
 const router = express.Router();
 
@@ -180,5 +181,8 @@ router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(AD
 // checked, then the limit, then the switch.
 router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(ADMIN), conversationId, validateIdParam('attachment_id', 'Attachment not found'), attachmentDownloadLimiter, requireCompanyMessaging, getMessageAttachment);
 
+// The security log, DBA request 28. The Administrator only; the procedure
+// checks again (50224).
+router.get('/security-events', verifyToken, allowedRoles(SUPER_ADMIN), getSecurityEvents);
 
 export default router;

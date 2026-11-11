@@ -42,6 +42,33 @@ export const AUTH_IP_BURST = MAX_INVITATION_EMAILS / 4;
 const asKeyText = (value) =>
   typeof value === "string" && value !== "" ? value : null;
 
+// A refusal by one of the sign-in limiters is a security event (DBA request
+// 28). This file imports no database (its tests run without one), so what
+// records it is handed in at start by server.js.
+let rateLimitedHook = () => {};
+
+export const setRateLimitedHook = (hook) => {
+  rateLimitedHook = hook;
+};
+
+// The handler express-rate-limit calls for every refused request, answering
+// as its default does. The event is recorded for the first refusal in a window
+// only, so a flood of refused requests is one row and not thousands. A
+// recorder that throws never costs the 429.
+export const rateLimitedHandler =
+  (limiterName, usernameOf = () => null) =>
+  (req, res, next, options) => {
+    if (req.rateLimit?.used === req.rateLimit?.limit + 1) {
+      try {
+        rateLimitedHook(req, { limiter: limiterName, username: usernameOf(req) });
+      } catch (error) {
+        console.error(`Rate limit event not recorded: ${limiterName}`, error);
+      }
+    }
+
+    if (!res.writableEnded) res.status(options.statusCode).send(options.message);
+  };
+
 // Exported, like enrollmentTokenKey below, because who a request counts against
 // is the part worth testing and a limiter object does not expose it.
 export const loginAttemptKey = (req) =>
@@ -53,6 +80,7 @@ export const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: isDev ? 100 : 10, // 100 sa dev, 10 sa prod
   keyGenerator: loginAttemptKey,
+  handler: rateLimitedHandler("login", (req) => asKeyText(req.body?.username)),
   message: {
     success: false,
     message: "Too many attempts, please try again later.",
@@ -83,6 +111,7 @@ export const passwordChangeLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: isDev ? 100 : 10,
   keyGenerator: passwordChangeKey,
+  handler: rateLimitedHandler("password_change", (req) => asKeyText(req.resetUser?.username)),
   message: {
     success: false,
     message: "Too many attempts, please try again later.",
@@ -369,7 +398,11 @@ export const ipsKeyLimiter = rateLimit({
 // Wrong keys from one address. Every call is counted and every one that was not refused for its
 // key is taken back off, so only the 401s stay. It runs before the key check, so an address past
 // the limit is refused before another guess is compared.
-export const ipsKeyAccepted = (req, res) => res.statusCode !== 401;
+//
+// The limiter's own 429 stays counted too. Taken back off, the count fell back to the limit after
+// every refusal, so each one after it was "the first" again: still refused, but each recorded as
+// a security event of its own. Found 2026-11-11 driving it through real Express.
+export const ipsKeyAccepted = (req, res) => res.statusCode !== 401 && res.statusCode !== 429;
 
 export const ipsFailedKeyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -377,6 +410,7 @@ export const ipsFailedKeyLimiter = rateLimit({
   skipSuccessfulRequests: true,
   requestWasSuccessful: ipsKeyAccepted,
   keyGenerator: (req) => ipKeyGenerator(req.ip),
+  handler: rateLimitedHandler("ips_failed_key"),
   message: {
     success: false,
     message: "Too many failed attempts, please try again later.",
@@ -407,6 +441,7 @@ export const ipsFailedKeyLimiter = rateLimit({
 export const authIpLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: isDev ? AUTH_IP_BURST * 4 : AUTH_IP_BURST,
+  handler: rateLimitedHandler("auth_ip"),
   message: {
     success: false,
     message: "Too many requests from this IP address, please try again later.",

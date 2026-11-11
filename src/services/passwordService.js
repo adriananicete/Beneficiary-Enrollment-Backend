@@ -3,6 +3,7 @@ import UserModel from "../models/userModel.js";
 import { AppError } from "../utils/AppError.js";
 import { validatePassword } from "../utils/validatePassword.js";
 import { endUserSessions } from "../realtime/realtime.js";
+import { NO_RECORD, SECURITY_EVENT } from "./securityEventService.js";
 
 // The forced password change is one flow reached from two logins, so it is one
 // implementation. It was employee-only until now, which is why an HR or admin
@@ -17,9 +18,13 @@ import { endUserSessions } from "../realtime/realtime.js";
 // The row is already being fetched to check the password, so the check costs
 // nothing, and a role that changed inside the token's fifteen minutes resolves
 // the database's way rather than the way it looked when the token was minted.
+//
+// `record` writes the security events (securityEventService.recorderFor). A
+// new password refused by the policy is a form error, not a security event,
+// and records nothing.
 const changePassword = async (
   pool,
-  { username, oldPassword, newPassword, allowedRoles },
+  { username, oldPassword, newPassword, allowedRoles, record = NO_RECORD },
 ) => {
   // oldPassword goes to bcrypt.compare, which throws on anything that is not a
   // string, and that answered 500. newPassword is not type-checked here:
@@ -30,7 +35,13 @@ const changePassword = async (
   const user = await UserModel.findUserByUsername(pool, username);
   // Uniform message for both a missing user and a wrong password, so this
   // cannot be used to work out which usernames exist.
-  if (!user) throw new AppError("Invalid Credentials", 400);
+  if (!user) {
+    record({ type: SECURITY_EVENT.PASSWORD_CHANGE_FAILED, username, detail: "unknown_username" });
+    throw new AppError("Invalid Credentials", 400);
+  }
+
+  const who = { userId: user.us01_user_id, username };
+  const failed = (detail) => record({ type: SECURITY_EVENT.PASSWORD_CHANGE_FAILED, ...who, detail });
 
   // The reset token is single-use. It is signed for one forced change, and
   // sec.us01_usp_first_login sets us01_must_change_password to 0 when that
@@ -42,30 +53,39 @@ const changePassword = async (
   // Checked before the password, so a spent token cannot be used to test
   // guesses at the current password either. Security controls list,
   // 2026-11-11.
-  if (!user.us01_must_change_password)
+  if (!user.us01_must_change_password) {
+    record({ type: SECURITY_EVENT.RESET_TOKEN_REUSED, ...who });
     throw new AppError(
       "This password has already been changed. Please sign in again.",
       401,
     );
+  }
 
   const isPasswordMatch = await bcrypt.compare(oldPassword, user.us01_password);
-  if (!isPasswordMatch) throw new AppError("Invalid Credentials", 400);
+  if (!isPasswordMatch) {
+    failed("wrong_password");
+    throw new AppError("Invalid Credentials", 400);
+  }
 
   // A reset token issued before the account was closed stays valid for its
   // full 15 minutes, so this path needs the same guard as the login.
-  if (!user.us01_is_active || user.us01_is_locked)
+  if (!user.us01_is_active || user.us01_is_locked) {
+    failed("account_closed");
     throw new AppError(
       "This account is no longer active. Please contact your HR.",
       403,
     );
+  }
 
   // Checked after the password for the same reason the logins check it there:
   // only someone who has already proved they know the password learns anything.
-  if (!allowedRoles.includes(user.us02_role_name))
+  if (!allowedRoles.includes(user.us02_role_name)) {
+    failed("wrong_door");
     throw new AppError(
       "This account changes its password from its own sign-in page",
       403,
     );
+  }
 
   if (oldPassword === newPassword)
     throw new AppError(
@@ -100,6 +120,8 @@ const changePassword = async (
 
   // And any socket open with one of those sessions.
   endUserSessions(user.us01_user_id);
+
+  record({ type: SECURITY_EVENT.PASSWORD_CHANGED, ...who });
 };
 
 export default {
