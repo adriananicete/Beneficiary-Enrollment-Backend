@@ -18,10 +18,10 @@ const routes = router.stack
   }));
 
 describe("the IPS routes", () => {
-  test("the router is read correctly: the one route of branch 1 is found", () => {
+  test("the router is read correctly: the companies and their enrollees", () => {
     assert.deepEqual(
       routes.map((route) => route.label),
-      ["GET /companies"],
+      ["GET /companies", "GET /companies/:employer_id/enrollees"],
     );
   });
 
