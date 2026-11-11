@@ -24,8 +24,9 @@ const TOKEN = "bes.usp_sel_enrollment_invitation_by_token";
 const EMPLOYERS = "bes.usp_sel_employers";
 const CLASSIFICATIONS = "bes.usp_sel_classifications_by_employer";
 
-const BARANGAY_QUERY = /bes\.barangay/;
-const USERNAME_QUERY = /us01_users/;
+// Both were raw queries until 2026-11-11, and are procedures now.
+const BARANGAY = "bes.usp_sel_barangay_exists";
+const USERNAME = "sec.usp_sel_username_exists";
 
 const validInvitation = (overrides = {}) => ({
   invitation_id: 54,
@@ -51,17 +52,13 @@ const submission = (overrides = {}) => ({
 
 // Defaults let every guard pass, so a test names the one thing it is breaking.
 const enrol = (data, { invitation, employers, classifications, barangayReal = true, usernameTaken = false } = {}) => {
-  const { pool, calls } = fakePool(
-    {
-      [TOKEN]: invitation === null ? [] : [invitation ?? validInvitation()],
-      [EMPLOYERS]: employers ?? [{ employer_id: 1 }, { employer_id: 2 }],
-      [CLASSIFICATIONS]: classifications ?? [{ classification_id: 3 }],
-    },
-    [
-      [BARANGAY_QUERY, barangayReal ? [{ ok: 1 }] : []],
-      [USERNAME_QUERY, usernameTaken ? [{ ok: 1 }] : []],
-    ],
-  );
+  const { pool, calls } = fakePool({
+    [TOKEN]: invitation === null ? [] : [invitation ?? validInvitation()],
+    [EMPLOYERS]: employers ?? [{ employer_id: 1 }, { employer_id: 2 }],
+    [CLASSIFICATIONS]: classifications ?? [{ classification_id: 3 }],
+    [BARANGAY]: barangayReal ? [{ "": 1 }] : [],
+    [USERNAME]: usernameTaken ? [{ exists_flag: 1 }] : [],
+  });
 
   return { calls, result: EnrollmentService.createEnrollment(pool, data) };
 };
@@ -162,9 +159,7 @@ describe("enrollmentService — the reference guards", () => {
     const { calls, result } = enrol(submission(), { usernameTaken: true });
     await assert.rejects(() => result);
 
-    const barangayCall = calls.find((call) => BARANGAY_QUERY.test(call.query ?? ""));
-
-    assert.equal(barangayCall.inputs.brgy_code, "012801001");
+    assert.equal(inputsFor(calls, BARANGAY).brgy_code, "012801001");
   });
 
   test("refuses an employee id that already has an account", async () => {

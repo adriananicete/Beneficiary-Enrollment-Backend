@@ -52,17 +52,18 @@ export const getBarangaysByCity = async (pool, cityCode) => {
 
 // Confirms a barangay code actually exists before it is stored.
 //
-// A raw query because the reference procedures all list by parent — there is
-// none that answers "is this one code real", and listing every barangay in a
-// city to search it in JavaScript would be a worse shape for a yes/no question.
+// bes.usp_sel_barangay_exists, read on UAT 2026-11-11, is the raw query this
+// used to be: SELECT 1 FROM bes.barangay WHERE brgy_code = @brgy_code, with
+// @brgy_code varchar(9). One row when it exists, none when it does not.
 //
 // The code is compared as given. barangay_id is VARCHAR with a meaningful
 // leading zero, and this check is the last place that would notice one going
-// missing — so it must not coerce, trim to a number, or pad.
+// missing — so it must not coerce, trim to a number, or pad. Hence VarChar,
+// never a number type.
 export const barangayExists = async (pool, barangayId) => {
     const result = await pool.request()
     .input('brgy_code', sql.VarChar(9), barangayId)
-    .query(`SELECT 1 FROM bes.barangay WHERE brgy_code = @brgy_code`);
+    .execute('bes.usp_sel_barangay_exists');
 
     return result.recordset.length > 0;
 };

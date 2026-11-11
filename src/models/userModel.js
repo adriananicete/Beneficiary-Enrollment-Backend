@@ -111,24 +111,29 @@ const endSessions = async (pool, userId) => {
     .execute('sec.us01_usp_end_sessions');
 };
 
-// Raw query, following checkUsernameExists below. There is no procedure that
-// reaches a user by client_id.
+// The active account of a client record: id, username, email and name, no
+// password columns. sec.usp_sel_user_by_client_id, read on UAT 2026-11-11, is
+// the raw query this used to be, word for word: those five columns, WHERE
+// client_id = @client_id AND us01_is_active = 1.
 const findUserByClientId = async (pool, clientId) => {
   const result = await pool
     .request()
     .input("client_id", sql.BigInt, clientId)
-    .query(`SELECT us01_user_id, us01_username, us01_email_address,
-                   us01_first_name, us01_last_name
-            FROM sec.us01_users
-            WHERE client_id = @client_id AND us01_is_active = 1`);
+    .execute("sec.usp_sel_user_by_client_id");
 
   return result.recordset[0];
 };
 
-// Issues a new temporary password. There is no procedure for this:
-// us01_usp_first_login requires the old password, which is exactly what has been
-// lost, and us01_usp_upd_user does not touch credentials. Raw, like the
-// queries around it.
+// Issues a new temporary password. us01_usp_first_login cannot: it requires
+// the old password, which is exactly what has been lost, and us01_usp_upd_user
+// does not touch credentials. sec.usp_upd_user_password_reset does, read on
+// UAT 2026-11-11 (DBA-PROCEDURES.md). It is the raw UPDATE this used to be,
+// with the same SET list, and it answers one row, affected_count, 0 when no
+// active account matched.
+//
+// What that SET list must do, and why, so a later change to the procedure is
+// checked against it. A fake pool cannot see inside a procedure, so this is
+// proven by reading its text, not by a test here.
 //
 // The lock and the failed-attempt counter are cleared alongside the password.
 // Since PR #58 those two block a login, so leaving them set would hand the
@@ -139,26 +144,21 @@ const findUserByClientId = async (pool, clientId) => {
 //
 // The token version goes up in the same statement, so every session the
 // employee had ends with the old password. Whoever was using those
-// credentials is signed out. In the raw UPDATE rather than a call to
+// credentials is signed out. In the same UPDATE rather than a call to
 // endSessions, so the two cannot come apart.
+//
+// And us01_must_change_password goes back to 1, so the temporary password
+// has to be changed on first sign-in, and the reset token it leads to is
+// single-use (PR #160).
 const resetPassword = async (pool, resetData) => {
   const result = await pool
     .request()
     .input("us01_user_id", sql.BigInt, resetData.us01_user_id)
-    .input("us01_password", sql.VarChar, resetData.us01_password)
+    .input("us01_password", sql.VarChar(255), resetData.us01_password)
     .input("us01_modified_by", sql.VarChar(50), resetData.us01_modified_by)
-    .query(`UPDATE sec.us01_users
-            SET us01_password = @us01_password,
-                us01_must_change_password = 1,
-                us01_is_locked = 0,
-                us01_failed_login_attempts = 0,
-                us01_locked_until = NULL,
-                us01_token_version = us01_token_version + 1,
-                us01_modified_by = @us01_modified_by,
-                us01_modified_date = GETDATE()
-            WHERE us01_user_id = @us01_user_id AND us01_is_active = 1`);
+    .execute("sec.usp_upd_user_password_reset");
 
-  return result.rowsAffected[0];
+  return result.recordset[0]?.affected_count ?? 0;
 };
 
 // Keeps sec.us01_users in step with bes.clients after an approved change.
@@ -180,10 +180,13 @@ const updateUserRecord = async (pool, userData) => {
   return result.recordset[0];
 };
 
+// sec.usp_sel_username_exists, read on UAT 2026-11-11: one row when the
+// username is taken, active or not, none when it is free. Its parameter is
+// nvarchar(50), the column's width.
 const checkUsernameExists = async (pool, username) => {
     const result = await pool.request()
-    .input('username', sql.NVarChar, username)
-    .query(`SELECT 1 FROM sec.us01_users WHERE us01_username = @username`);
+    .input('username', sql.NVarChar(50), username)
+    .execute('sec.usp_sel_username_exists');
 
     return result.recordset.length > 0
 }
