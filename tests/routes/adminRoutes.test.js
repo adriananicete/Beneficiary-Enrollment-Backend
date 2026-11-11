@@ -547,3 +547,17 @@ describe("the company messaging switch on HR's routes", () => {
     assert.equal(handlers.includes(requireCompanyMessaging), false);
   });
 });
+
+// The security log, DBA request 28. The Administrator only.
+describe("the security log route", () => {
+  test("GET /security-events is for the Administrator only, behind verifyToken, and reaches its controller", async () => {
+    const { getSecurityEvents } = await import("../../src/controllers/securityEventController.js");
+    const handlers = handlersFor("get", "/security-events");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), getSecurityEvents);
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "HR"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});

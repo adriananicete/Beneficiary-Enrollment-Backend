@@ -2,6 +2,7 @@ import { ADMIN, SUPER_ADMIN } from "../utils/constants.js";
 import AuthService from "../services/authService.js";
 import PasswordService from "../services/passwordService.js";
 import { getPool } from "../config/db.js";
+import { recorderFor } from "../services/securityEventService.js";
 import { cookieOptions } from "../utils/cookieConfig.js";
 
 export const login = async (req, res, next) => {
@@ -20,6 +21,7 @@ export const login = async (req, res, next) => {
       rememberMe,
       allowedRoles: [SUPER_ADMIN, ADMIN],
       wrongDoorMessage: "Employees must use the employee login",
+      record: recorderFor(pool, req),
     });
 
     if (result.mustChangePassword) {
@@ -85,6 +87,7 @@ export const changePassword = async (req, res, next) => {
       oldPassword,
       newPassword,
       allowedRoles: [SUPER_ADMIN, ADMIN],
+      record: recorderFor(pool, req),
     });
 
     res.clearCookie("reset_token", cookieOptions);
@@ -106,7 +109,10 @@ export const logout = async (req, res, next) => {
 
   try {
     const { token } = req.cookies;
-    if (token) await AuthService.logout(await getPool(), token);
+    if (token) {
+      const pool = await getPool();
+      await AuthService.logout(pool, token, recorderFor(pool, req));
+    }
 
     return res.status(200).json({
       success: true,

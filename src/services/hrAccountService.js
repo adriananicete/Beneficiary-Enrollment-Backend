@@ -255,7 +255,9 @@ const resendHrCredentials = async (pool, adminId, employerId, hrUserId = null, d
   // verifySession. This closes the open sockets too.
   deps.endUserSessions(hr.us01_user_id);
 
-  return { email_address: hr.us01_email_address };
+  // The account's id and username are for the security event the controller
+  // records; only the address is shown to the caller.
+  return { email_address: hr.us01_email_address, user_id: hr.us01_user_id, username: hr.us01_username };
 };
 
 // Every HR account of the company, for its page.

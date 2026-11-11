@@ -3,6 +3,7 @@ import CompanyService from "../services/companyService.js";
 import ScheduleService from "../services/scheduleService.js";
 import HrAccountService from "../services/hrAccountService.js";
 import AffiliateService from "../services/affiliateService.js";
+import { recorderFor, SECURITY_EVENT } from "../services/securityEventService.js";
 
 // The Administrator's companies, branch 2 of the onboarding effort. The routes
 // allow the Administrator only, and the procedures check again.
@@ -172,12 +173,19 @@ export const createHrAccount = async (req, res, next) => {
 export const resendHrCredentials = async (req, res, next) => {
   try {
     const pool = await getPool();
-    const { email_address } = await HrAccountService.resendHrCredentials(
+    const { email_address, user_id, username } = await HrAccountService.resendHrCredentials(
       pool,
       req.user.user_id,
       req.params.employer_id,
       req.params.user_id ?? null,
     );
+
+    recorderFor(pool, req)({
+      type: SECURITY_EVENT.CREDENTIALS_REISSUED,
+      userId: user_id,
+      username,
+      actorUserId: req.user.user_id,
+    });
 
     return res.status(200).json({
       success: true,

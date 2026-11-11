@@ -37,6 +37,10 @@ export const sqlErrorMap = {
     // words, so this only answers a path that skipped that check.
     50223: { statusCode: 403, message: 'Only the Administrator can change the company messaging setting.' },
 
+    // sec.us09_usp_sel_security_events, DBA request 28. The route lets only
+    // the Administrator in, so this answers a path that skipped that check.
+    50224: { statusCode: 403, message: 'Only an Administrator can view the security log.' },
+
     // Thrown by usp_ins_beneficiary, on the public enrollment submit path. Its
     // only caller is enrollmentService.js:107, once per beneficiary, inside the
     // backend's transaction.

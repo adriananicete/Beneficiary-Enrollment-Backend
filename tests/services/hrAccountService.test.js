@@ -299,7 +299,8 @@ describe("HrAccountService.resendHrCredentials", () => {
     assert.equal(log[0], "credentials email");
     assert.ok(callTo(calls, RESET), "the password was not stored");
     assert.deepEqual(log.at(-1), "end sessions 9");
-    assert.deepEqual(result, { email_address: "hr@abcc.example" });
+    // The id and username are for the security event the controller records.
+    assert.deepEqual(result, { email_address: "hr@abcc.example", user_id: "9", username: "hr.abcc" });
   });
 
   test("the email links to APP_URL itself and names PhilLife as the issuer", async () => {
@@ -377,7 +378,7 @@ describe("HrAccountService.resendHrCredentials — several accounts", () => {
     assert.equal(sent[0].username, "hr.abcc.2");
     assert.equal(inputsFor(calls, RESET).us01_user_id, "12");
     assert.equal(log.at(-1), "end sessions 12");
-    assert.deepEqual(result, { email_address: "jose@abcc.example" });
+    assert.deepEqual(result, { email_address: "jose@abcc.example", user_id: "12", username: "hr.abcc.2" });
   });
 
   // The id arrives from the path as text and the procedure's as a BigInt

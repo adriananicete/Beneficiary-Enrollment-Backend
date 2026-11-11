@@ -14,6 +14,8 @@ import employeeRoutes from './src/routes/employeeRoutes.js';
 import ipsRoutes from './src/routes/ipsRoutes.js';
 import {errorHandler} from './src/middlewares/errorHandler.js';
 import { listenOnFreePort, startedByNpmDev } from './src/utils/listenOnFreePort.js';
+import { setRateLimitedHook } from './src/middlewares/rateLimiter.js';
+import { recorderFor, SECURITY_EVENT } from './src/services/securityEventService.js';
 import helmet from 'helmet';
 
 const app = express();
@@ -31,6 +33,12 @@ const API_PREFIX = '/api/v1';
 // env.js now refuses to start in production without TRUST_PROXY set, and
 // refuses `true` at any time. The reasoning is there.
 app.set('trust proxy', config.trustProxy);
+
+// A refusal by a sign-in limiter goes into the security log (DBA request 28).
+// Handed in here because rateLimiter.js imports no database.
+setRateLimitedHook((req, { limiter, username }) =>
+    recorderFor(getPool(), req)({ type: SECURITY_EVENT.RATE_LIMITED, username, detail: limiter }),
+);
 
 app.use(helmet());
 app.use(cors({

@@ -18,6 +18,7 @@ import { AppError } from "../utils/AppError.js";
 import { localIsoDate } from "../utils/localDate.js";
 import { sendCredentialsEmail } from "../services/emailService.js";
 import { endUserSessions } from "../realtime/realtime.js";
+import { recorderFor, SECURITY_EVENT } from "../services/securityEventService.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 
@@ -196,6 +197,13 @@ export const resendCredentials = async (req, res, next) => {
     // resetPassword raised the token version, which ends the employee's
     // sessions at verifySession. This closes their open sockets too.
     endUserSessions(user.us01_user_id);
+
+    recorderFor(pool, req)({
+      type: SECURITY_EVENT.CREDENTIALS_REISSUED,
+      userId: user.us01_user_id,
+      username: user.us01_username,
+      actorUserId: user_id,
+    });
 
     return res.status(200).json({
       success: true,
