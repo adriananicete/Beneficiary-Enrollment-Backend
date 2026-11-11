@@ -19,6 +19,7 @@ const ASSIGN_ROLE = "sec.us04_usp_assign_role";
 const MAP_HR = "sec.us08_usp_ins_user_employer";
 // A raw UPDATE until 2026-11-11; the procedure answers affected_count.
 const RESET = "sec.usp_upd_user_password_reset";
+const USERNAME_EXISTS = "sec.usp_sel_username_exists";
 
 const ADMIN_ID = 1;
 
@@ -47,7 +48,9 @@ const hrRow = (overrides = {}) => ({
 });
 
 // Records begin, each procedure, commit or rollback, and the email, in order.
-const harness = ({ answers = {}, sendFails = false } = {}) => {
+// `taken` is the usernames some account already holds, as
+// sec.usp_sel_username_exists would find them.
+const harness = ({ answers = {}, sendFails = false, taken = [] } = {}) => {
   const log = [];
   const sent = [];
 
@@ -58,6 +61,10 @@ const harness = ({ answers = {}, sendFails = false } = {}) => {
     [ASSIGN_ROLE]: [],
     [MAP_HR]: [{ us08_user_employer_id: "7" }],
     [RESET]: [{ affected_count: 1 }],
+    [USERNAME_EXISTS]: ({ username }) => ({
+      recordset: taken.includes(username) ? [{ exists_flag: 1 }] : [],
+      output: {},
+    }),
     ...answers,
   });
 
@@ -108,6 +115,41 @@ describe("hrUsernameFor", () => {
     assert.equal(hrUsernameFor("ABCC"), "hr.abcc");
     assert.equal(hrUsernameFor("Coforge"), "hr.coforge");
     assert.equal(hrUsernameFor("NBS-2"), "hr.nbs-2");
+  });
+
+  // The second and later accounts of a company, 2026-11-11. A company code
+  // has no dot, so hr.nbs-2.2 can never be another company's first name.
+  test("the second and later are hr.<code>.2, .3 and on", () => {
+    assert.equal(hrUsernameFor("ABCC", 1), "hr.abcc");
+    assert.equal(hrUsernameFor("ABCC", 2), "hr.abcc.2");
+    assert.equal(hrUsernameFor("NBS-2", 3), "hr.nbs-2.3");
+  });
+});
+
+describe("HrAccountService.nextHrUsername", () => {
+  const next = (taken) => HrAccountService.nextHrUsername(harness({ taken }).pool, "ABCC");
+
+  test("the first is hr.<code> when nobody has it", async () => {
+    assert.equal(await next([]), "hr.abcc");
+  });
+
+  test("skips every name an account holds, in order", async () => {
+    assert.equal(await next(["hr.abcc"]), "hr.abcc.2");
+    assert.equal(await next(["hr.abcc", "hr.abcc.2"]), "hr.abcc.3");
+  });
+
+  // Counted against every username, not the company's listed accounts: a
+  // deactivated or unmapped hr.abcc.2 is not listed, and still holds its name.
+  // Offering it again was 409 on every try (the teammates' version).
+  test("a gap is filled, and a name held outside the list is still skipped", async () => {
+    assert.equal(await next(["hr.abcc.2"]), "hr.abcc");
+    assert.equal(await next(["hr.abcc", "hr.abcc.3"]), "hr.abcc.2");
+  });
+
+  test("gives up with 409 rather than looping for ever", async () => {
+    const every = Array.from({ length: 1000 }, (_, i) => hrUsernameFor("ABCC", i + 1));
+
+    await assert.rejects(() => next(every), (error) => error.statusCode === 409);
   });
 });
 
@@ -183,21 +225,38 @@ describe("HrAccountService.createHrAccount", () => {
     assert.deepEqual(log, []);
   });
 
-  test("a company that already has an HR account is 409, and nothing is begun", async () => {
-    const { pool, log, deps } = harness({ answers: { [COMPANY]: [company({ hr_user_id: "2" })] } });
+  // Several per company since 2026-11-11: a company that has one gets another,
+  // under the next free name.
+  test("a company that has an HR account gets another, as hr.<code>.2", async () => {
+    const { pool, calls, log, deps } = harness({
+      answers: { [COMPANY]: [company({ hr_user_id: "2" })] },
+      taken: ["hr.abcc"],
+    });
 
-    await assert.rejects(
-      () => HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person }, deps),
-      (error) => error.statusCode === 409 && error.message === "This company already has an HR account",
-    );
-    assert.deepEqual(log, []);
+    const result = await HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person }, deps);
+
+    assert.equal(inputsFor(calls, CREATE_USER).us01_username, "hr.abcc.2");
+    assert.equal(result.username, "hr.abcc.2");
+    assert.deepEqual(log, ["begin", CREATE_USER, ASSIGN_ROLE, MAP_HR, "commit", "new-account email"]);
+  });
+
+  // The name is found before the transaction opens, so a lookup that fails
+  // leaves nothing to roll back.
+  test("the free name is looked up before anything is begun", async () => {
+    const { pool, calls, deps } = harness();
+
+    await HrAccountService.createHrAccount(pool, ADMIN_ID, "5", { ...person }, deps);
+
+    const order = calls.map((call) => call.procedure);
+    assert.ok(order.indexOf(USERNAME_EXISTS) < order.indexOf(CREATE_USER), order.join(" → "));
   });
 
   // sec.us01_usp_ins_users answers 50035 and 50036 for everybody; the general
-  // map words 50035 for an employee id. On this path they get their own.
+  // map words 50035 for an employee id. On this path they get their own. 50035
+  // here is two Administrators taking the same free name at once.
   for (const [number, message] of [
     [50036, "That email address already belongs to another account"],
-    [50035, "The username hr.abcc is already taken by another account"],
+    [50035, "The username hr.abcc was just taken by another account. Please try again."],
   ])
     test(`${number} from the user insert rolls back and is 409 "${message}", with no email`, async () => {
       const { pool, log, deps } = harness({
@@ -235,7 +294,7 @@ describe("HrAccountService.resendHrCredentials", () => {
   test("sends first, then stores the password, then ends the sessions", async () => {
     const { pool, calls, log, deps } = harness();
 
-    const result = await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", deps);
+    const result = await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", null, deps);
 
     assert.equal(log[0], "credentials email");
     assert.ok(callTo(calls, RESET), "the password was not stored");
@@ -246,7 +305,7 @@ describe("HrAccountService.resendHrCredentials", () => {
   test("the email links to APP_URL itself and names PhilLife as the issuer", async () => {
     const { pool, sent, deps } = harness();
 
-    await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", deps);
+    await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", null, deps);
 
     assert.equal(sent[0].loginUrl, config.appUrl);
     assert.equal(sent[0].issuedBy, "PhilLife");
@@ -261,7 +320,7 @@ describe("HrAccountService.resendHrCredentials", () => {
 
     await silently(() =>
       assert.rejects(
-        () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", deps),
+        () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", null, deps),
         (error) => error.statusCode === 502 && /nothing was changed/.test(error.message),
       ),
     );
@@ -273,7 +332,7 @@ describe("HrAccountService.resendHrCredentials", () => {
     const { pool, log, deps } = harness({ answers: { [HR_BY_COMPANY]: [] } });
 
     await assert.rejects(
-      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", deps),
+      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", null, deps),
       (error) => error.statusCode === 404 && error.message === "This company has no HR account yet",
     );
     assert.deepEqual(log, []);
@@ -285,7 +344,7 @@ describe("HrAccountService.resendHrCredentials", () => {
     const { pool, log, deps } = harness({ answers: { [HR_BY_COMPANY]: [hrRow({ us01_is_active: false })] } });
 
     await assert.rejects(
-      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", deps),
+      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", null, deps),
       (error) => error.statusCode === 409 && /deactivated/.test(error.message),
     );
     assert.deepEqual(log, []);
@@ -295,8 +354,98 @@ describe("HrAccountService.resendHrCredentials", () => {
     const { pool, deps } = harness({ answers: { [COMPANY]: [] } });
 
     await assert.rejects(
-      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "99", deps),
+      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "99", null, deps),
       (error) => error.statusCode === 404 && error.message === "Company not found",
     );
+  });
+});
+
+// Several HR accounts per company, 2026-11-11. A reissue names the account; the
+// route without a name still serves a company with one.
+describe("HrAccountService.resendHrCredentials — several accounts", () => {
+  const TWO = [
+    hrRow(),
+    hrRow({ us01_user_id: "12", us01_username: "hr.abcc.2", us01_first_name: "Jose", us01_email_address: "jose@abcc.example" }),
+  ];
+
+  test("the named account is the one emailed, reset and signed out", async () => {
+    const { pool, calls, log, sent, deps } = harness({ answers: { [HR_BY_COMPANY]: TWO } });
+
+    const result = await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", "12", deps);
+
+    assert.equal(sent[0].to, "jose@abcc.example");
+    assert.equal(sent[0].username, "hr.abcc.2");
+    assert.equal(inputsFor(calls, RESET).us01_user_id, "12");
+    assert.equal(log.at(-1), "end sessions 12");
+    assert.deepEqual(result, { email_address: "jose@abcc.example" });
+  });
+
+  // The id arrives from the path as text and the procedure's as a BigInt
+  // string; a number must match as well.
+  test("the id matches whether it arrives as text or a number", async () => {
+    const { pool, sent, deps } = harness({ answers: { [HR_BY_COMPANY]: TWO } });
+
+    await HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", 12, deps);
+
+    assert.equal(sent[0].username, "hr.abcc.2");
+  });
+
+  // Another company's account, or none at all, is answered the same: this
+  // company has no such account. Nothing is sent.
+  test("an id that is not one of this company's accounts is 404, and nothing is sent", async () => {
+    const { pool, calls, log, deps } = harness({ answers: { [HR_BY_COMPANY]: TWO } });
+
+    await assert.rejects(
+      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", "99", deps),
+      (error) => error.statusCode === 404 && error.message === "HR account not found for this company",
+    );
+    assert.deepEqual(log, []);
+    assert.equal(callTo(calls, RESET), undefined);
+  });
+
+  // The route from before several were allowed cannot guess which.
+  test("without a name, a company with several is 409, and nothing is sent", async () => {
+    const { pool, log, deps } = harness({ answers: { [HR_BY_COMPANY]: TWO } });
+
+    await assert.rejects(
+      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", null, deps),
+      (error) => error.statusCode === 409 && /several HR accounts/.test(error.message),
+    );
+    assert.deepEqual(log, []);
+  });
+
+  test("a named account that is deactivated is still 409, and nothing is sent", async () => {
+    const { pool, log, deps } = harness({
+      answers: { [HR_BY_COMPANY]: [hrRow(), hrRow({ us01_user_id: "12", us01_is_active: false })] },
+    });
+
+    await assert.rejects(
+      () => HrAccountService.resendHrCredentials(pool, ADMIN_ID, "5", "12", deps),
+      (error) => error.statusCode === 409 && /deactivated/.test(error.message),
+    );
+    assert.deepEqual(log, []);
+  });
+});
+
+describe("HrAccountService.getHrAccounts", () => {
+  test("every account, named field by field, with no password column", async () => {
+    const { pool } = harness({
+      answers: { [HR_BY_COMPANY]: [hrRow({ us01_password: "$2b$10$secret", us01_is_locked: false, us01_must_change_password: true })] },
+    });
+
+    const [account] = await HrAccountService.getHrAccounts(pool, ADMIN_ID, "5");
+
+    assert.deepEqual(Object.keys(account).sort(), [
+      "email_address",
+      "first_name",
+      "is_active",
+      "is_locked",
+      "last_name",
+      "middle_name",
+      "must_change_password",
+      "user_id",
+      "username",
+    ]);
+    assert.equal("us01_password" in account, false);
   });
 });

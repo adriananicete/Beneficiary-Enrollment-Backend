@@ -18,6 +18,11 @@ const BY_ID = "bes.usp_sel_employer_admin_by_id";
 const INSERT = "bes.usp_ins_employer";
 const UPDATE = "bes.usp_upd_employer";
 const DELETE = "bes.usp_del_employer";
+// The company page also reads every HR account and the next free name
+// (several per company, 2026-11-11).
+const HR_LIST = "sec.us08_usp_sel_hr_by_employer";
+const USERNAME_EXISTS = "sec.usp_sel_username_exists";
+const PAGE_READS = { [HR_LIST]: [], [USERNAME_EXISTS]: [] };
 
 const ADMIN_ID = 1;
 
@@ -120,6 +125,39 @@ describe("CompanyService — reading", () => {
       (error) => error.statusCode === 404 && error.message === "Company not found",
     );
   });
+
+  // Several HR accounts per company, 2026-11-11: the page lists them all and
+  // the name the next one would get. The list of companies does not.
+  test("the page lists every HR account and the next free name", async () => {
+    const accounts = [
+      { us01_user_id: "2", us01_username: "hr.coforge", us01_first_name: "Ana", us01_email_address: "ana@coforge.example", us01_is_active: true },
+      { us01_user_id: "8", us01_username: "hr.coforge.2", us01_first_name: "Ben", us01_email_address: "ben@coforge.example", us01_is_active: true },
+    ];
+    const taken = ["hr.coforge", "hr.coforge.2"];
+    const { pool, calls } = fakePool({
+      [BY_ID]: [stored()],
+      [HR_LIST]: accounts,
+      [USERNAME_EXISTS]: ({ username }) => ({ recordset: taken.includes(username) ? [{ exists_flag: 1 }] : [], output: {} }),
+    });
+
+    const page = await CompanyService.getCompany(pool, ADMIN_ID, "1");
+
+    assert.deepEqual(page.hr_accounts.map((account) => account.username), ["hr.coforge", "hr.coforge.2"]);
+    assert.equal(page.hr_accounts[1].user_id, "8");
+    assert.equal(page.next_hr_username, "hr.coforge.3");
+    // The first, kept for screens that read the one account.
+    assert.equal(page.hr_account.username, "hr.coforge");
+    assert.equal(inputsFor(calls, HR_LIST).employer_id, "1");
+  });
+
+  test("the list of companies reads no HR accounts", async () => {
+    const { pool, calls } = fakePool({ [LIST]: [stored()] });
+
+    const [company] = await CompanyService.getCompanies(pool, ADMIN_ID);
+
+    assert.equal("hr_accounts" in company, false);
+    assert.equal(callTo(calls, HR_LIST), undefined);
+  });
 });
 
 describe("CompanyService — creating", () => {
@@ -137,6 +175,7 @@ describe("CompanyService — creating", () => {
     const { pool, calls } = fakePool({
       [INSERT]: [{ employer_id: "5" }],
       [BY_ID]: ({ employer_id }) => ({ recordset: [stored({ employer_id, company_code: "ABCC" })], output: {} }),
+      ...PAGE_READS,
     });
 
     const created = await CompanyService.createCompany(pool, ADMIN_ID, { ...abcc });
@@ -157,6 +196,7 @@ describe("CompanyService — a PATCH becomes the whole company", () => {
     fakePool({
       [BY_ID]: row === null ? [] : [row],
       [UPDATE]: [{ employer_id: "1" }],
+      ...PAGE_READS,
     });
 
   // The procedure replaces every field, so what was not sent must go back as

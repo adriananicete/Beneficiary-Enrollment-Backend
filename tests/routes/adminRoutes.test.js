@@ -265,6 +265,29 @@ describe("the HR account routes", () => {
     assert.equal(roleAnswer(handlers, "HR"), 403);
     assert.equal(roleAnswer(handlers, "Employee"), 403);
   });
+
+  // Several HR accounts per company, 2026-11-11: the reissue names one. Both
+  // ids are checked before the limiter, and it shares the limiter above.
+  test("POST …/hr-account/:user_id/resend-credentials checks both ids, then the limit", async () => {
+    const controllers = await import("../../src/controllers/companyController.js");
+    const { credentialsResendLimiter } = await import("../../src/middlewares/rateLimiter.js");
+    const handlers = handlersFor("post", "/companies/:employer_id/hr-account/:user_id/resend-credentials");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.length, 6);
+    assert.equal(handlers[4], credentialsResendLimiter);
+    assert.equal(handlers.at(-1), controllers.resendHrCredentials);
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "HR"), 403);
+
+    // The user id check: a value that cannot be an id is 404, before the limit.
+    let refused;
+    handlers[3]({ params: { employer_id: "5", user_id: "abc" } }, {}, (error) => {
+      refused = error;
+    });
+    assert.equal(refused?.statusCode, 404);
+    assert.equal(refused.message, "HR account not found for this company");
+  });
 });
 
 // A company's affiliates, DBA request 25, branch 5. The Administrator only.
