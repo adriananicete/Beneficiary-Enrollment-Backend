@@ -493,3 +493,33 @@ export const sqlErrorMap = {
     // the one it can name into the 50152 sentence.
     2601: {statusCode: 409, message: 'Duplicate record'},
 }
+
+// The number to look an error up by. Ported from the teammates' 1b0e6a7.
+//
+// 2601 and 2627 name no field, so they are worded "Duplicate record" above.
+// But sec.us01_users has two unique indexes, uq_email and uq_username (read on
+// UAT 2026-11-11: unique, no filter, over every account), and SQL Server names
+// the index in its message: "...with unique index 'uq_email'...". Those stand
+// for what sec.us01_usp_ins_users answers when it checks first, 50036 and
+// 50035.
+//
+// It does not always check first. Its email check only looks at accounts
+// linked to a client (AND client_id IS NOT NULL), so a new employee with an HR
+// account's email, or a new HR account with another HR's, went past it, met
+// uq_email, and was told "Duplicate record" with no field.
+//
+// Any other error, and a duplicate on any other index, keeps its own number.
+const UNIQUE_INDEX_NUMBERS = [
+  [/'uq_email'/i, 50036],
+  [/'uq_username'/i, 50035],
+];
+
+export const sqlNumberOf = (error) => {
+  const number = error?.number ?? error?.originalError?.number;
+  if (number !== 2601 && number !== 2627) return number;
+
+  // The driver's error and the one it wraps can each carry the message.
+  const message = `${error?.message ?? ""} ${error?.originalError?.message ?? ""}`;
+
+  return UNIQUE_INDEX_NUMBERS.find(([pattern]) => pattern.test(message))?.[1] ?? number;
+};

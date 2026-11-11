@@ -1,4 +1,4 @@
-import { sqlErrorMap } from "../utils/sqlErrorMap.js";
+import { sqlErrorMap, sqlNumberOf } from "../utils/sqlErrorMap.js";
 import { AppError } from "../utils/AppError.js";
 
 // Errors a library raises before our code runs, carrying an HTTP status of
@@ -30,8 +30,9 @@ export const errorHandler = (err, req, res, next) => {
   let message;
   let statusCode;
 
-  const number = err?.number ?? err?.originalError?.number;
-  const mapped = sqlErrorMap[number];
+  // A duplicate on uq_email or uq_username is read as the field it stands
+  // for (sqlNumberOf); every other number as it is.
+  const mapped = sqlErrorMap[sqlNumberOf(err)];
 
   console.error("ErrorHandler:", err);
 
