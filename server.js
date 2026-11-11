@@ -12,6 +12,7 @@ import enrollmentRoutes from './src/routes/enrollmentRoutes.js';
 import adminRoutes from './src/routes/adminRoutes.js';
 import employeeRoutes from './src/routes/employeeRoutes.js';
 import {errorHandler} from './src/middlewares/errorHandler.js';
+import { listenOnFreePort, startedByNpmDev } from './src/utils/listenOnFreePort.js';
 import helmet from 'helmet';
 
 const app = express();
@@ -115,4 +116,18 @@ setRealtimeServer(
     createSocketServer({ httpServer: server, getPool, verifySession: AuthService.verifySession }),
 );
 
-server.listen(config.PORT, "0.0.0.0", () => console.log(`Server is running on port ${config.PORT}`));
+// Under `npm run dev` a taken port is not fatal: the next free one is used and said out loud,
+// so a second instance comes up beside the first instead of crashing. Anything else, UAT's
+// service and production, keeps the port or fails, because the proxy in front expects it.
+const port = await listenOnFreePort(server, {
+    port: config.PORT,
+    host: "0.0.0.0",
+    fallback: startedByNpmDev(),
+});
+
+if (port === Number(config.PORT)) console.log(`Server is running on port ${port}`);
+else
+    console.warn(
+        `Port ${config.PORT} is already in use, so the server is running on port ${port} instead. ` +
+        `Point the frontend at it with VITE_API_PROXY_TARGET=http://127.0.0.1:${port}.`,
+    );
