@@ -32,6 +32,10 @@ export const sqlErrorMap = {
     // changing a company they are not mapped to.
     50140: { statusCode: 404, message: 'Company not found' },
     50141: { statusCode: 403, message: 'You can only change the settings of your own company' },
+    // DBA request 27 Part 2, read back 2026-11-11: anybody but an Administrator
+    // sending @messages_enabled. The controller refuses first, in the same
+    // words, so this only answers a path that skipped that check.
+    50223: { statusCode: 403, message: 'Only the Administrator can change the company messaging setting.' },
 
     // Thrown by usp_ins_beneficiary, on the public enrollment submit path. Its
     // only caller is enrollmentService.js:107, once per beneficiary, inside the

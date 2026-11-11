@@ -56,10 +56,9 @@ const getMessagingAccessByUser = async (pool, userId) => {
 // THROWs 50140 for a company that does not exist or is inactive, and 50141
 // for HR changing a company that is not theirs. Answers the updated row.
 //
-// Both settings are mandatory and both are written as given (read on UAT
-// 2026-11-11): @messages_enabled has no default, and a call without it is
-// error 201. EmployerSettingsService sends the one not being changed as it
-// stands.
+// Both settings are bound on every call. NULL means "leave as it is" since
+// DBA request 27 Part 2 (read back 2026-11-11). Before it, @messages_enabled
+// was mandatory, and a call without it was error 201.
 const updateEmployerSettings = async (pool, { employerId, sendCocEmail, messagesEnabled, userId }) => {
     const result = await pool.request()
     .input('employer_id', sql.BigInt, employerId)

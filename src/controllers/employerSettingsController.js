@@ -13,8 +13,8 @@ import { isOn } from "../utils/messagingAccess.js";
 //   Administrator changes it (Adrian, 2026-11-11).
 // The procedures scope who sees which company, the same way
 // usp_sel_hr_employee_by_client does. The Administrator-only rule for
-// messaging is checked here; DBA request 27 Part 2 adds it to the procedure
-// as 50223.
+// messaging is checked here, before the database, and again by the procedure
+// as 50223 (DBA request 27 Part 2).
 
 // Named field by field rather than spread from the row, so a column the
 // procedure gains later stays out until somebody adds it here on purpose.
