@@ -6,6 +6,11 @@
 // Agreed 2026-10-06, ahead of a pentest. The rule was 8 characters with a
 // letter and a digit, which accepts "password1".
 //
+// The minimum went from 8 to 9 on 2026-11-11, the figure in the security
+// controls list this system is now held to. A password already set at 8 still
+// signs in: the rule is checked only when a password is chosen, and a hash does
+// not say how long its password was.
+//
 // Letters are \p{Lu} and \p{Ll}, in any script, so Ñ counts as a capital and ñ
 // as a small letter, the same as the name rule in validateTextFields.js.
 //
@@ -18,7 +23,7 @@
 // Length is counted by code point, so an emoji is one character, not the two
 // that String.length reports.
 
-export const MIN_PASSWORD_LENGTH = 8;
+export const MIN_PASSWORD_LENGTH = 9;
 export const MAX_PASSWORD_LENGTH = 64;
 
 // bcrypt reads the first 72 bytes and silently ignores the rest, so two
