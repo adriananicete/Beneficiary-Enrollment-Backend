@@ -245,3 +245,37 @@ describe("sendMessage, the controller", async () => {
     assert.equal(next.refusal()?.statusCode, 400);
   });
 });
+describe("editMessage, the controller", async () => {
+  const { createEditMessage } = await import("../../src/controllers/messageController.js");
+  const { makeNext, makeReq, makeRes } = await import("../helpers/http.js");
+
+  const edited = async (body) => {
+    const calls = [];
+    const res = makeRes();
+    const next = makeNext();
+
+    await createEditMessage({
+      poolOf: async () => "pool",
+      edit: async (pool, input) => (calls.push({ pool, input }), { message_id: "120", body: input.body }),
+    })(makeReq({ params: { conversation_id: "7", message_id: "120" }, user: { user_id: 12 }, body }), res, next);
+
+    return { calls, res, next };
+  };
+
+  test("hands the service the message, the caller and the trimmed text, and answers 200", async () => {
+    const { calls, res } = await edited({ body: "  Corrected  " });
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(calls, [{ pool: "pool", input: { conversationId: "7", messageId: "120", userId: 12, body: "Corrected" } }]);
+    assert.deepEqual(res.body, { success: true, data: { message_id: "120", body: "Corrected" } });
+  });
+
+  test("the text follows the rules of sending, and a refused one never reaches the service", async () => {
+    for (const body of [{}, { body: "   " }, { body: "x".repeat(2001) }, { body: 5 }]) {
+      const { calls, next } = await edited(body);
+
+      assert.equal(calls.length, 0, JSON.stringify(body).slice(0, 40));
+      assert.equal(next.refusal()?.statusCode, 400);
+    }
+  });
+});

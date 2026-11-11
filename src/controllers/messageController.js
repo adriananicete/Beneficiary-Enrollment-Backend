@@ -199,6 +199,33 @@ export const createSendMessage =
 
 export const sendMessage = createSendMessage();
 
+// PATCH …/conversations/:conversation_id/messages/:message_id: the sender
+// corrects their own message, within 15 minutes (DBA request 30). JSON only;
+// the text follows the rules of sending. The file of a message, if it has one,
+// stays as it is. Built from what it uses, so a test can replace them.
+export const createEditMessage =
+  ({ poolOf = getPool, edit = MessageService.editMessage } = {}) =>
+  async (req, res, next) => {
+    try {
+      const body = messageBodyOf(req.body?.body);
+
+      const pool = await poolOf();
+
+      const message = await edit(pool, {
+        conversationId: req.params.conversation_id,
+        messageId: req.params.message_id,
+        userId: req.user.user_id,
+        body,
+      });
+
+      return res.status(200).json({ success: true, data: message });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+export const editMessage = createEditMessage();
+
 export const markConversationRead = async (req, res, next) => {
   try {
     const lastReadMessageId = lastReadIdOf(req.body?.last_read_message_id);

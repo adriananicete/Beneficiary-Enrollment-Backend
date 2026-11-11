@@ -41,6 +41,11 @@ export const sqlErrorMap = {
     // the Administrator in, so this answers a path that skipped that check.
     50224: { statusCode: 403, message: 'Only an Administrator can view the security log.' },
 
+    // bes.usp_upd_message, DBA request 30. 50225 answers a message that is not
+    // the caller's the same way as one that does not exist.
+    50225: { statusCode: 404, message: 'Message not found.' },
+    50226: { statusCode: 409, message: 'A message can only be edited within 15 minutes of sending it.' },
+
     // Thrown by usp_ins_beneficiary, on the public enrollment submit path. Its
     // only caller is enrollmentService.js:107, once per beneficiary, inside the
     // backend's transaction.

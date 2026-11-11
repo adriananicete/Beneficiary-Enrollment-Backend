@@ -523,6 +523,7 @@ describe("the company messaging switch on HR's routes", () => {
     ["get", "/conversations/:conversation_id"],
     ["post", "/conversations/:conversation_id/messages"],
     ["post", "/conversations/:conversation_id/attachments"],
+    ["patch", "/conversations/:conversation_id/messages/:message_id"],
     ["post", "/conversations/:conversation_id/read"],
     ["get", "/conversations/:conversation_id/attachments/:attachment_id"],
   ])
@@ -571,5 +572,25 @@ describe("the security log route", () => {
     assert.equal(roleAnswer(handlers, "Administrator"), "passed");
     assert.equal(roleAnswer(handlers, "HR"), 403);
     assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+// DBA request 30: an edit checks both ids, then the sending limit, then the
+// switch, then the controller.
+describe("the message edit route", () => {
+  test("PATCH …/messages/:message_id: both ids, the limit, the switch, the controller", () => {
+    const handlers = handlersFor("patch", "/conversations/:conversation_id/messages/:message_id");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.length, 7);
+    assert.equal(handlers.indexOf(messageSendLimiter), 4);
+    assert.equal(handlers.indexOf(requireCompanyMessaging), 5);
+    assert.equal(handlers.at(-1), messages.editMessage);
+
+    let refused;
+    handlers[3]({ params: { conversation_id: "7", message_id: "x" } }, {}, (error) => {
+      refused = error;
+    });
+    assert.equal(refused?.statusCode, 404);
+    assert.equal(refused?.message, "Message not found");
   });
 });

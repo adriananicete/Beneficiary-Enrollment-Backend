@@ -14,12 +14,28 @@ import { cleanFileName } from "../utils/validateDocument.js";
 // The message as it leaves, over REST and over the socket alike. Its files,
 // one at most today, are listed by their metadata; the content is fetched
 // on its own (getAttachment).
+//
+// `edited_date` is null for a message never edited (DBA request 30); show
+// "edited" when it is set.
 export const messageOf = (row, attachments = []) => ({
   message_id: row.message_id,
   sender_role: row.sender_role,
   body: row.body,
   created_date: row.created_date,
+  edited_date: row.edited_date ?? null,
   attachments,
+});
+
+// An edited message, over REST and in `message:updated`: what changed and
+// where it belongs. No `attachments`: an edit changes the text only, and an
+// empty list here would read as the file having gone.
+export const editedMessageOf = (row) => ({
+  conversation_id: row.conversation_id,
+  message_id: row.message_id,
+  sender_role: row.sender_role,
+  body: row.body,
+  created_date: row.created_date,
+  edited_date: row.edited_date,
 });
 
 // A file as a message lists it.
@@ -117,6 +133,24 @@ const sendMessage = async (pool, { conversationId, userId, body, attachment = nu
   return message;
 };
 
+// The sender corrects their own message, within 15 minutes (DBA request 30),
+// then both sides' open screens are told. `body` has already been through
+// messageBodyOf. Ported from the teammates' raw UPDATE, which had no
+// read-only, length or time check and kept no trace of the edit.
+const editMessage = async (pool, { conversationId, messageId, userId, body }) => {
+  const saved = await MessageModel.updateMessage(pool, { conversationId, messageId, userId, body });
+
+  const message = editedMessageOf(saved);
+
+  emitToConversation(
+    { clientId: saved.client_id, employerId: saved.employer_id },
+    "message:updated",
+    message,
+  );
+
+  return message;
+};
+
 // Moves the caller's read marker, then tells both sides where both markers
 // now stand, for "seen" ticks. The procedure may not move it as far as asked
 // (never backwards, never past the newest), so the markers announced are read
@@ -145,4 +179,4 @@ const markRead = async (pool, { conversationId, userId, lastReadMessageId }) => 
   }
 };
 
-export default { sendMessage, markRead, getConversation, getAttachment };
+export default { sendMessage, editMessage, markRead, getConversation, getAttachment };

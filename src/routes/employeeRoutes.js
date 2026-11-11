@@ -11,6 +11,7 @@ import {
     markConversationRead,
     openMyConversation,
     sendMessage,
+    editMessage,
     getMessageAttachment,
 } from '../controllers/messageController.js';
 import { getMyAgreements, getMySignature } from '../controllers/enrollmentController.js';
@@ -81,6 +82,9 @@ router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE
 // against it: the same message, with the file required and named `file`.
 router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, requireCompanyMessaging, parseMessageAttachment, sendMessage);
 router.post('/conversations/:conversation_id/attachments', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, requireCompanyMessaging, parseAttachmentUpload, sendMessage);
+// The sender corrects their own message, within 15 minutes (DBA request 30).
+// On the sending budget: an edit is a write like a send.
+router.patch('/conversations/:conversation_id/messages/:message_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, validateIdParam('message_id', 'Message not found'), messageSendLimiter, requireCompanyMessaging, editMessage);
 router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, markConversationRead);
 // A file attached to a message, as a download (2026-11-11), as on HR's side.
 router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, validateIdParam('attachment_id', 'Attachment not found'), attachmentDownloadLimiter, requireCompanyMessaging, getMessageAttachment);
