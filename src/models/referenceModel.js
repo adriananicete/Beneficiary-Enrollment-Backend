@@ -12,8 +12,11 @@ export const getClassificationsByEmployer = async (pool, employerId) => {
     return result.recordset;
 };
 
-export const getEmployers = async (pool) => {
+// Active companies only, unless asked: the enrollment form and the dashboard want the active
+// ones, IPS wants every one with its status.
+export const getEmployers = async (pool, { includeInactive = false } = {}) => {
     const result = await pool.request()
+    .input('include_inactive', sql.Bit, includeInactive)
     .execute('bes.usp_sel_employers');
 
     return result.recordset;

@@ -349,6 +349,42 @@ export const jobStatusLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// IPS, server to server (md/IPS-INTEGRATION-DECISIONS.md). Keyed on the key, which requireKey
+// has found by then. A full copy of a company is one call per hundred people, so sixty a minute
+// reads six thousand people a minute and still stops a loop.
+export const ipsCallKey = (req) => (req.ipsKeyId ? `ips:${req.ipsKeyId}` : ipKeyGenerator(req.ip));
+
+export const ipsKeyLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: isDev ? 300 : 60,
+  keyGenerator: ipsCallKey,
+  message: {
+    success: false,
+    message: "Too many requests, please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Wrong keys from one address. Every call is counted and every one that was not refused for its
+// key is taken back off, so only the 401s stay. It runs before the key check, so an address past
+// the limit is refused before another guess is compared.
+export const ipsKeyAccepted = (req, res) => res.statusCode !== 401;
+
+export const ipsFailedKeyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 100 : 10,
+  skipSuccessfulRequests: true,
+  requestWasSuccessful: ipsKeyAccepted,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many failed attempts, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // The IP side of the login pair. Its job is a caller trying many DIFFERENT
 // usernames from one machine; a single username is already capped at ten per
 // fifteen minutes by strictLimiter, which keys on ip:username.

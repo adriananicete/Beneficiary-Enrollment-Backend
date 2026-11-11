@@ -5,6 +5,8 @@ import {
   AUTH_IP_BURST,
   ENROLLMENT_BURST,
   enrollmentTokenKey,
+  ipsCallKey,
+  ipsKeyAccepted,
   loginAttemptKey,
   passwordChangeKey,
   REFERENCE_BURST,
@@ -217,5 +219,29 @@ describe("the IP ceilings are sized from the largest burst the system can create
   test("both are derived from the invitation cap rather than fixed", () => {
     assert.equal(ENROLLMENT_BURST % MAX_INVITATION_EMAILS, 0);
     assert.equal(MAX_INVITATION_EMAILS % AUTH_IP_BURST, 0);
+  });
+});
+
+// IPS (md/IPS-INTEGRATION-DECISIONS.md). One budget per key, and the wrong-key budget per address
+// keeps only the 401s.
+describe("ipsCallKey", () => {
+  test("a call is counted against its key, not its address", () => {
+    const key = ipsCallKey(makeReq({ ipsKeyId: "ab12cd34", ip: "10.0.0.5" }));
+
+    assert.equal(key, "ips:ab12cd34");
+    assert.doesNotMatch(key, /10\.0\.0\.5/);
+  });
+
+  test("with no key found, it falls back to the address", () => {
+    assert.equal(ipsCallKey(makeReq({ ip: "10.0.0.5" })), "10.0.0.5");
+  });
+});
+
+describe("ipsKeyAccepted", () => {
+  test("only a 401 stays counted as a failed key", () => {
+    assert.equal(ipsKeyAccepted(makeReq(), { statusCode: 401 }), false);
+
+    for (const statusCode of [200, 400, 404, 429, 500])
+      assert.equal(ipsKeyAccepted(makeReq(), { statusCode }), true, String(statusCode));
   });
 });

@@ -11,6 +11,7 @@ import authRoutes from './src/routes/authRoutes.js';
 import enrollmentRoutes from './src/routes/enrollmentRoutes.js';
 import adminRoutes from './src/routes/adminRoutes.js';
 import employeeRoutes from './src/routes/employeeRoutes.js';
+import ipsRoutes from './src/routes/ipsRoutes.js';
 import {errorHandler} from './src/middlewares/errorHandler.js';
 import { listenOnFreePort, startedByNpmDev } from './src/utils/listenOnFreePort.js';
 import helmet from 'helmet';
@@ -76,6 +77,8 @@ app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/enrollment`, enrollmentRoutes);
 app.use(`${API_PREFIX}/admin`, adminRoutes);
 app.use(`${API_PREFIX}/employee`, employeeRoutes);
+// Another system, by key rather than by session. Off (404) until IPS_API_KEY_HASHES is set.
+app.use(`${API_PREFIX}/integration/ips`, ipsRoutes);
 
 // Anything still calling the unversioned paths is told where to go. Without
 // this a stale caller gets a bare 404 that looks like a deleted endpoint rather
