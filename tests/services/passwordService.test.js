@@ -40,6 +40,8 @@ const userRow = (overrides = {}) => ({
   us01_password: STORED_HASH,
   us01_is_active: true,
   us01_is_locked: false,
+  // A reset token is only issued while this is set.
+  us01_must_change_password: true,
   us02_role_id: 3,
   us02_role_name: EMPLOYEE,
   ...overrides,
@@ -179,6 +181,39 @@ describe("passwordService — refusing", () => {
       () => change(userRow(), { newPassword: OLD_PASSWORD }).result,
       (error) => error.statusCode === 400 && /same as the old password/.test(error.message),
     );
+  });
+
+  // The reset token is single-use. The change procedure clears the flag, so a
+  // second spend of the same token finds it cleared.
+  test("a reset token already spent is 401, and nothing is written", async () => {
+    const { calls, result } = change(userRow({ us01_must_change_password: false }));
+
+    await assert.rejects(
+      () => result,
+      (error) =>
+        error.statusCode === 401 &&
+        error.message === "This password has already been changed. Please sign in again.",
+    );
+    assert.ok(
+      !calls.some((call) => call.procedure === CHANGE),
+      "the change procedure ran for a spent token",
+    );
+    assert.equal(callTo(calls, SUCCEEDED), undefined);
+    assert.equal(callTo(calls, END_SESSIONS), undefined);
+  });
+
+  // Checked before the password, so a spent token answers the same whatever
+  // password comes with it and cannot be used to test guesses.
+  test("a spent token answers the same with a wrong password", async () => {
+    const right = await change(userRow({ us01_must_change_password: false })).result.catch(
+      (error) => error,
+    );
+    const wrong = await change(userRow({ us01_must_change_password: false }), {
+      oldPassword: "NotTheOne@1",
+    }).result.catch((error) => error);
+
+    assert.equal(wrong.statusCode, 401);
+    assert.equal(wrong.message, right.message);
   });
 
   test("nothing is written when a guard refuses", async () => {

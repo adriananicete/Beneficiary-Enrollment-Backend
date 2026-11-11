@@ -32,6 +32,22 @@ const changePassword = async (
   // cannot be used to work out which usernames exist.
   if (!user) throw new AppError("Invalid Credentials", 400);
 
+  // The reset token is single-use. It is signed for one forced change, and
+  // sec.us01_usp_first_login sets us01_must_change_password to 0 when that
+  // change goes through, so spending the same token again inside its fifteen
+  // minutes is refused here. The controller clears the cookie on success, but
+  // the cookie is only the browser's copy: a token copied out of it could
+  // otherwise change the password again for anyone who knew the new one.
+  //
+  // Checked before the password, so a spent token cannot be used to test
+  // guesses at the current password either. Security controls list,
+  // 2026-11-11.
+  if (!user.us01_must_change_password)
+    throw new AppError(
+      "This password has already been changed. Please sign in again.",
+      401,
+    );
+
   const isPasswordMatch = await bcrypt.compare(oldPassword, user.us01_password);
   if (!isPasswordMatch) throw new AppError("Invalid Credentials", 400);
 
