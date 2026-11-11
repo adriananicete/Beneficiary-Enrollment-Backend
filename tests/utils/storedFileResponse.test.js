@@ -77,3 +77,41 @@ describe("contentDisposition — the file name offered for saving", () => {
     assert.match(contentDisposition("it's (1)*.pdf"), /filename\*=UTF-8''it%27s%20%281%29%2A\.pdf$/);
   });
 });
+
+// The Certificate of Coverage downloads rather than opening in place
+// (2026-11-11). Everything else stays inline, as before.
+describe("contentDisposition — attachment", () => {
+  test("attachment, with the same file name handling", () => {
+    assert.equal(
+      contentDisposition("G-TLI-26-137-2600016-Juan-Dela-Cruz.pdf", "attachment"),
+      `attachment; filename="G-TLI-26-137-2600016-Juan-Dela-Cruz.pdf"; filename*=UTF-8''G-TLI-26-137-2600016-Juan-Dela-Cruz.pdf`,
+    );
+  });
+
+  test("attachment with no file name", () => {
+    assert.equal(contentDisposition(undefined, "attachment"), "attachment");
+  });
+
+  // The kind is chosen from two words, never copied in, so nothing a caller
+  // passes can be written into the header.
+  test("anything but 'attachment' is inline", () => {
+    for (const kind of [undefined, "inline", "ATTACHMENT", "attachment; x=1", "form-data"])
+      assert.match(contentDisposition("a.pdf", kind), /^inline; /, String(kind));
+  });
+
+  test("sendStoredFile passes it through, and stays uncached", () => {
+    const res = makeRes();
+
+    sendStoredFile(res, {
+      content: Buffer.from("%PDF-1.7"),
+      mimeType: "application/pdf",
+      byteSize: 8,
+      fileName: "certificate.pdf",
+      disposition: "attachment",
+    });
+
+    assert.match(res.headers["Content-Disposition"], /^attachment; filename="certificate\.pdf"/);
+    assert.equal(res.headers["Content-Type"], "application/pdf");
+    assert.equal(res.headers["Cache-Control"], "private, no-store");
+  });
+});

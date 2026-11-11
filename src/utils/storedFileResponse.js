@@ -21,18 +21,23 @@ const encodeExtValue = (value) =>
 const asciiFallback = (value) => value.replace(/[^\x20-\x7e]|["\\]/g, "_");
 
 // "inline" renders in the page rather than downloading. A file name, when
-// there is one, is offered for "save as".
-export const contentDisposition = (fileName) =>
-  fileName
-    ? `inline; filename="${asciiFallback(fileName)}"; filename*=UTF-8''${encodeExtValue(fileName)}`
-    : "inline";
+// there is one, is offered for "save as". "attachment" downloads instead: the
+// Certificate of Coverage, which is a document to keep, not to look at in
+// place. Anything else is inline, so a caller cannot write into the header.
+export const contentDisposition = (fileName, disposition = "inline") => {
+  const kind = disposition === "attachment" ? "attachment" : "inline";
 
-export const sendStoredFile = (res, { content, mimeType, byteSize, fileName }) => {
+  return fileName
+    ? `${kind}; filename="${asciiFallback(fileName)}"; filename*=UTF-8''${encodeExtValue(fileName)}`
+    : kind;
+};
+
+export const sendStoredFile = (res, { content, mimeType, byteSize, fileName, disposition }) => {
   // The stored type, resolved from the file's own first bytes when it was
   // uploaded. Never a guess, and never taken from the name.
   res.setHeader("Content-Type", mimeType);
   res.setHeader("Content-Length", byteSize);
-  res.setHeader("Content-Disposition", contentDisposition(fileName));
+  res.setHeader("Content-Disposition", contentDisposition(fileName, disposition));
 
   // Not cached, and this is a deliberate trade against the obvious one.
   // Caching would save re-fetching a file when HR reopens a record, at the cost
