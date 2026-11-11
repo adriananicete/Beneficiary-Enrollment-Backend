@@ -459,8 +459,8 @@ describe("model bindings — claims", () => {
     assert.equal(bindings.filed_by_role.value, "Employee");
   });
 
-  // The procedure names its column pending_count, unlike the change request
-  // count's pendingCount. Read under the wrong name, the badge reads 0 forever.
+  // The procedure names its column pending_count. Read under the wrong name,
+  // the badge reads 0 forever.
   test("getPendingCountByUser reads pending_count", async () => {
     const pool = {
       request: () => {
@@ -663,5 +663,25 @@ describe("model bindings — the invitation's class and affiliate", () => {
     assert.equal(assigned.inputs.affiliate_id, "7");
     assert.equal(bare.inputs.affiliate_id, null);
     assert.deepEqual(Object.keys(assigned.outputs), ["client_employer_id"]);
+  });
+});
+
+describe("model bindings — change requests", () => {
+  // bes.usp_sel_client_change_request_pending_count, read on UAT 2026-11-11,
+  // names its column pending_count, like the claims count. It was pendingCount
+  // before the procedures were re-created in bes. Read under the wrong name,
+  // the badge reads 0 forever.
+  test("getPendingCountByUser reads pending_count", async () => {
+    const pool = {
+      request: () => {
+        const chain = {
+          input: () => chain,
+          execute: async () => ({ recordset: [{ pending_count: 4 }] }),
+        };
+        return chain;
+      },
+    };
+
+    assert.equal(await ChangeRequestModel.getPendingCountByUser(pool, 3), 4);
   });
 });
