@@ -29,6 +29,7 @@ import {
 } from '../controllers/claimController.js';
 import { getMessagingAccess } from '../controllers/messagingAccessController.js';
 import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
+import { parseAttachmentUpload, parseMessageAttachment } from '../middlewares/parseMessageAttachment.js';
 
 const router = express.Router();
 
@@ -74,7 +75,12 @@ router.get('/messaging-access', verifyToken, allowedRoles(EMPLOYEE), pendingCoun
 router.post('/conversation', verifyToken, allowedRoles(EMPLOYEE), requireCompanyMessaging, openMyConversation);
 router.get('/conversations/unread-count', verifyToken, allowedRoles(EMPLOYEE), pendingCountLimiter, requireCompanyMessaging, getUnreadMessageCount);
 router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, getConversation);
-router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, requireCompanyMessaging, sendMessage);
+// A message is text, a file, or both (DBA request 29). The file is read after the
+// limit and the switch, so a refused call never has its upload held in memory.
+// /attachments is the teammates' dedicated upload, kept for the frontend built
+// against it: the same message, with the file required and named `file`.
+router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, requireCompanyMessaging, parseMessageAttachment, sendMessage);
+router.post('/conversations/:conversation_id/attachments', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, requireCompanyMessaging, parseAttachmentUpload, sendMessage);
 router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, markConversationRead);
 // A file attached to a message, as a download (2026-11-11), as on HR's side.
 router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, validateIdParam('attachment_id', 'Attachment not found'), attachmentDownloadLimiter, requireCompanyMessaging, getMessageAttachment);

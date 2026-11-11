@@ -38,6 +38,29 @@ const insertMessage = async (pool, { conversationId, userId, body }) => {
   return result.recordset[0];
 };
 
+// A message and its one file, in the procedure's own transaction (DBA request
+// 29). Called on its own, never inside a transaction of ours: it owns one.
+// Returns the saved message, as insertMessage does, plus the file's
+// attachment_id, file_name, mime_type and byte_size.
+const insertMessageWithAttachment = async (
+  pool,
+  { conversationId, userId, body, fileName, mimeType, byteSize, sha256, content },
+) => {
+  const result = await pool
+    .request()
+    .input("conversation_id", sql.BigInt, conversationId)
+    .input("us01_user_id", sql.BigInt, userId)
+    .input("body", sql.NVarChar(4000), body)
+    .input("file_name", sql.NVarChar(200), fileName)
+    .input("mime_type", sql.VarChar(100), mimeType)
+    .input("byte_size", sql.Int, byteSize)
+    .input("sha256", sql.Char(64), sha256)
+    .input("content", sql.VarBinary(sql.MAX), content)
+    .execute("bes.usp_ins_message_with_attachment");
+
+  return result.recordset[0];
+};
+
 // HR's list, unread first. `page_size` undefined reaches it as NULL, the
 // whole set, as with the other HR lists.
 const getConversationsByUser = async (pool, userId, paging = {}) => {
@@ -130,6 +153,7 @@ const getUnreadCountByUser = async (pool, userId) => {
 export default {
   openConversation,
   insertMessage,
+  insertMessageWithAttachment,
   getConversationsByUser,
   getConversationById,
   markConversationRead,

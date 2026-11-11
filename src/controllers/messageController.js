@@ -164,24 +164,40 @@ export const getMessageAttachment = async (req, res, next) => {
   }
 };
 
-export const sendMessage = async (req, res, next) => {
-  try {
-    const body = messageBodyOf(req.body?.body);
+// Text, a file, or both (DBA request 29). A message with only a file carries
+// the file's name as its text, decided 2026-11-11, so a message is never
+// empty and the conversation list has something to show. Text sent with a file
+// is judged like any other.
+export const messageTextOf = (body, attachment) =>
+  attachment && (body === undefined || (typeof body === "string" && body.trim() === ""))
+    ? attachment.fileName
+    : messageBodyOf(body);
 
-    const pool = await getPool();
+// Built from what it uses, so a test can replace them.
+export const createSendMessage =
+  ({ poolOf = getPool, send = MessageService.sendMessage } = {}) =>
+  async (req, res, next) => {
+    try {
+      const attachment = req.attachment ?? null;
+      const body = messageTextOf(req.body?.body, attachment);
 
-    // Saved, then announced to both sides' open screens.
-    const message = await MessageService.sendMessage(pool, {
-      conversationId: req.params.conversation_id,
-      userId: req.user.user_id,
-      body,
-    });
+      const pool = await poolOf();
 
-    return res.status(201).json({ success: true, data: message });
-  } catch (error) {
-    next(error);
-  }
-};
+      // Saved, then announced to both sides' open screens.
+      const message = await send(pool, {
+        conversationId: req.params.conversation_id,
+        userId: req.user.user_id,
+        body,
+        attachment,
+      });
+
+      return res.status(201).json({ success: true, data: message });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+export const sendMessage = createSendMessage();
 
 export const markConversationRead = async (req, res, next) => {
   try {

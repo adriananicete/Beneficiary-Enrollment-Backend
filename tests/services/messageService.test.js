@@ -245,3 +245,106 @@ describe("messageService.getAttachment", () => {
     assert.equal((await result).fileName, "evil.pdf");
   });
 });
+
+// DBA request 29: a message and its file, in one procedure with its own
+// transaction. The text-only path keeps usp_ins_message.
+describe("messageService.sendMessage, with a file", () => {
+  const WITH_FILE = "bes.usp_ins_message_with_attachment";
+  const CONTENT = Buffer.from("%PDF-1.7 a small one");
+  const ATTACHMENT = {
+    fileName: "payslip.pdf",
+    content: CONTENT,
+    mimeType: "application/pdf",
+    byteSize: CONTENT.length,
+    sha256: "a".repeat(64),
+  };
+  const SAVED_WITH_FILE = {
+    ...SAVED,
+    body: "payslip.pdf",
+    attachment_id: "31",
+    file_name: "payslip.pdf",
+    mime_type: "application/pdf",
+    byte_size: CONTENT.length,
+  };
+
+  test("one call to the procedure that saves both, with every field of the file", async () => {
+    const { pool, calls } = fakePool({ [WITH_FILE]: [SAVED_WITH_FILE] });
+
+    await MessageService.sendMessage(pool, { conversationId: "7", userId: 12, body: "payslip.pdf", attachment: ATTACHMENT });
+
+    assert.equal(callTo(calls, INSERT), undefined, "the text-only procedure was called too");
+    assert.deepEqual(inputsFor(calls, WITH_FILE), {
+      conversation_id: "7",
+      us01_user_id: 12,
+      body: "payslip.pdf",
+      file_name: "payslip.pdf",
+      mime_type: "application/pdf",
+      byte_size: CONTENT.length,
+      sha256: "a".repeat(64),
+      content: CONTENT,
+    });
+  });
+
+  test("the message answered and announced lists its file, without the content", async () => {
+    const { io, events } = fakeIo();
+    setRealtimeServer(io);
+    const { pool } = fakePool({ [WITH_FILE]: [SAVED_WITH_FILE] });
+
+    const message = await MessageService.sendMessage(pool, { conversationId: "7", userId: 12, body: "payslip.pdf", attachment: ATTACHMENT });
+
+    assert.deepEqual(message.attachments, [
+      { attachment_id: "31", file_name: "payslip.pdf", mime_type: "application/pdf", byte_size: CONTENT.length },
+    ]);
+    assert.deepEqual(events, [{ kind: "emit", rooms: ["client:75", "hr:1"], event: "message:new", payload: message }]);
+  });
+
+  test("with no file, the text-only procedure as before, and no attachments", async () => {
+    const { pool, calls } = fakePool({ [INSERT]: [SAVED] });
+
+    const message = await MessageService.sendMessage(pool, { conversationId: "7", userId: 12, body: "Hello", attachment: null });
+
+    assert.equal(callTo(calls, WITH_FILE), undefined);
+    assert.deepEqual(message.attachments, []);
+  });
+});
+const { default: MessageModel } = await import("../../src/models/messageModel.js");
+const { declarationOf } = await import("../helpers/fakePool.js");
+
+// The binding of the file, DBA request 29: the content whole, the hash as 64
+// characters, the name as Unicode.
+describe("MessageModel.insertMessageWithAttachment", () => {
+  test("binds each field as the procedure declares it", async () => {
+    const { pool, calls } = fakePool({ "bes.usp_ins_message_with_attachment": [{}] });
+
+    await MessageModel.insertMessageWithAttachment(pool, {
+      conversationId: "7",
+      userId: 12,
+      body: "Peña ID.pdf",
+      fileName: "Peña ID.pdf",
+      mimeType: "application/pdf",
+      byteSize: 3,
+      sha256: "a".repeat(64),
+      content: Buffer.from("abc"),
+    });
+
+    const { bindings, outputs } = callTo(calls, "bes.usp_ins_message_with_attachment");
+    const expected = {
+      conversation_id: ["bigint"],
+      us01_user_id: ["bigint"],
+      body: ["nvarchar", 4000],
+      file_name: ["nvarchar", 200],
+      mime_type: ["varchar", 100],
+      byte_size: ["int"],
+      sha256: ["char", 64],
+    };
+
+    for (const [name, [declaration, length]] of Object.entries(expected)) {
+      assert.equal(declarationOf(bindings[name].type), declaration, name);
+      if (length !== undefined) assert.equal(bindings[name].type.length, length, name);
+    }
+
+    assert.equal(declarationOf(bindings.content.type), "varbinary");
+    assert.ok(bindings.content.type.length > 8000, "content must be VARBINARY(MAX), not cut at 8000 bytes");
+    assert.deepEqual(outputs, {}, "no OUTPUT parameter");
+  });
+});

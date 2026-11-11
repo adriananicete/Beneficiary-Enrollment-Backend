@@ -81,11 +81,30 @@ const getAttachment = async (pool, conversationId, attachmentId, userId) => {
   };
 };
 
-// `body` has already been through messageBodyOf.
-const sendMessage = async (pool, { conversationId, userId, body }) => {
-  const saved = await MessageModel.insertMessage(pool, { conversationId, userId, body });
+// `body` has already been through messageBodyOf. `attachment` is the file
+// parseMessageAttachment read, or null. With one, the message and the file are
+// saved together by one procedure in its own transaction (DBA request 29), so
+// a file that fails a check leaves no message behind. The teammates nested
+// usp_ins_message inside a transaction of theirs instead, the CLAUDE.md §5
+// trap, so that is not ported.
+const sendMessage = async (pool, { conversationId, userId, body, attachment = null }) => {
+  const saved = attachment
+    ? await MessageModel.insertMessageWithAttachment(pool, {
+        conversationId,
+        userId,
+        body,
+        fileName: attachment.fileName,
+        mimeType: attachment.mimeType,
+        byteSize: attachment.byteSize,
+        sha256: attachment.sha256,
+        content: attachment.content,
+      })
+    : await MessageModel.insertMessage(pool, { conversationId, userId, body });
 
-  const message = { conversation_id: saved.conversation_id, ...messageOf(saved) };
+  const message = {
+    conversation_id: saved.conversation_id,
+    ...messageOf(saved, attachment ? [attachmentOf(saved)] : []),
+  };
 
   // To both sides. The procedure returns the conversation's client and
   // company for exactly this.
