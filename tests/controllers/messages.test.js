@@ -31,7 +31,9 @@ describe("what leaves, field by field", () => {
       employer_id: "1",
     });
 
-    assert.deepEqual(Object.keys(shown).sort(), ["body", "created_date", "message_id", "sender_role"]);
+    // attachments since 2026-11-11: its files' metadata, empty when it has none.
+    assert.deepEqual(Object.keys(shown).sort(), ["attachments", "body", "created_date", "message_id", "sender_role"]);
+    assert.deepEqual(shown.attachments, []);
   });
 
   test("a conversation carries the named fields, and nothing a procedure adds later", () => {

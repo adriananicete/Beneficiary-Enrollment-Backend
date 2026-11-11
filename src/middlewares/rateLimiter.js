@@ -247,6 +247,23 @@ export const certificateDownloadLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Downloading a file from a conversation. Each is up to 5MB read out of the
+// database. Keyed on the account, like the messaging limiters. A screen that
+// shows images inline fetches each once; 300 in fifteen minutes leaves room
+// for that and still stops a loop.
+export const attachmentDownloadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isDev ? 1000 : 300,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many file downloads, please slow down.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Filing a claim uploads up to ten files of 5MB, held in memory while they
 // are read. Keyed on the employee, like the HR limiters above, and it runs
 // after verifyToken and before parseDocuments, so a caller over the limit is

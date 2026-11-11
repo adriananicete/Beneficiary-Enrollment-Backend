@@ -64,7 +64,8 @@ describe("messageService.sendMessage", () => {
 
     const message = await MessageService.sendMessage(pool, { conversationId: "7", userId: 12, body: "Hello" });
 
-    assert.deepEqual(Object.keys(message).sort(), ["body", "conversation_id", "created_date", "message_id", "sender_role"]);
+    assert.deepEqual(Object.keys(message).sort(), ["attachments", "body", "conversation_id", "created_date", "message_id", "sender_role"]);
+    assert.deepEqual(message.attachments, []);
   });
 
   test("a failed save announces nothing", async () => {
@@ -126,5 +127,121 @@ describe("messageService.markRead", () => {
 
     await assert.doesNotReject(MessageService.markRead(pool, { conversationId: "7", userId: 3, lastReadMessageId: "120" }));
     assert.deepEqual(events, []);
+  });
+});
+
+// Files on messages, 2026-11-11, the reading half. The metadata comes in one
+// call for the page; the file itself only after the conversation is read as
+// the caller's, because the procedure that hands it over takes no user id.
+const METADATA = "bes.usp_sel_message_attachment_metadata";
+const FILE = "bes.usp_sel_message_attachment";
+
+const message = (id, body = "Hello") => ({ message_id: id, sender_role: "HR", body, created_date: new Date("2026-11-11T01:00:00Z") });
+
+describe("messageService.getConversation", () => {
+  const read = ({ messages = [message("120"), message("121")], files = [] } = {}) => {
+    const { pool, calls } = fakePool({
+      [DETAIL]: () => ({ recordsets: [[HEADER], messages, [{ has_more: true }]] }),
+      [METADATA]: files,
+    });
+
+    return { calls, result: MessageService.getConversation(pool, "7", 3, { before: null, limit: 50 }) };
+  };
+
+  test("each message carries its own files, and an empty list when it has none", async () => {
+    const { result } = read({
+      files: [
+        { attachment_id: "9", message_id: "121", file_name: "id.png", mime_type: "image/png", byte_size: 2048 },
+        { attachment_id: "10", message_id: "121", file_name: "b.pdf", mime_type: "application/pdf", byte_size: 10 },
+      ],
+    });
+
+    const { conversation, messages, hasMore } = await result;
+
+    assert.equal(conversation.conversation_id, "7");
+    assert.equal(hasMore, true);
+    assert.deepEqual(messages[0].attachments, []);
+    assert.deepEqual(messages[1].attachments, [
+      { attachment_id: "9", file_name: "id.png", mime_type: "image/png", byte_size: 2048 },
+      { attachment_id: "10", file_name: "b.pdf", mime_type: "application/pdf", byte_size: 10 },
+    ]);
+  });
+
+  // One call for the page, with the ids as the JSON array of strings the
+  // procedure insists on (51102, 51103).
+  test("the files are asked for once, for the page's messages, as strings", async () => {
+    const { calls, result } = read();
+    await result;
+
+    const asked = calls.filter((call) => call.procedure === METADATA);
+
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0].inputs.conversation_id, "7");
+    assert.equal(asked[0].inputs.message_ids_json, '["120","121"]');
+  });
+
+  test("a page with no messages asks for no files", async () => {
+    const { calls, result } = read({ messages: [] });
+    await result;
+
+    assert.equal(callTo(calls, METADATA), undefined);
+  });
+
+  // Not theirs, or not there: the procedure answers both the same way.
+  test("a conversation the caller cannot see is null, and no files are asked for", async () => {
+    const { pool, calls } = fakePool({ [DETAIL]: () => ({ recordsets: [[], [], []] }), [METADATA]: [] });
+
+    assert.equal(await MessageService.getConversation(pool, "7", 3, {}), null);
+    assert.equal(callTo(calls, METADATA), undefined);
+  });
+});
+
+describe("messageService.getAttachment", () => {
+  const PDF = Buffer.from("%PDF-1.7 the bytes");
+
+  const fetch = ({ conversation = HEADER, file = { file_name: "letter.pdf", mime_type: "application/pdf", byte_size: PDF.length, content: PDF } } = {}) => {
+    const { pool, calls } = fakePool({
+      [DETAIL]: () => ({ recordsets: [conversation ? [conversation] : [], [], []] }),
+      [FILE]: file ? [file] : [],
+    });
+
+    return { calls, result: MessageService.getAttachment(pool, "7", "9", 3) };
+  };
+
+  test("answers the file, its type, its real length and a clean name", async () => {
+    const { calls, result } = fetch();
+
+    assert.deepEqual(await result, { content: PDF, mimeType: "application/pdf", byteSize: PDF.length, fileName: "letter.pdf" });
+    assert.equal(inputsFor(calls, DETAIL).us01_user_id, 3);
+    assert.equal(inputsFor(calls, FILE).attachment_id, "9");
+  });
+
+  // The procedure that hands the file over takes no user id. Another
+  // employee's or company's conversation must stop before it is asked.
+  test("a conversation the caller cannot see is 404, and the file is never asked for", async () => {
+    const { calls, result } = fetch({ conversation: null });
+
+    await assert.rejects(() => result, (error) => error.statusCode === 404 && error.message === "Conversation not found");
+    assert.equal(callTo(calls, FILE), undefined);
+  });
+
+  test("a file that is not in this conversation is 404", async () => {
+    await assert.rejects(() => fetch({ file: null }).result, (error) => error.statusCode === 404 && error.message === "Attachment not found");
+  });
+
+  // Sent files are PDF, JPG or PNG, read from their bytes. A stored type that
+  // is none of these goes out as a plain download, not as what it claims.
+  test("a stored type outside PDF, JPG and PNG goes out as octet-stream", async () => {
+    for (const mime_type of ["text/html", "image/svg+xml", "application/javascript", null]) {
+      const { result } = fetch({ file: { file_name: "x", mime_type, byte_size: 3, content: Buffer.from("abc") } });
+
+      assert.equal((await result).mimeType, "application/octet-stream", String(mime_type));
+    }
+  });
+
+  test("a name with a path in it keeps only its last part", async () => {
+    const { result } = fetch({ file: { file_name: "..\\..\\evil.pdf", mime_type: "application/pdf", byte_size: PDF.length, content: PDF } });
+
+    assert.equal((await result).fileName, "evil.pdf");
   });
 });

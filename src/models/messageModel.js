@@ -88,6 +88,34 @@ const markConversationRead = async (pool, conversationId, userId, lastReadMessag
     .execute("bes.usp_upd_conversation_read");
 };
 
+// The files attached to some of a conversation's messages: id, message, name,
+// type and size, never the content. bes.usp_sel_message_attachment_metadata
+// (read on UAT 2026-11-11) takes the ids as a JSON array of decimal
+// strings, and refuses anything else (51101–51103). It does not check who
+// asks: the caller has already read the conversation as theirs.
+const getAttachmentMetadata = async (pool, conversationId, messageIds) => {
+  const result = await pool
+    .request()
+    .input("conversation_id", sql.BigInt, conversationId)
+    .input("message_ids_json", sql.NVarChar(sql.MAX), JSON.stringify(messageIds.map(String)))
+    .execute("bes.usp_sel_message_attachment_metadata");
+
+  return result.recordset;
+};
+
+// One file with its content, or undefined. bes.usp_sel_message_attachment
+// takes no user id, so the caller must have read the conversation as theirs
+// first; messageService.getAttachment does.
+const getAttachment = async (pool, conversationId, attachmentId) => {
+  const result = await pool
+    .request()
+    .input("conversation_id", sql.BigInt, conversationId)
+    .input("attachment_id", sql.BigInt, attachmentId)
+    .execute("bes.usp_sel_message_attachment");
+
+  return result.recordset[0];
+};
+
 // For HR, conversations with something unread; for an employee, unread
 // messages (both decided 2026-10-12).
 const getUnreadCountByUser = async (pool, userId) => {
@@ -106,4 +134,6 @@ export default {
   getConversationById,
   markConversationRead,
   getUnreadCountByUser,
+  getAttachmentMetadata,
+  getAttachment,
 };
