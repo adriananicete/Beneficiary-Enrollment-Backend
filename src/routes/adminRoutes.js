@@ -26,6 +26,7 @@ import { validateCompanyChanges, validateNewCompany } from '../middlewares/valid
 import { validateClassificationChanges, validateNewClassification } from '../middlewares/validateClassification.js';
 import { validateAffiliateChanges, validateNewAffiliate } from '../middlewares/validateAffiliate.js';
 import { getSecurityEvents } from '../controllers/securityEventController.js';
+import { getAuditTrail } from '../controllers/auditTrailController.js';
 
 const router = express.Router();
 
@@ -193,5 +194,9 @@ router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyT
 // The security log, DBA request 28. The Administrator only; the procedure
 // checks again (50224).
 router.get('/security-events', verifyToken, allowedRoles(SUPER_ADMIN), getSecurityEvents);
+
+// The CRUD audit trail, DBA request 34. The Administrator only; the procedure
+// checks again (50236).
+router.get('/audit-trail', verifyToken, allowedRoles(SUPER_ADMIN), getAuditTrail);
 
 export default router;

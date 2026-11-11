@@ -2,6 +2,7 @@ import SecurityEventModel from "../models/securityEventModel.js";
 import { AppError } from "../utils/AppError.js";
 import { buildPage, parsePaging, parseSearch } from "../utils/parsePaging.js";
 import { plainAddress } from "../utils/integrationKeys.js";
+import { isoDateRangeOf } from "../utils/isoDate.js";
 
 // The security event log, DBA request 28: the last item of the security
 // controls list Adrian's boss sent on 2026-11-11, "structured security logs for
@@ -75,24 +76,6 @@ export const recorderFor = (pool, req, deps) => (event) => {
 
 // ── The Administrator's list ────────────────────────────────────────────────
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-// A calendar date as YYYY-MM-DD, or null when not given. 2026-02-30 is refused,
-// not rolled over into March.
-const dateOf = (value, name) => {
-  if (value === undefined || value === "") return null;
-
-  const valid =
-    typeof value === "string" &&
-    ISO_DATE.test(value) &&
-    !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) &&
-    new Date(`${value}T00:00:00Z`).toISOString().startsWith(value);
-
-  if (!valid) throw new AppError(`${name} must be a date written as YYYY-MM-DD`, 400);
-
-  return value;
-};
-
 // ?event_type=&username=&from_date=&to_date=&page=&pageSize=. The username is a
 // prefix, as the procedure matches it. Both dates are inclusive.
 export const parseSecurityEventQuery = (query = {}) => {
@@ -104,10 +87,7 @@ export const parseSecurityEventQuery = (query = {}) => {
   const username = parseSearch(query.username);
   if (username !== null && username.length > 50) throw new AppError("username can be at most 50 characters", 400);
 
-  const fromDate = dateOf(query.from_date, "from_date");
-  const toDate = dateOf(query.to_date, "to_date");
-  if (fromDate !== null && toDate !== null && fromDate > toDate)
-    throw new AppError("from_date must not be after to_date", 400);
+  const { fromDate, toDate } = isoDateRangeOf(query, "from_date", "to_date");
 
   return { eventType, username, fromDate, toDate, ...parsePaging(query) };
 };
