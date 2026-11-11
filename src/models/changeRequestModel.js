@@ -103,13 +103,16 @@ const getChangeRequestsByUser = async (pool, userId, requestStatus, paging = {})
   return result.recordset;
 };
 
+// The column is pending_count, like the claims count. It was pendingCount
+// before the procedures were re-created in bes (read on UAT 2026-11-11), and
+// read under the old name the badge said 0 whatever was waiting.
 const getPendingCountByUser = async (pool, userId) => {
   const result = await pool
     .request()
     .input("us01_user_id", sql.BigInt, userId)
     .execute("bes.usp_sel_client_change_request_pending_count");
 
-  return result.recordset[0]?.pendingCount ?? 0;
+  return result.recordset[0]?.pending_count ?? 0;
 };
 
 // The only procedure in this codebase that returns more than one result set, so
