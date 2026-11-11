@@ -120,6 +120,11 @@ router.patch('/companies/:employer_id/classifications/:classification_id', verif
 // resend: both send a password by email.
 router.post('/companies/:employer_id/hr-account', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateHrAccount, createHrAccount);
 router.post('/companies/:employer_id/hr-account/resend-credentials', verifyToken, allowedRoles(SUPER_ADMIN), companyId, credentialsResendLimiter, resendHrCredentials);
+// Several HR accounts per company since 2026-11-11, so a reissue names the
+// account. The route above stays, for the company's one account (409 when it
+// has several). The two never match the same path: this one has a segment
+// more.
+router.post('/companies/:employer_id/hr-account/:user_id/resend-credentials', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateIdParam('user_id', 'HR account not found for this company'), credentialsResendLimiter, resendHrCredentials);
 
 // A company's affiliates, DBA request 25, branch 5. The Administrator only.
 // The edit route sits under the company, as the class edit does (option A,

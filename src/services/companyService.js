@@ -2,6 +2,7 @@ import EmployerAdminModel from "../models/employerAdminModel.js";
 import { COMPANY_FIELDS } from "../utils/validateCompany.js";
 import { AppError } from "../utils/AppError.js";
 import { isOn } from "../utils/messagingAccess.js";
+import HrAccountService from "./hrAccountService.js";
 
 // The Administrator lists, creates and edits companies. Branch 2 of
 // md/COMPANY-ONBOARDING-DECISIONS.md, on DBA request 24. The procedures refuse
@@ -9,7 +10,8 @@ import { isOn } from "../utils/messagingAccess.js";
 // check would still be refused.
 
 // What leaves, named field by field. The HR account is null until branch 4
-// creates one.
+// creates one. With several (2026-11-11) hr_account is the first one mapped,
+// kept for screens that read it; the company page also lists them all.
 export const companyOf = (row) => ({
   employer_id: row.employer_id,
   company_code: row.company_code,
@@ -53,7 +55,13 @@ const getCompany = async (pool, userId, employerId) => {
   const row = await EmployerAdminModel.getCompanyById(pool, userId, employerId);
   if (!row) throw new AppError("Company not found", 404);
 
-  return companyOf(row);
+  // The page, not the list: every HR account and the name the next would
+  // get. Two more reads, which the list of every company is spared.
+  return {
+    ...companyOf(row),
+    hr_accounts: await HrAccountService.getHrAccounts(pool, userId, employerId),
+    next_hr_username: await HrAccountService.nextHrUsername(pool, row.company_code),
+  };
 };
 
 // Answers the company as stored, read back, rather than echoing what was

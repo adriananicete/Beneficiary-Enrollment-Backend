@@ -82,8 +82,9 @@ const deleteCompany = async (pool, userId, employerId) => {
 
 // Maps a new HR account to its company, inside our transaction with
 // sec.us01_usp_ins_users and sec.us04_usp_assign_role. Opens no transaction.
-// THROWs 50187 (company), 50196 (not an active HR user), 50197 (the company
-// already has one).
+// THROWs 50187 (company) and 50196 (not an active HR user). 50197 ("already
+// has one") is commented out of the procedure since the DBA change of
+// 2026-11-06 (read in SP.sql 2026-11-11): a company may have several.
 const mapHrAccount = async (transaction, userId, { hrUserId, employerId }) => {
     await transaction.request()
     .input('us01_user_id', sql.BigInt, userId)
@@ -93,15 +94,18 @@ const mapHrAccount = async (transaction, userId, { hrUserId, employerId }) => {
     .execute('sec.us08_usp_ins_user_employer');
 };
 
-// The company's HR account, for reissuing its password: id, username, name,
-// email and state. No password columns. Undefined when there is none.
-const getHrAccount = async (pool, userId, employerId) => {
+// The company's HR accounts, one row each, in the order they were mapped: id,
+// username, name, email and state. No password columns. Empty when there are
+// none. Only accounts with an active HR role and an active mapping; a
+// deactivated account (us01_is_active 0) is still listed. THROWs 50182 for a
+// caller who is not an Administrator.
+const getHrAccounts = async (pool, userId, employerId) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
     .input('employer_id', sql.BigInt, employerId)
     .execute('sec.us08_usp_sel_hr_by_employer');
 
-    return result.recordset[0];
+    return result.recordset;
 };
 
 export default {
@@ -111,5 +115,5 @@ export default {
     updateCompany,
     deleteCompany,
     mapHrAccount,
-    getHrAccount,
+    getHrAccounts,
 };

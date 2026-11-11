@@ -166,6 +166,9 @@ export const createHrAccount = async (req, res, next) => {
   }
 };
 
+// Both routes: /hr-account/:user_id/resend-credentials names the account, and
+// /hr-account/resend-credentials, from before several were allowed, means the
+// company's one account (409 when it has several).
 export const resendHrCredentials = async (req, res, next) => {
   try {
     const pool = await getPool();
@@ -173,6 +176,7 @@ export const resendHrCredentials = async (req, res, next) => {
       pool,
       req.user.user_id,
       req.params.employer_id,
+      req.params.user_id ?? null,
     );
 
     return res.status(200).json({
