@@ -20,13 +20,13 @@ const { default: InvitationJobStore } = await import(
 // test that reaches it would be a network test wearing a unit test's clothes.
 // Every case below stops at a guard that throws before any email is attempted.
 
-const LIST = "usp_sel_enrollment_invitations_by_user";
-const BY_ID = "usp_sel_enrollment_invitation_by_id";
-const REVOKE = "usp_del_enrollment_invitation";
+const LIST = "bes.usp_sel_enrollment_invitations_by_user";
+const BY_ID = "bes.usp_sel_enrollment_invitation_by_id";
+const REVOKE = "bes.usp_del_enrollment_invitation";
 const EMPLOYERS = "sec.us08_usp_sel_employers_by_user";
-const CLASSES = "usp_sel_classifications_by_employer";
-const AFFILIATES = "usp_sel_employer_affiliates_by_user";
-const INSERT = "usp_ins_enrollment_invitation";
+const CLASSES = "bes.usp_sel_classifications_by_employer";
+const AFFILIATES = "bes.usp_sel_employer_affiliates_by_user";
+const INSERT = "bes.usp_ins_enrollment_invitation";
 
 // ABCC's codes, as the two procedures return them. The affiliate list carries
 // every company the account is mapped to; 6's must be left out.

@@ -4,7 +4,7 @@ import { sql } from "../config/db.js";
 // 2026-10-12 and are in md/DBA-PROCEDURES.md. Neither declares an OUTPUT
 // parameter, and each owns a short transaction: they are called on their own.
 //
-// The date of death is kept in dbo.client_deaths, not on dbo.clients, so it
+// The date of death is kept in bes.client_deaths, not on bes.clients, so it
 // never reaches the employee's own enrollment view (decided 2026-10-12).
 
 // Marks the employee deceased, or corrects the date while no death claim
@@ -20,7 +20,7 @@ const markDeceased = async (pool, { clientId, dateOfDeath, userId }) => {
     .input("client_id", sql.BigInt, clientId)
     .input("date_of_death", sql.Date, dateOfDeath)
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_upd_client_death");
+    .execute("bes.usp_upd_client_death");
 
   return result.recordset[0];
 };
@@ -33,7 +33,7 @@ const undoDeceased = async (pool, { clientId, userId }) => {
     .request()
     .input("client_id", sql.BigInt, clientId)
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_del_client_death");
+    .execute("bes.usp_del_client_death");
 };
 
 export default { markDeceased, undoDeceased };

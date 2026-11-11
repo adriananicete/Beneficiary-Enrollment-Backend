@@ -12,7 +12,7 @@ const insertClientEmployer = async (pool, clientEmployerData) => {
     .input('created_by', sql.VarChar, clientEmployerData.created_by)
     .input('affiliate_id', sql.BigInt, clientEmployerData.affiliate_id ?? null)
     .output('client_employer_id', sql.BigInt)
-    .execute('usp_ins_client_employer')
+    .execute('bes.usp_ins_client_employer')
 
     return result.output.client_employer_id;
 };
@@ -26,7 +26,7 @@ const insertClientEmployer = async (pool, clientEmployerData) => {
 const getCocEmailSetting = async (pool, clientId) => {
     const result = await pool.request()
     .input('client_id', sql.BigInt, clientId)
-    .execute('usp_sel_coc_email_by_client');
+    .execute('bes.usp_sel_coc_email_by_client');
 
     return result.recordset[0];
 };
@@ -36,7 +36,7 @@ const getCocEmailSetting = async (pool, clientId) => {
 const getEmployerSettings = async (pool, userId) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
-    .execute('usp_sel_employer_settings');
+    .execute('bes.usp_sel_employer_settings');
 
     return result.recordset;
 };
@@ -48,7 +48,7 @@ const updateEmployerSettings = async (pool, { employerId, sendCocEmail, userId }
     .input('employer_id', sql.BigInt, employerId)
     .input('send_coc_email', sql.Bit, sendCocEmail)
     .input('us01_user_id', sql.BigInt, userId)
-    .execute('usp_upd_employer_settings');
+    .execute('bes.usp_upd_employer_settings');
 
     return result.recordset[0];
 };

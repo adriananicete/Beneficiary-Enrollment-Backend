@@ -23,7 +23,7 @@ const getAffiliates = async (pool, userId, employerId) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
     .input('employer_id', sql.BigInt, employerId)
-    .execute('usp_sel_employer_affiliates_admin');
+    .execute('bes.usp_sel_employer_affiliates_admin');
 
     return result.recordset;
 };
@@ -37,7 +37,7 @@ const insertAffiliate = async (pool, userId, employerId, affiliate) => {
         affiliate,
     )
     .input('created_by', sql.VarChar(50), String(userId))
-    .execute('usp_ins_employer_affiliate');
+    .execute('bes.usp_ins_employer_affiliate');
 
     return result.recordset[0].affiliate_id;
 };
@@ -53,7 +53,7 @@ const updateAffiliate = async (pool, userId, affiliateId, affiliate) => {
     )
     .input('is_active', sql.Bit, affiliate.is_active)
     .input('modified_by', sql.VarChar(50), String(userId))
-    .execute('usp_upd_employer_affiliate');
+    .execute('bes.usp_upd_employer_affiliate');
 };
 
 // HR's list: the active affiliates of every active company the account is
@@ -61,7 +61,7 @@ const updateAffiliate = async (pool, userId, affiliateId, affiliate) => {
 const getAffiliatesByUser = async (pool, userId) => {
     const result = await pool.request()
     .input('us01_user_id', sql.BigInt, userId)
-    .execute('usp_sel_employer_affiliates_by_user');
+    .execute('bes.usp_sel_employer_affiliates_by_user');
 
     return result.recordset;
 };

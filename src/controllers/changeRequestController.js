@@ -230,7 +230,7 @@ export const reviewChangeRequest = async (req, res, next) => {
   }
 };
 
-// Fields that exist on both dbo.clients and sec.us01_users, by the display names
+// Fields that exist on both bes.clients and sec.us01_users, by the display names
 // the comparison result set uses.
 const SYNCED_FIELDS = [
   "First Name",
@@ -239,7 +239,7 @@ const SYNCED_FIELDS = [
   "Email Address",
 ];
 
-// dbo.clients and sec.us01_users hold the same name and email twice. The approve
+// bes.clients and sec.us01_users hold the same name and email twice. The approve
 // procedure writes the first and does not touch the second, so without this they
 // drift apart on every approved name or email change.
 //

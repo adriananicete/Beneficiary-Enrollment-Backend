@@ -1,5 +1,5 @@
 // Nine or twelve digits, stored with dashes — settled 2026-09-07 after reading
-// the 42 TINs in dbo.clients. Both lengths were already present: 26 rows in the
+// the 42 TINs in bes.clients. Both lengths were already present: 26 rows in the
 // nine-digit form, 15 in the twelve-digit form, and one with no dashes at all.
 //
 // The stored procedure asks for nothing. usp_ins_client declares

@@ -19,9 +19,9 @@ const { setRealtimeServer } = await import("../../src/realtime/realtime.js");
 // against TEST-CLAIM proves it.
 
 const USER = "sec.us01_usp_sel_user_by_id";
-const TYPES = "usp_sel_claim_types";
-const INSERT = "usp_ins_claim";
-const CANCEL = "usp_upd_claim_cancel";
+const TYPES = "bes.usp_sel_claim_types";
+const INSERT = "bes.usp_ins_claim";
+const CANCEL = "bes.usp_upd_claim_cancel";
 
 // TEST-CLAIM as seeded, plus a second type with no required document. Ids as
 // strings, as BigInt columns arrive.
@@ -173,9 +173,9 @@ describe("claimService.cancelClaim", () => {
   });
 });
 
-const DETAIL = "usp_sel_claim_by_id";
-const RESUBMIT = "usp_upd_claim_resubmit";
-const REVIEW = "usp_upd_claim_review";
+const DETAIL = "bes.usp_sel_claim_by_id";
+const RESUBMIT = "bes.usp_upd_claim_resubmit";
+const REVIEW = "bes.usp_upd_claim_review";
 
 // usp_sel_claim_by_id's three result sets, for a claim of TEST-CLAIM.
 const claimDetail = ({ claim, documents = [], requirements = SEEDED.requirements.slice(0, 2) } = {}) => () => ({
@@ -432,8 +432,8 @@ describe("claimService.reviewClaim", () => {
 
 // The death claim, branch 6. Filed by HR for an employee already marked
 // deceased, approved on filing.
-const ENROLLMENT = "usp_get_insurance_enrollment_by_id";
-const CLOSE = "usp_upd_claim_close";
+const ENROLLMENT = "bes.usp_get_insurance_enrollment_by_id";
+const CLOSE = "bes.usp_upd_claim_close";
 
 // TEST-DEATH as seeded by request 21: type 3, requirement 4.
 const HR_TYPES = {

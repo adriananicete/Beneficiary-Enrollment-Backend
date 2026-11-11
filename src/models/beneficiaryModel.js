@@ -9,7 +9,7 @@ const insertBeneficiary = async (pool, beneficiaryData) => {
     .input('age', sql.Int, beneficiaryData.age)
     .input('created_by', sql.VarChar, beneficiaryData.created_by)
     .input('coverage_percent', sql.Decimal(5, 2), beneficiaryData.coverage_percent)
-    .execute('usp_ins_beneficiary');
+    .execute('bes.usp_ins_beneficiary');
 
     return result.output.beneficiary_id;
 }
@@ -40,7 +40,7 @@ const getBeneficiariesByEnrollmentIds = async (pool, enrollmentIds) => {
 
     const result = await pool.request()
     .input('enrollment_ids', sql.VarChar(sql.MAX), ids.join(','))
-    .execute('usp_sel_beneficiaries_by_enrollments');
+    .execute('bes.usp_sel_beneficiaries_by_enrollments');
 
     return result.recordset;
 };
@@ -48,7 +48,7 @@ const getBeneficiariesByEnrollmentIds = async (pool, enrollmentIds) => {
 const getBeneficiariesByEnrollmentId = async (pool, enrollment_id) => {
     const result = await pool.request()
     .input('enrollment_id', sql.BigInt, enrollment_id)
-    .execute('usp_sel_beneficiaries');
+    .execute('bes.usp_sel_beneficiaries');
 
     return result.recordset;
 }

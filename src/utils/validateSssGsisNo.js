@@ -5,7 +5,7 @@
 //   GSIS — eleven digits, stored bare  as  12345678901
 //
 // The lengths are what tell them apart, so nothing has to be declared. Read
-// from the 78 values in dbo.clients: 26 already dashed, 11 bare ten-digit, and
+// from the 78 values in bes.clients: 26 already dashed, 11 bare ten-digit, and
 // no eleven-digit yet — GSIS is being specified ahead of its first employee.
 //
 // The bare ten-digit rows are the reason normalising exists here. `1234567890`
