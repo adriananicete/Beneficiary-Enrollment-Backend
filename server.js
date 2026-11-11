@@ -15,6 +15,7 @@ import ipsRoutes from './src/routes/ipsRoutes.js';
 import {errorHandler} from './src/middlewares/errorHandler.js';
 import { listenOnFreePort, startedByNpmDev } from './src/utils/listenOnFreePort.js';
 import { setRateLimitedHook } from './src/middlewares/rateLimiter.js';
+import { auditTrail } from './src/middlewares/auditTrail.js';
 import { recorderFor, SECURITY_EVENT } from './src/services/securityEventService.js';
 import helmet from 'helmet';
 
@@ -76,6 +77,11 @@ app.use((req, res, next) => {
 });
 
 app.use(cookieParser());
+
+// The CRUD audit trail (DBA request 34): records each successful write listed
+// in src/utils/auditCatalog.js, after the answer has gone. Before the routers,
+// so it sees every one of them.
+app.use(auditTrail);
 
 app.get('/', (req, res) => {
     res.send('Beneficiary Enrollment API v1');

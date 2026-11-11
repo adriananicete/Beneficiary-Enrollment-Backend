@@ -41,6 +41,12 @@ export const sqlErrorMap = {
     // the Administrator in, so this answers a path that skipped that check.
     50224: { statusCode: 403, message: 'Only an Administrator can view the security log.' },
 
+    // sec.usp_sel_audit_logs, DBA request 34. The route lets only the
+    // Administrator in. 50230–50235 are sec.usp_ins_audit_log's input checks,
+    // which our side makes first; a write that still fails is logged, not
+    // answered, so they are not mapped.
+    50236: { statusCode: 403, message: 'Only an Administrator can view the audit trail.' },
+
     // bes.usp_upd_message, DBA request 30. 50225 answers a message that is not
     // the caller's the same way as one that does not exist.
     50225: { statusCode: 404, message: 'Message not found.' },

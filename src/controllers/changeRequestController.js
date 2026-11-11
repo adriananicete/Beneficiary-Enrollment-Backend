@@ -9,6 +9,7 @@ import { AppError } from "../utils/AppError.js";
 import { sendChangeRequestDecisionEmail } from "../services/emailService.js";
 import { certificateForDecision } from "../services/certificateService.js";
 import { buildPage, parsePaging } from "../utils/parsePaging.js";
+import { changeRequestAuditEntry } from "../utils/changeRequestAudit.js";
 import {
   assertAddressBelongs,
   buildAddressChange,
@@ -218,6 +219,10 @@ export const reviewChangeRequest = async (req, res, next) => {
     if (approved) await syncUserRecord(pool, details, reviewData.reviewed_by);
 
     await notifyDecision(pool, details, approved, reviewData.review_remarks);
+
+    // For the audit trail (DBA request 34): the decision and, on an approval,
+    // what changed, read before the procedure overwrote it.
+    res.locals.auditEntry = changeRequestAuditEntry(details, { approved, reviewRemarks: reviewData.review_remarks });
 
     return res.status(200).json({
       success: true,

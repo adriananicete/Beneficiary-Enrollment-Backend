@@ -594,3 +594,16 @@ describe("the message edit route", () => {
     assert.equal(refused?.message, "Message not found");
   });
 });
+// The CRUD audit trail, DBA request 34. The Administrator only.
+describe("the audit trail route", () => {
+  test("GET /audit-trail is for the Administrator only, behind verifyToken, and reaches its controller", async () => {
+    const { getAuditTrail } = await import("../../src/controllers/auditTrailController.js");
+    const handlers = handlersFor("get", "/audit-trail");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), getAuditTrail);
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "HR"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
