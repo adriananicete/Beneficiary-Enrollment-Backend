@@ -32,6 +32,7 @@ const stored = (overrides = {}) => ({
   policy_no: "G-TLI-26-136",
   status: "A",
   send_coc_email: true,
+  messages_enabled: true,
   online_enrollment_max_age: null,
   created_by: "SYSTEM",
   created_date: new Date("2026-07-14T00:00:00Z"),
@@ -58,6 +59,7 @@ describe("companyOf — what leaves", () => {
       "created_date",
       "employer_id",
       "hr_account",
+      "messages_enabled",
       "modified_by",
       "modified_date",
       "office_no",
@@ -81,6 +83,14 @@ describe("companyOf — what leaves", () => {
       companyOf(stored({ hr_user_id: null, hr_username: null, hr_email_address: null })).hr_account,
       null,
     );
+  });
+
+  // The switch as the gate reads it. NOT NULL since DBA request 27 Part 1, so
+  // NULL only matters to a database that missed it.
+  test("messages_enabled is a boolean, off when false or NULL", () => {
+    assert.equal(companyOf(stored()).messages_enabled, true);
+    assert.equal(companyOf(stored({ messages_enabled: false })).messages_enabled, false);
+    assert.equal(companyOf(stored({ messages_enabled: null })).messages_enabled, false);
   });
 
   test("a column a procedure gains later stays out", () => {

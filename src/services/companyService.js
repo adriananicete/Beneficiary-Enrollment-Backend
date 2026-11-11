@@ -1,6 +1,7 @@
 import EmployerAdminModel from "../models/employerAdminModel.js";
 import { COMPANY_FIELDS } from "../utils/validateCompany.js";
 import { AppError } from "../utils/AppError.js";
+import { isOn } from "../utils/messagingAccess.js";
 
 // The Administrator lists, creates and edits companies. Branch 2 of
 // md/COMPANY-ONBOARDING-DECISIONS.md, on DBA request 24. The procedures refuse
@@ -18,6 +19,12 @@ export const companyOf = (row) => ({
   policy_no: row.policy_no,
   status: row.status,
   send_coc_email: row.send_coc_email,
+  // The company's messaging switch, read here and changed through PATCH
+  // /admin/employers/:employer_id/settings, not through the company form: the
+  // company procedures do not take it. Both the list and the page carry it
+  // (DBA request 27 Part 3, read back 2026-11-11), and create and update
+  // answer by reading the page.
+  messages_enabled: isOn(row.messages_enabled),
   online_enrollment_max_age: row.online_enrollment_max_age,
   hr_account: row.hr_user_id
     ? {
