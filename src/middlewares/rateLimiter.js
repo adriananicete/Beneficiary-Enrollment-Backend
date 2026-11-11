@@ -230,6 +230,23 @@ export const certificateResendLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Downloading a Certificate of Coverage builds the PDF on every request, the
+// same work as the emails. Keyed on the HR user, like the resend above, with
+// its own budget: HR going through a company's certificates one by one is
+// ordinary, so it is higher than the resend's, and a loop still stops.
+export const certificateDownloadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: isDev ? 300 : 60,
+  keyGenerator: (req) =>
+    req.user?.user_id ? `user:${req.user.user_id}` : ipKeyGenerator(req.ip),
+  message: {
+    success: false,
+    message: "Too many certificate downloads, please try again later.",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Filing a claim uploads up to ten files of 5MB, held in memory while they
 // are read. Keyed on the employee, like the HR limiters above, and it runs
 // after verifyToken and before parseDocuments, so a caller over the limit is

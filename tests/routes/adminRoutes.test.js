@@ -12,7 +12,8 @@ const claims = await import("../../src/controllers/claimController.js");
 const messages = await import("../../src/controllers/messageController.js");
 const deceased = await import("../../src/controllers/deceasedController.js");
 const { verifyClientAccess } = await import("../../src/middlewares/verifyClientAccess.js");
-const { claimSubmitLimiter, messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
+const { certificateDownloadLimiter, claimSubmitLimiter, messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
+const { downloadCertificate } = await import("../../src/controllers/adminController.js");
 const { parseDocuments } = await import("../../src/middlewares/parseDocuments.js");
 const { requireCompanyMessaging } = await import("../../src/middlewares/requireCompanyMessaging.js");
 const { getMessagingAccess } = await import("../../src/controllers/messagingAccessController.js");
@@ -442,6 +443,39 @@ describe("the HR messaging routes", () => {
     assert.equal(handlers.length, 6);
     assert.equal(handlers.indexOf(messageSendLimiter), 3);
     assert.equal(handlers.indexOf(requireCompanyMessaging), 4);
+  });
+});
+
+// The certificate download, 2026-11-11. verifyClientAccess is the whole of
+// the company scoping: the procedure behind it takes a client_id and trusts it.
+describe("the certificate download route", () => {
+  test("is scoped to the caller's company, then rate limited, then the controller", () => {
+    const handlers = handlersFor("get", "/enrollments/:client_id/certificate");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers.at(-1), downloadCertificate);
+    assert.ok(handlers.indexOf(verifyClientAccess) > 1, "verifyClientAccess is missing or before the role check");
+    assert.ok(
+      handlers.indexOf(certificateDownloadLimiter) > handlers.indexOf(verifyClientAccess),
+      "the limiter is missing or before the company check",
+    );
+  });
+
+  test("HR and the Administrator may, an employee may not", () => {
+    const handlers = handlersFor("get", "/enrollments/:client_id/certificate");
+    const answer = (role_name) => {
+      let passed = false;
+      let refused = null;
+      handlers[1]({ user: { role_name } }, {}, (error) => {
+        if (error) refused = error.statusCode;
+        else passed = true;
+      });
+      return passed ? "passed" : refused;
+    };
+
+    assert.equal(answer("HR"), "passed");
+    assert.equal(answer("Administrator"), "passed");
+    assert.equal(answer("Employee"), 403);
   });
 });
 

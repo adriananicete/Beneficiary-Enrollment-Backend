@@ -10,6 +10,7 @@ import AffiliateService from "../services/affiliateService.js";
 import EnrollmentWipeService from "../services/enrollmentWipeService.js";
 import SignatureModel from "../models/signatureModel.js";
 import { sendSignature } from "../utils/signatureResponse.js";
+import { sendStoredFile } from "../utils/storedFileResponse.js";
 import { getPool } from "../config/db.js";
 import config from "../config/env.js";
 import { buildPage, parsePaging, parseSearch } from "../utils/parsePaging.js";
@@ -221,6 +222,34 @@ export const resendCertificate = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: `Certificate of Coverage sent to ${to}`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// The Certificate of Coverage as a file, for HR and the Administrator to keep
+// or print. Decided 2026-11-11 (Adrian), reversing "no download endpoint" of
+// 2026-09-11, so that there is one generator: the frontend team built its own,
+// and two drift (PARK.md §0).
+//
+// The same PDF the emails carry, built the same way, by
+// CertificateService.buildCertificate. So it refuses as they do: 404 for an
+// enrollment that is not there, 409 for one with no policy number or no
+// active benefits to certify. Company scoping is verifyClientAccess in front
+// of the route: usp_get_insurance_enrollment_by_id takes a client_id and
+// trusts it. Unlike the resend it needs no email address on file.
+export const downloadCertificate = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+    const certificate = await CertificateService.buildCertificate(pool, req.params.client_id);
+
+    return sendStoredFile(res, {
+      content: certificate.content,
+      mimeType: certificate.contentType,
+      byteSize: certificate.content.length,
+      fileName: certificate.name,
+      disposition: "attachment",
     });
   } catch (error) {
     next(error);

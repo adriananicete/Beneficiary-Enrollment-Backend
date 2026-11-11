@@ -1,14 +1,14 @@
 import express from 'express';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { verifyToken } from '../middlewares/verifyToken.js';
-import { exportEnrollments, getCompanyAffiliates, getCompanyClassifications, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials, wipeEnrollments } from '../controllers/adminController.js';
+import { downloadCertificate, exportEnrollments, getCompanyAffiliates, getCompanyClassifications, getDashboardStats, getEnrollment, getEnrollmentAgreements, getEnrollmentDetails, getEnrollmentSignature, resendCertificate, resendCredentials, wipeEnrollments } from '../controllers/adminController.js';
 import { developmentOnly } from '../middlewares/developmentOnly.js';
 import config from '../config/env.js';
 import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { cancelInvitationJob, downloadInvitationTemplate, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
 import { validateInvitations } from '../middlewares/validateInvitations.js';
-import { bulkInvitationLimiter, certificateResendLimiter, claimSubmitLimiter, credentialsResendLimiter, jobStatusLimiter, messageSendLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
+import { bulkInvitationLimiter, certificateDownloadLimiter, certificateResendLimiter, claimSubmitLimiter, credentialsResendLimiter, jobStatusLimiter, messageSendLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
 import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { getEmployerSettings, updateEmployerSettings } from '../controllers/employerSettingsController.js';
@@ -67,6 +67,9 @@ router.post('/enrollments/:client_id/resend-credentials', verifyToken, allowedRo
 // company scoping: usp_get_insurance_enrollment_by_id takes a client_id and
 // trusts it, so without it an HR could mail any company's certificate out.
 router.post('/enrollments/:client_id/resend-certificate', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, certificateResendLimiter, resendCertificate);
+// The same certificate as a file to keep (2026-11-11). The same scoping as the
+// resend, and its own per-user limit, because every call builds the PDF.
+router.get('/enrollments/:client_id/certificate', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, certificateDownloadLimiter, downloadCertificate);
 // Deceased status, DBA request 21. HR and the Administrator mark it or correct
 // the date; only the Administrator undoes it (decided 2026-10-06). Both behind
 // verifyClientAccess, and the procedures scope again.
