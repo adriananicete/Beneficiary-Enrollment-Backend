@@ -275,3 +275,67 @@ describe("partitionInvitations — a mixed batch", () => {
     ]);
   });
 });
+
+// DBA request 32: the Employee ID HR may give each row. Optional; whether it
+// is taken is the procedure's to say, per row.
+describe("partitionInvitations — the Employee ID", () => {
+  test("given, it goes out trimmed with the row", () => {
+    const { valid, rejected } = abcc([row({ employee_id_number: "  ABC-00123  " })]);
+
+    assert.deepEqual(rejected, []);
+    assert.equal(valid[0].employeeId, "ABC-00123");
+  });
+
+  test("not given, or blank, the row goes out as before, with no employeeId", () => {
+    for (const employee_id_number of [undefined, null, "", "   "]) {
+      const { valid } = abcc([row({ employee_id_number })]);
+
+      assert.deepEqual(valid, [{ email: "juan@alakor.com.ph", classificationId: "54", affiliateId: "7" }], String(employee_id_number));
+    }
+  });
+
+  test("a number from the file is taken as its text", () => {
+    assert.equal(abcc([row({ employee_id_number: 20230045 })]).valid[0].employeeId, "20230045");
+  });
+
+  test("anything that is not text or a number is refused", () => {
+    for (const employee_id_number of [true, {}, ["A1"]]) {
+      const { valid, rejected } = abcc([row({ employee_id_number })]);
+
+      assert.deepEqual(valid, []);
+      assert.deepEqual(rejected, [{ email: "juan@alakor.com.ph", status: "invalid", reason: "Employee ID must be text" }]);
+    }
+  });
+
+  test("a number Excel shortened is refused, quoted, with what to do", () => {
+    for (const shortened of ["1.23457E+12", "1E+11", "4.5e-05"]) {
+      const { rejected } = abcc([row({ employee_id_number: shortened })]);
+
+      assert.match(rejected[0]?.reason ?? "", new RegExp(`^Employee ID "${shortened.replace(/[.+]/g, "\\$&")}" is a number that Excel shortened`), shortened);
+    }
+  });
+
+  test("50 characters is accepted, 51 is refused", () => {
+    assert.equal(abcc([row({ employee_id_number: "x".repeat(50) })]).valid.length, 1);
+    assert.deepEqual(abcc([row({ employee_id_number: "x".repeat(51) })]).rejected[0]?.reason, "Employee ID is longer than 50 characters");
+  });
+
+  test("the same ID twice in one upload, in any case, is a duplicate", () => {
+    const { valid, rejected } = abcc([
+      row({ email_address: "a@alakor.com.ph", employee_id_number: "abc-001" }),
+      row({ email_address: "b@alakor.com.ph", employee_id_number: "ABC-001" }),
+    ]);
+
+    assert.equal(valid.length, 1);
+    assert.deepEqual(rejected, [{ email: "b@alakor.com.ph", status: "duplicate", reason: "Employee ID repeated in this upload" }]);
+  });
+
+  test("a row refused for its email does not hold its ID against the next row", () => {
+    const { valid } = abcc([
+      row({ email_address: "not an email", employee_id_number: "ABC-001" }),
+      row({ email_address: "b@alakor.com.ph", employee_id_number: "ABC-001" }),
+    ]);
+
+    assert.equal(valid[0]?.employeeId, "ABC-001");
+  });
+});

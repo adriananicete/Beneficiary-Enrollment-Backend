@@ -46,6 +46,13 @@ export const sqlErrorMap = {
     50225: { statusCode: 404, message: 'Message not found.' },
     50226: { statusCode: 409, message: 'A message can only be edited within 15 minutes of sending it.' },
 
+    // bes.usp_ins_enrollment_invitation, DBA request 32: the Employee ID HR
+    // gave. The bulk upload reports these per row (invitationService); this
+    // answers any other caller.
+    50227: { statusCode: 409, message: 'This employee ID is already used as a login.' },
+    50228: { statusCode: 409, message: "This employee ID is already on another person's invitation." },
+    50229: { statusCode: 400, message: 'The employee ID can be at most 50 characters.' },
+
     // Thrown by usp_ins_beneficiary, on the public enrollment submit path. Its
     // only caller is enrollmentService.js:107, once per beneficiary, inside the
     // backend's transaction.

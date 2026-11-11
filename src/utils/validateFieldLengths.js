@@ -14,13 +14,11 @@ export const CLIENT_FIELD_LENGTHS = {
   // all, and the live data shows what that allows: a thirty-character employee
   // id sitting in the table as somebody's login.
   //
-  // Note the narrowest thing in the chain is not this. sec.us01_usp_first_login
-  // declares @us01_username varchar(20), so an id between 21 and 50 characters
-  // enrols, signs in, is told to change its password, and cannot — the username
-  // is truncated on the way into that procedure and matches nothing. The DBA has
-  // been asked to widen it to 50 to match the column and the login procedure.
-  // Until that lands, this cap stops the id growing past the column but not past
-  // that procedure.
+  // sec.us01_usp_first_login once declared @us01_username varchar(20), so an id
+  // of 21 to 50 characters enrolled and then could not change its password. It
+  // is varchar(50) now, like the login procedures (read in SP.sql, UAT,
+  // 2026-11-11), so 50 holds the whole way. HR's Employee ID on the invitation
+  // has the same cap (partitionInvitations, DBA request 32).
   employee_id_number: 50,
   // Stored in bes.client_employers, not bes.clients, and here because this map
   // is the personal payload rather than one table. It had no cap until

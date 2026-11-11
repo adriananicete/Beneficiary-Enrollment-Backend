@@ -59,7 +59,8 @@ describe("the invitation template — a company with affiliates", () => {
   test("the sheet to fill has Email, Classification and Affiliate, and no rows", async () => {
     const { sheet } = await reopen(ABCC);
 
-    assert.deepEqual(valuesOf(sheet, ["A", "B", "C", "D"], [1]), [["Email", "Classification", "Affiliate", null]]);
+    // Employee ID last, optional (DBA request 32).
+    assert.deepEqual(valuesOf(sheet, ["A", "B", "C", "D", "E"], [1]), [["Email", "Classification", "Affiliate", "Employee ID", null]]);
     assert.equal(sheet.getCell("A2").value ?? null, null);
   });
 
@@ -99,11 +100,12 @@ describe("the invitation template — a company with affiliates", () => {
     assert.equal(sheet.getCell("A2").dataValidation, undefined);
   });
 
-  // Text, so Excel keeps a code like "1" as typed rather than as a number.
+  // Text, so Excel keeps a code like "1" as typed rather than as a number, and
+  // an Employee ID keeps its leading zeros and is not shortened to 1.23457E+12.
   test("the columns to fill are text", async () => {
     const { sheet } = await reopen(ABCC);
 
-    for (const column of ["A", "B", "C"]) assert.equal(sheet.getColumn(column).numFmt, "@", column);
+    for (const column of ["A", "B", "C", "D"]) assert.equal(sheet.getColumn(column).numFmt, "@", column);
   });
 });
 
@@ -111,7 +113,7 @@ describe("the invitation template — a company without affiliates", () => {
   test("has no Affiliate column and no affiliate codes", async () => {
     const { sheet, codes } = await reopen(COFORGE);
 
-    assert.deepEqual(valuesOf(sheet, ["A", "B", "C"], [1]), [["Email", "Classification", null]]);
+    assert.deepEqual(valuesOf(sheet, ["A", "B", "C", "D"], [1]), [["Email", "Classification", "Employee ID", null]]);
     assert.equal(sheet.getCell("C2").dataValidation, undefined);
     assert.deepEqual(valuesOf(codes, ["D", "E"], [1, 2]), [[null, null], [null, null]]);
   });

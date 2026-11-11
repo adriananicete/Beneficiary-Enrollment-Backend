@@ -38,12 +38,17 @@ export const buildInvitationTemplate = ({ company, classes, affiliates }) => {
     views: [{ state: "frozen", ySplit: 1 }],
   });
 
+  // Employee ID last and optional (DBA request 32): the employee enrolls under
+  // it and it becomes their login. Text, so an ID like 00123 keeps its zeros
+  // and a long one is not shortened to 1.23457E+12. The teammates' header, so
+  // the frontend that reads it by name keeps working.
   sheet.columns = [
     { header: "Email", key: "email", width: 40, style: TEXT },
     { header: "Classification", key: "classification", width: 20, style: TEXT },
     ...(hasAffiliates
       ? [{ header: "Affiliate", key: "affiliate", width: 20, style: TEXT }]
       : []),
+    { header: "Employee ID", key: "employee_id", width: 20, style: TEXT },
   ];
   sheet.getRow(1).font = { bold: true };
 
