@@ -16,6 +16,8 @@ import { closeDeathClaim, fileDeathClaim, getClaimDetails, getClaimDocument, get
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { getConversation, getConversations, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
+import { getMessagingAccess } from '../controllers/messagingAccessController.js';
+import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
 import { createAffiliate, createClassification, createCompany, createHrAccount, deleteCompany, getAffiliates, getClassificationSchedule, getCompanies, getCompany, resendHrCredentials, updateAffiliate, updateClassification, updateCompany } from '../controllers/companyController.js';
 import { validateHrAccount } from '../middlewares/validateHrAccount.js';
 import { validateCompanyChanges, validateNewCompany } from '../middlewares/validateCompany.js';
@@ -147,14 +149,20 @@ router.patch('/claims/:claim_id/close', verifyToken, allowedRoles(ADMIN, SUPER_A
 // (decided 2026-10-12), so these carry allowedRoles(ADMIN), which is HR.
 // The procedures scope HR to their own companies. /conversations/unread-count
 // is declared before /conversations/:conversation_id for the reason above.
+//
+// requireCompanyMessaging is the company switch, set by the Administrator
+// (2026-11-11), on every conversation route. It is a query, so it runs after
+// the id check and after a route's limiter. /messaging-access tells the
+// screen whether to show messaging, by the same rule.
 const conversationId = validateIdParam('conversation_id', 'Conversation not found');
 
-router.get('/conversations', verifyToken, allowedRoles(ADMIN), getConversations);
-router.post('/conversations', verifyToken, allowedRoles(ADMIN), openConversation);
-router.get('/conversations/unread-count', verifyToken, allowedRoles(ADMIN), pendingCountLimiter, getUnreadMessageCount);
-router.get('/conversations/:conversation_id', verifyToken, allowedRoles(ADMIN), conversationId, getConversation);
-router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(ADMIN), conversationId, messageSendLimiter, sendMessage);
-router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(ADMIN), conversationId, markConversationRead);
+router.get('/messaging-access', verifyToken, allowedRoles(ADMIN), pendingCountLimiter, getMessagingAccess);
+router.get('/conversations', verifyToken, allowedRoles(ADMIN), requireCompanyMessaging, getConversations);
+router.post('/conversations', verifyToken, allowedRoles(ADMIN), requireCompanyMessaging, openConversation);
+router.get('/conversations/unread-count', verifyToken, allowedRoles(ADMIN), pendingCountLimiter, requireCompanyMessaging, getUnreadMessageCount);
+router.get('/conversations/:conversation_id', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, getConversation);
+router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(ADMIN), conversationId, messageSendLimiter, requireCompanyMessaging, sendMessage);
+router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, markConversationRead);
 
 
 export default router;

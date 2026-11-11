@@ -26,6 +26,8 @@ import {
     resubmitMyClaim,
     submitMyClaim,
 } from '../controllers/claimController.js';
+import { getMessagingAccess } from '../controllers/messagingAccessController.js';
+import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
 
 const router = express.Router();
 
@@ -62,12 +64,16 @@ router.post('/claims/:claim_id/resubmit', verifyToken, allowedRoles(EMPLOYEE), v
 // procedure scopes to the caller's own conversation.
 // /conversations/unread-count is declared before /conversations/:conversation_id
 // so the badge is never read as an id.
+//
+// requireCompanyMessaging is the company switch, as on HR's side: the
+// employee's company must have messaging on. /messaging-access says whether.
 const conversationId = validateIdParam('conversation_id', 'Conversation not found');
 
-router.post('/conversation', verifyToken, allowedRoles(EMPLOYEE), openMyConversation);
-router.get('/conversations/unread-count', verifyToken, allowedRoles(EMPLOYEE), pendingCountLimiter, getUnreadMessageCount);
-router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, getConversation);
-router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, sendMessage);
-router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, markConversationRead);
+router.get('/messaging-access', verifyToken, allowedRoles(EMPLOYEE), pendingCountLimiter, getMessagingAccess);
+router.post('/conversation', verifyToken, allowedRoles(EMPLOYEE), requireCompanyMessaging, openMyConversation);
+router.get('/conversations/unread-count', verifyToken, allowedRoles(EMPLOYEE), pendingCountLimiter, requireCompanyMessaging, getUnreadMessageCount);
+router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, getConversation);
+router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, requireCompanyMessaging, sendMessage);
+router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, markConversationRead);
 
 export default router;
