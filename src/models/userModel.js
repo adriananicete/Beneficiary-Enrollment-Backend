@@ -124,6 +124,27 @@ const findUserByClientId = async (pool, clientId) => {
   return result.recordset[0];
 };
 
+// An HR person enrolling themselves (DBA request 31): links the client record
+// the enrollment just made to their HR account, instead of making a second
+// account. The account is the active, unlocked HR account of this company
+// whose email is the invitation's. Run inside the enrollment's transaction;
+// the procedure opens none.
+//
+// Answers the account's id, or null when no HR account matches. Since request
+// 31 it THROWs 50222 for an HR account already linked to another client
+// record; before it, it kept the older link silently and still answered the id.
+const linkHrClient = async (pool, { clientId, emailAddress, employerId, linkedBy }) => {
+  const result = await pool
+    .request()
+    .input("client_id", sql.BigInt, clientId)
+    .input("email_address", sql.VarChar(150), emailAddress)
+    .input("employer_id", sql.BigInt, employerId)
+    .input("linked_by", sql.VarChar(50), linkedBy)
+    .execute("sec.us01_usp_link_hr_client");
+
+  return result.recordset[0]?.us01_user_id ?? null;
+};
+
 // Issues a new temporary password. us01_usp_first_login cannot: it requires
 // the old password, which is exactly what has been lost, and us01_usp_upd_user
 // does not touch credentials. sec.usp_upd_user_password_reset does, read on
@@ -202,6 +223,7 @@ export default {
     endSessions,
     checkUsernameExists,
     findUserByClientId,
+    linkHrClient,
     updateUserRecord,
     resetPassword
 }

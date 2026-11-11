@@ -19,6 +19,7 @@ import { localIsoDate } from "../utils/localDate.js";
 import { sendCredentialsEmail } from "../services/emailService.js";
 import { endUserSessions } from "../realtime/realtime.js";
 import { recorderFor, SECURITY_EVENT } from "../services/securityEventService.js";
+import { ADMIN, SUPER_ADMIN } from "../utils/constants.js";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 
@@ -121,6 +122,23 @@ export const getEnrollmentDetails = async (req, res, next) => {
 // This exists because the employee is now the only person who can propose a
 // change to their own record. An employee who cannot sign in has a record
 // nobody can correct — see PARK.md.
+// An HR person who enrolled themselves has no Employee account: their client
+// record is linked to their HR account (DBA request 31). "Resend credentials"
+// would reset that HR password and mail a temporary one for the employee
+// login, which they cannot use. They sign in as HR; the Administrator reissues
+// an HR password from the company's page. Ported from the teammates.
+export const HR_ACCOUNT_NO_RESEND =
+  "This person signs in with their HR account, so there is no separate employee password to resend. An Administrator can reissue the HR account's password from the company's page.";
+
+// By role name, HR or Administrator: those are the accounts an employee resend
+// must never reset. An account whose role was withdrawn reads back as no row,
+// and is left to the reset as before.
+export const refuseHrAccount = async (pool, user) => {
+  const account = await UserModel.findUserById(pool, user.us01_user_id);
+
+  if ([ADMIN, SUPER_ADMIN].includes(account?.us02_role_name)) throw new AppError(HR_ACCOUNT_NO_RESEND, 409);
+};
+
 export const resendCredentials = async (req, res, next) => {
   try {
     const { client_id } = req.params;
@@ -131,6 +149,8 @@ export const resendCredentials = async (req, res, next) => {
     const user = await UserModel.findUserByClientId(pool, client_id);
     if (!user)
       throw new AppError("No active account found for this employee", 404);
+
+    await refuseHrAccount(pool, user);
 
     if (!user.us01_email_address)
       throw new AppError(
