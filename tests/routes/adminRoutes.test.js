@@ -16,6 +16,7 @@ const { attachmentDownloadLimiter, certificateDownloadLimiter, claimSubmitLimite
 const { downloadCertificate } = await import("../../src/controllers/adminController.js");
 const { parseDocuments } = await import("../../src/middlewares/parseDocuments.js");
 const { requireCompanyMessaging } = await import("../../src/middlewares/requireCompanyMessaging.js");
+const { parseAttachmentUpload, parseMessageAttachment } = await import("../../src/middlewares/parseMessageAttachment.js");
 const { getMessagingAccess } = await import("../../src/controllers/messagingAccessController.js");
 
 const handlersFor = (method, path) => {
@@ -461,13 +462,21 @@ describe("the HR messaging routes", () => {
     assert.ok(handlersFor("get", "/conversations/unread-count").includes(pendingCountLimiter));
   });
 
-  test("sending is rate limited, after the id check, and the company switch after that", () => {
-    const handlers = handlersFor("post", "/conversations/:conversation_id/messages");
+  // DBA request 29: the file is read last, after the limit and the switch, so
+  // a refused call never has its upload held in memory.
+  for (const [path, parser] of [
+    ["/conversations/:conversation_id/messages", parseMessageAttachment],
+    ["/conversations/:conversation_id/attachments", parseAttachmentUpload],
+  ])
+    test(`POST ${path}: the id, the limit, the switch, then the file, then the controller`, () => {
+      const handlers = handlersFor("post", path);
 
-    assert.equal(handlers.length, 6);
-    assert.equal(handlers.indexOf(messageSendLimiter), 3);
-    assert.equal(handlers.indexOf(requireCompanyMessaging), 4);
-  });
+      assert.equal(handlers.length, 7);
+      assert.equal(handlers.indexOf(messageSendLimiter), 3);
+      assert.equal(handlers.indexOf(requireCompanyMessaging), 4);
+      assert.equal(handlers.indexOf(parser), 5);
+      assert.equal(handlers.at(-1), messages.sendMessage);
+    });
 });
 
 // The certificate download, 2026-11-11. verifyClientAccess is the whole of
@@ -513,13 +522,16 @@ describe("the company messaging switch on HR's routes", () => {
     ["get", "/conversations/unread-count"],
     ["get", "/conversations/:conversation_id"],
     ["post", "/conversations/:conversation_id/messages"],
+    ["post", "/conversations/:conversation_id/attachments"],
     ["post", "/conversations/:conversation_id/read"],
     ["get", "/conversations/:conversation_id/attachments/:attachment_id"],
   ])
-    test(`${method.toUpperCase()} ${path} is behind the switch, last before its controller`, () => {
+    test(`${method.toUpperCase()} ${path} is behind the switch, last before its controller but for the file`, () => {
       const handlers = handlersFor(method, path);
+      // Only the upload parser may stand between the switch and the controller.
+      const parserLast = [parseMessageAttachment, parseAttachmentUpload].includes(handlers.at(-2));
 
-      assert.equal(handlers.indexOf(requireCompanyMessaging), handlers.length - 2);
+      assert.equal(handlers.indexOf(requireCompanyMessaging), handlers.length - (parserLast ? 3 : 2));
     });
 
   // A file download, 2026-11-11: both ids, then its own limit, then the switch.

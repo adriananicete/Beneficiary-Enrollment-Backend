@@ -19,6 +19,7 @@ import { markDeceased, undoDeceased } from '../controllers/deceasedController.js
 import { getMessagingAccess } from '../controllers/messagingAccessController.js';
 import { getBookedCompanies } from '../controllers/bookedCompanyController.js';
 import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
+import { parseAttachmentUpload, parseMessageAttachment } from '../middlewares/parseMessageAttachment.js';
 import { createAffiliate, createClassification, createCompany, createHrAccount, deleteCompany, getAffiliates, getClassificationSchedule, getCompanies, getCompany, resendHrCredentials, updateAffiliate, updateClassification, updateCompany } from '../controllers/companyController.js';
 import { validateHrAccount } from '../middlewares/validateHrAccount.js';
 import { validateCompanyChanges, validateNewCompany } from '../middlewares/validateCompany.js';
@@ -175,7 +176,12 @@ router.get('/conversations', verifyToken, allowedRoles(ADMIN), requireCompanyMes
 router.post('/conversations', verifyToken, allowedRoles(ADMIN), requireCompanyMessaging, openConversation);
 router.get('/conversations/unread-count', verifyToken, allowedRoles(ADMIN), pendingCountLimiter, requireCompanyMessaging, getUnreadMessageCount);
 router.get('/conversations/:conversation_id', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, getConversation);
-router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(ADMIN), conversationId, messageSendLimiter, requireCompanyMessaging, sendMessage);
+// A message is text, a file, or both (DBA request 29). The file is read after the
+// limit and the switch, so a refused call never has its upload held in memory.
+// /attachments is the teammates' dedicated upload, kept for the frontend built
+// against it: the same message, with the file required and named `file`.
+router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(ADMIN), conversationId, messageSendLimiter, requireCompanyMessaging, parseMessageAttachment, sendMessage);
+router.post('/conversations/:conversation_id/attachments', verifyToken, allowedRoles(ADMIN), conversationId, messageSendLimiter, requireCompanyMessaging, parseAttachmentUpload, sendMessage);
 router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, markConversationRead);
 // A file attached to a message, as a download (2026-11-11). Both ids are
 // checked, then the limit, then the switch.
