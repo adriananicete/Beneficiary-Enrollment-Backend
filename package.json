@@ -7,7 +7,8 @@
     "test": "node --test",
     "dev": "node --watch --use-system-ca --env-file=.env server.js",
     "check": "node scripts/check-imports.mjs",
-    "verify": "npm run check && npm test"
+    "verify": "npm run check && npm test",
+    "ips-key": "node scripts/ips-key.mjs"
   },
   "keywords": [],
   "author": "",

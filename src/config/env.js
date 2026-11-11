@@ -1,5 +1,6 @@
 // First, before anything here or anywhere else reads a clock. See the file.
 import "./timezone.js";
+import { parseAllowedAddresses, parseKeyHashes } from "../utils/integrationKeys.js";
 
 // timezone.js sets Philippine time. This checks it took: on two dates half a
 // year apart, so a +08:00 zone that kept daylight saving could not pass in one
@@ -204,6 +205,14 @@ const parseAppUrl = (raw, nodeEnv) => {
 
 const appUrl = parseAppUrl(process.env.APP_URL, process.env.NODE_ENV);
 
+// IPS reading enrollees server to server (md/IPS-INTEGRATION-DECISIONS.md). Both optional: with
+// no key hash the IPS routes answer 404, so a server without them has nothing open. Read here so
+// a malformed value stops the server at start rather than at IPS's first call.
+const ips = {
+  keyHashes: parseKeyHashes(process.env.IPS_API_KEY_HASHES, "IPS_API_KEY_HASHES"),
+  allowedAddresses: parseAllowedAddresses(process.env.IPS_ALLOWED_IPS, "IPS_ALLOWED_IPS"),
+};
+
 const config = {
   PORT: process.env.PORT || 7000,
   // false when unset, which is the old hardcoded behaviour — but production
@@ -234,6 +243,7 @@ const config = {
   jwtSecret: process.env.JWT_SECRET,
   corsOrigin: process.env.CORS_ORIGIN,
   appUrl,
+  ips,
   nodeEnv: process.env.NODE_ENV,
   smtp: {
     host: process.env.SMTP_HOST,
