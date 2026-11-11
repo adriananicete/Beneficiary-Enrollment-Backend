@@ -498,6 +498,9 @@ export const sqlErrorMap = {
     // guards, and the stale-session case.
     50220: { statusCode: 403, message: "You are not allowed to wipe this company's enrollments" },
     50221: { statusCode: 400, message: 'The confirmation does not match the company code' },
+    // sec.us01_usp_link_hr_client, since DBA request 31: an HR person whose HR
+    // account is already linked to an enrollment. The enrollment rolls back.
+    50222: { statusCode: 409, message: 'You are already enrolled with your HR account. Sign in as HR to see your enrollment.' },
 
     2627: {statusCode: 409, message: 'Duplicate record'},
 

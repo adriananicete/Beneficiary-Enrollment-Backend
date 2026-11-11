@@ -11,7 +11,7 @@ import InvitationModel from "../models/invitationModel.js";
 import SignatureModel from "../models/signatureModel.js";
 import bcrypt from "bcrypt";
 import { EMPLOYEE_ROLE_ID } from "../utils/constants.js";
-import { sendConfirmationEmail } from "./emailService.js";
+import { sendConfirmationEmail, sendHrEnrollmentEmail } from "./emailService.js";
 import { autoCertificateFor } from "./certificateService.js";
 import { AppError } from "../utils/AppError.js";
 import { ageAtLastBirthday } from "../utils/validateBirthdate.js";
@@ -80,6 +80,82 @@ export const assignedClassAndAffiliate = (invitation, body, activeClasses) => {
 // one (DBA request 32), whatever the form sent, so nobody can enroll under
 // another person's ID; it becomes their login. Otherwise the form's, as before.
 export const assignedEmployeeId = (invitation, body) => invitation.employee_id_number || body.employee_id_number;
+
+export const ALREADY_ENROLLED_AS_HR =
+  "You are already enrolled with your HR account. Sign in as HR to see your enrollment.";
+
+// The account an enrollment gives its person, inside the enrollment's
+// transaction (DBA request 31, ported from the teammates).
+//
+// An HR person of the invited company who enrolls themselves already has an
+// account. sec.us01_usp_link_hr_client links it to the new client record, no
+// second account is made and no password issued: they keep signing in as HR.
+// Everybody else gets an Employee account and a temporary password, as before.
+//
+// An HR account already linked to another client record is refused by the
+// procedure (50222, mapped to 409). The account is still read back: until
+// request 31's fix is proven on UAT, a link that did not take must refuse the
+// enrollment rather than leave it with no way to sign in. The caller rolls back.
+//
+// The Employee ID does not become an HR person's login: their HR username stays.
+export const accountFor = async (transaction, enrollmentData, clientId) => {
+  const hrUserId = await UserModel.linkHrClient(transaction, {
+    clientId,
+    emailAddress: String(enrollmentData.email_address).trim(),
+    employerId: enrollmentData.employer_id,
+    linkedBy: "system",
+  });
+
+  if (hrUserId) {
+    const linked = await UserModel.findUserById(transaction, hrUserId);
+
+    if (String(linked?.client_id) !== String(clientId)) throw new AppError(ALREADY_ENROLLED_AS_HR, 409);
+
+    return { hrUsername: linked.us01_username };
+  }
+
+  const tempPassword = crypto.randomBytes(9).toString("base64").slice(0, 12);
+  const hashedPassword = await bcrypt.hash(tempPassword, 10);
+
+  const userId = await UserModel.createUser(transaction, {
+    us01_username: enrollmentData.employee_id_number,
+    us01_password: hashedPassword,
+    us01_first_name: enrollmentData.first_name,
+    us01_middle_name: enrollmentData.middle_name,
+    us01_last_name: enrollmentData.last_name,
+    us01_must_change_password: 1,
+    us01_email_address: enrollmentData.email_address,
+    client_id: clientId,
+    us01_created_by: "system",
+  });
+
+  await UserModel.assignRole(transaction, userId, {
+    us02_role_id: EMPLOYEE_ROLE_ID,
+    us04_assigned_by: "system",
+  });
+
+  return { tempPassword };
+};
+
+// The confirmation for the account accountFor made. An HR person is told their
+// login is the HR login they already have, at the site's root as in the HR
+// account email, with no password. Anyone else gets their new account's.
+export const sendEnrollmentConfirmation = (
+  account,
+  { to, policyNo, firstName, employeeIdNumber, attachments },
+  senders = { employee: sendConfirmationEmail, hr: sendHrEnrollmentEmail },
+) =>
+  account.hrUsername
+    ? senders.hr({ to, policyNo, firstName, username: account.hrUsername, loginUrl: config.appUrl, attachments })
+    : senders.employee({
+        to,
+        policyNo,
+        firstName,
+        username: employeeIdNumber,
+        password: account.tempPassword,
+        loginUrl: `${config.appUrl}/employee-login`,
+        attachments,
+      });
 
 // Takes the pool, like every other service since PR #102. The controller
 // fetches it; this decides.
@@ -228,25 +304,7 @@ const createEnrollment = async (pool, enrollmentData) => {
       created_by: "system",
     });
 
-    const tempPassword = crypto.randomBytes(9).toString("base64").slice(0, 12);
-    const hashedPassword = await bcrypt.hash(tempPassword, 10);
-
-    const userId = await UserModel.createUser(transaction, {
-      us01_username: enrollmentData.employee_id_number,
-      us01_password: hashedPassword,
-      us01_first_name: enrollmentData.first_name,
-      us01_middle_name: enrollmentData.middle_name,
-      us01_last_name: enrollmentData.last_name,
-      us01_must_change_password: 1,
-      us01_email_address: enrollmentData.email_address,
-      client_id: clientId,
-      us01_created_by: "system",
-    });
-
-    await UserModel.assignRole(transaction, userId, {
-      us02_role_id: EMPLOYEE_ROLE_ID,
-      us04_assigned_by: "system",
-    });
+    const account = await accountFor(transaction, enrollmentData, clientId);
 
     await transaction.commit();
 
@@ -258,13 +316,11 @@ const createEnrollment = async (pool, enrollmentData) => {
     const certificate = await autoCertificateFor(pool, clientId);
 
     try {
-      await sendConfirmationEmail({
+      await sendEnrollmentConfirmation(account, {
         to: enrollmentData.email_address,
-        policyNo: policyNo,
+        policyNo,
         firstName: enrollmentData.first_name,
-        username: enrollmentData.employee_id_number,
-        password: tempPassword,
-        loginUrl: `${config.appUrl}/employee-login`,
+        employeeIdNumber: enrollmentData.employee_id_number,
         attachments: certificate ? [certificate] : [],
       });
     } catch (error) {

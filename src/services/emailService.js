@@ -6,6 +6,7 @@ import { credentialsEmailTemplate } from "../utils/credentialsEmailTemplate.js";
 import { certificateEmailTemplate } from "../utils/certificateEmailTemplate.js";
 import { claimDecisionEmailTemplate } from "../utils/claimDecisionEmailTemplate.js";
 import { hrAccountEmailTemplate } from "../utils/hrAccountEmailTemplate.js";
+import { hrEnrollmentEmailTemplate } from "../utils/hrEnrollmentEmailTemplate.js";
 
 // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
@@ -139,6 +140,45 @@ export const sendConfirmationEmail = async ({
             },
           },
         ],
+      },
+      attachments,
+    ),
+    saveToSentItems: "false",
+  };
+
+  const response = await fetch(sendMailUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(mailPayload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw graphSendError(response, errorText);
+  }
+};
+
+// The confirmation for an HR person who enrolled themselves (DBA request 31):
+// their HR username, no password, and the certificate when it is attached.
+export const sendHrEnrollmentEmail = async ({ to, policyNo, username, firstName, loginUrl, attachments = [] }) => {
+  const accessToken = await getAccessToken();
+  const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${config.smtp.user}/sendMail`;
+
+  const mailPayload = {
+    message: withAttachments(
+      {
+        subject: "Your enrollment is complete",
+        body: hrEnrollmentEmailTemplate({
+          policyNo,
+          username,
+          firstName,
+          loginUrl,
+          certificateAttached: attachments.length > 0,
+        }),
+        toRecipients: [{ emailAddress: { address: to } }],
       },
       attachments,
     ),
