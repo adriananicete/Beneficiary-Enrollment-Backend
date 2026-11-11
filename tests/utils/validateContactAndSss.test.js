@@ -10,7 +10,7 @@ import {
   validateSssGsisNo,
 } from "../../src/utils/validateSssGsisNo.js";
 
-// Every fixture below is a real value from dbo.clients, read 2026-09-07. The
+// Every fixture below is a real value from bes.clients, read 2026-09-07. The
 // rules were fitted to what is in the column rather than to what a phone number
 // is supposed to look like.
 
@@ -74,7 +74,7 @@ describe("validateContactNo", () => {
   });
 
   test("refuses the TIN that is sitting in this column today", () => {
-    // `543453566` is a real value in contact_no in dbo.clients — the same
+    // `543453566` is a real value in contact_no in bes.clients — the same
     // string that is also in that row's tin_id and sss_gsis_no. Somebody filled
     // one value into three fields. This is the class of thing the rule catches
     // from now on; the existing row is untouched.
@@ -132,7 +132,7 @@ describe("validateSssGsisNo", () => {
   });
 
   test("refuses the values that are junk in the column today", () => {
-    // All five are real rows in dbo.clients. They are not refused
+    // All five are real rows in bes.clients. They are not refused
     // retroactively — validation only runs on what is submitted from now on —
     // but they are the reason no future rule can assume the column is uniform.
     for (const junk of [

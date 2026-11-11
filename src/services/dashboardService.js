@@ -33,7 +33,7 @@ import { SUPER_ADMIN } from "../utils/constants.js";
 // somebody wants to see the zero.
 //
 // The seed is complete, and this is why rather than a hope:
-// usp_sel_hr_employees joins `dbo.employers AS e ... AND e.status = 'A'`, so
+// usp_sel_hr_employees joins `bes.employers AS e ... AND e.status = 'A'`, so
 // an employee can only ever belong to an active employer. usp_sel_employers
 // with its default @include_inactive = 0 returns exactly that set. The employee
 // rows are a subset of the seed by construction.

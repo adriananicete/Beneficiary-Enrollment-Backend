@@ -27,7 +27,7 @@ const insertClient = async (pool, clientData) => {
   const result = await bindClientFields(request, clientData)
     .input("created_by", sql.VarChar(50), clientData.created_by)
     .output("client_id", sql.BigInt)
-    .execute("usp_ins_client");
+    .execute("bes.usp_ins_client");
   return result.output.client_id;
 };
 
@@ -42,7 +42,7 @@ const getHrEmployees = async (pool, userId, options = {}) => {
     .input("page", sql.Int, options.page)
     .input("page_size", sql.Int, options.pageSize)
     .input("search", sql.VarChar(150), options.search ?? null)
-    .execute("usp_sel_hr_employees");
+    .execute("bes.usp_sel_hr_employees");
 
   return result.recordset;
 };
@@ -59,7 +59,7 @@ const getHrEmployeeByClient = async (pool, userId, clientId) => {
     .request()
     .input("client_id", sql.BigInt, clientId)
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_sel_hr_employee_by_client");
+    .execute("bes.usp_sel_hr_employee_by_client");
 
   return result.recordset[0];
 };
@@ -68,7 +68,7 @@ const getEnrollmentByClientId = async (pool, clientId) => {
   const result = await pool
     .request()
     .input("client_id", sql.BigInt, clientId)
-    .execute("usp_get_insurance_enrollment_by_id");
+    .execute("bes.usp_get_insurance_enrollment_by_id");
 
   return result.recordset;
 };
@@ -77,7 +77,7 @@ const getEnrollmentBenefitsByClientId = async (pool, clientId) => {
   const result = await pool
     .request()
     .input("client_id", sql.BigInt, clientId)
-    .execute("usp_get_enrollment_benefits_by_id");
+    .execute("bes.usp_get_enrollment_benefits_by_id");
 
   return result.recordset;
 };
@@ -86,7 +86,7 @@ const getMyEnrollment = async (pool, userId) => {
   const result = await pool
     .request()
     .input("us01_user_id", sql.BigInt, userId)
-    .execute("usp_sel_insurance_enrollment");
+    .execute("bes.usp_sel_insurance_enrollment");
 
   return result.recordset;
 };

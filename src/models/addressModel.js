@@ -8,7 +8,7 @@ const insertClientAddress = async (pool, clientId, clientAddress) => {
   .input('zip_code', sql.VarChar, clientAddress.zip_code)
   .input('created_by', sql.VarChar, clientAddress.created_by)
   .output('client_address_id', sql.BigInt)
-  .execute('usp_ins_client_address');
+  .execute('bes.usp_ins_client_address');
 
   return result.output.client_address_id;
 };
@@ -24,7 +24,7 @@ const getClientAddressId = async (pool, clientId) => {
   const result = await pool.request()
   .input('client_id', sql.BigInt, clientId)
   .query(`SELECT client_address_id, barangay_id, full_address, zip_code
-          FROM dbo.client_address
+          FROM bes.client_address
           WHERE client_id = @client_id AND status = 'A'`);
 
   return result.recordset[0];

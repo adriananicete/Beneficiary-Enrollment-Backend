@@ -1,5 +1,5 @@
 // Always 09 and eleven digits — settled 2026-09-07 after reading the 44 contact
-// numbers in dbo.clients. Two shapes were in use and they are the same numbers:
+// numbers in bes.clients. Two shapes were in use and they are the same numbers:
 // 09XXXXXXXXX and +639XXXXXXXXX, with `+639171234567` and `09171234567` both
 // present as separate values.
 //

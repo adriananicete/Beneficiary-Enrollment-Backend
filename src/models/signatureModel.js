@@ -25,7 +25,7 @@ const insertSignature = async (pool, signatureData) => {
     .input('source', sql.VarChar(10), signatureData.source)
     .input('created_by', sql.VarChar(50), signatureData.created_by)
     .output('signature_id', sql.BigInt)
-    .execute('dbo.usp_ins_client_signature');
+    .execute('bes.usp_ins_client_signature');
 
     return result.output.signature_id;
 };
@@ -39,7 +39,7 @@ const insertSignature = async (pool, signatureData) => {
 const getSignatureByClient = async (pool, clientId) => {
     const result = await pool.request()
     .input('client_id', sql.BigInt, clientId)
-    .execute('dbo.usp_sel_client_signature_by_client');
+    .execute('bes.usp_sel_client_signature_by_client');
 
     return result.recordset[0];
 };

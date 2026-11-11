@@ -7,7 +7,7 @@ const insertApplication = async (pool, applicationData) => {
     .input('classification_id', sql.BigInt, applicationData.classification_id)
     .input('created_by', sql.VarChar, applicationData.created_by)
     .output('enrollment_id', sql.BigInt)
-    .execute('usp_ins_insurance_enrollment');
+    .execute('bes.usp_ins_insurance_enrollment');
 
     return {
         enrollmentId: result.output.enrollment_id,

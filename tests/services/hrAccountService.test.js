@@ -12,7 +12,7 @@ const { default: config } = await import("../../src/config/env.js");
 // which is this code's to get right. It cannot prove SQL Server accepts the
 // calls (CLAUDE.md §11). The manual run does that.
 
-const COMPANY = "usp_sel_employer_admin_by_id";
+const COMPANY = "bes.usp_sel_employer_admin_by_id";
 const HR_BY_COMPANY = "sec.us08_usp_sel_hr_by_employer";
 const CREATE_USER = "sec.us01_usp_ins_users";
 const ASSIGN_ROLE = "sec.us04_usp_assign_role";

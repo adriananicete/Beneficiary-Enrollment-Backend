@@ -242,7 +242,7 @@ describe("exportService — what it asks the database", () => {
   test("passes the user id to the procedure that carries the company scoping", async () => {
     const { calls } = await report([employee()], [beneficiary()]);
 
-    assert.equal(inputsFor(calls, "usp_sel_hr_employees").us01_user_id, 7);
+    assert.equal(inputsFor(calls, "bes.usp_sel_hr_employees").us01_user_id, 7);
   });
 
   // usp_sel_hr_employees pages when it is given page parameters. The export
@@ -250,7 +250,7 @@ describe("exportService — what it asks the database", () => {
   // compatibility promise the DBA request was built around.
   test("asks for every row rather than a page", async () => {
     const { calls } = await report([employee()], [beneficiary()]);
-    const inputs = inputsFor(calls, "usp_sel_hr_employees");
+    const inputs = inputsFor(calls, "bes.usp_sel_hr_employees");
 
     assert.equal(inputs.page, undefined);
     assert.equal(inputs.page_size, undefined);
@@ -266,7 +266,7 @@ describe("exportService — what it asks the database", () => {
     );
 
     assert.equal(
-      inputsFor(calls, "usp_sel_beneficiaries_by_enrollments").enrollment_ids,
+      inputsFor(calls, "bes.usp_sel_beneficiaries_by_enrollments").enrollment_ids,
       "11,12",
     );
   });
@@ -280,7 +280,7 @@ describe("exportService — what it asks the database", () => {
     );
 
     assert.ok(
-      !calls.some((call) => call.procedure === "usp_sel_beneficiaries_by_enrollments"),
+      !calls.some((call) => call.procedure === "bes.usp_sel_beneficiaries_by_enrollments"),
       "asked for the beneficiaries of an empty id list",
     );
   });

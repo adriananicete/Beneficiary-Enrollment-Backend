@@ -13,7 +13,7 @@ const wipeCompanyEnrollees = async (pool, userId, employerId, confirmCode) => {
     .input('us01_user_id', sql.BigInt, userId)
     .input('employer_id', sql.BigInt, employerId)
     .input('confirm_code', sql.VarChar(50), confirmCode)
-    .execute('usp_del_company_enrollees');
+    .execute('bes.usp_del_company_enrollees');
 
     return result.recordset[0];
 };

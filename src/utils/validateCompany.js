@@ -5,7 +5,7 @@ import { trimStrings } from "./trimStrings.js";
 // refuse a duplicate, which only the database can see. Everything else is
 // checked here, so a bad value is a sentence rather than a SQL error.
 //
-// Widths are the dbo.employers columns, read 2026-10-12.
+// Widths are the bes.employers columns, read 2026-10-12.
 
 // Letters, digits and hyphens. The code becomes part of the HR account's
 // username in branch 4 (hr.<code>), where a space or a symbol has no place.

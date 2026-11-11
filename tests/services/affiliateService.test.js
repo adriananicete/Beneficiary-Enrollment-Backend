@@ -14,11 +14,11 @@ const { default: AffiliateService, affiliateOf, hrAffiliateOf } = await import(
 // leave, the 404s, how a PATCH becomes the whole record the procedure replaces,
 // and which company HR's list answers for.
 
-const LIST = "usp_sel_employer_affiliates_admin";
-const INSERT = "usp_ins_employer_affiliate";
-const UPDATE = "usp_upd_employer_affiliate";
-const HR_LIST = "usp_sel_employer_affiliates_by_user";
-const COMPANY = "usp_sel_employer_admin_by_id";
+const LIST = "bes.usp_sel_employer_affiliates_admin";
+const INSERT = "bes.usp_ins_employer_affiliate";
+const UPDATE = "bes.usp_upd_employer_affiliate";
+const HR_LIST = "bes.usp_sel_employer_affiliates_by_user";
+const COMPANY = "bes.usp_sel_employer_admin_by_id";
 const EMPLOYERS_BY_USER = "sec.us08_usp_sel_employers_by_user";
 
 const ADMIN_ID = 1;

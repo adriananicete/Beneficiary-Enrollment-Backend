@@ -5,7 +5,7 @@ import { makeNext, makeReq, makeRes } from "../helpers/http.js";
 import { validateAffiliateChanges, validateNewAffiliate } from "../../src/middlewares/validateAffiliate.js";
 
 // A company's affiliates, branch 5 of the onboarding effort. Widths are the
-// dbo.employer_affiliates columns, read 2026-10-15: code 20, name 200,
+// bes.employer_affiliates columns, read 2026-10-15: code 20, name 200,
 // reference 20.
 
 const affiliate = (overrides = {}) => ({

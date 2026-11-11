@@ -7,21 +7,21 @@ import { sql } from "../config/db.js";
 export const getClassificationsByEmployer = async (pool, employerId) => {
     const result = await pool.request()
     .input('employer_id', sql.BigInt, employerId)
-    .execute('usp_sel_classifications_by_employer');
+    .execute('bes.usp_sel_classifications_by_employer');
 
     return result.recordset;
 };
 
 export const getEmployers = async (pool) => {
     const result = await pool.request()
-    .execute('usp_sel_employers');
+    .execute('bes.usp_sel_employers');
 
     return result.recordset;
 };
 
 export const getRegions = async (pool) => {
    const result = await pool.request()
-   .execute('usp_sel_regions');
+   .execute('bes.usp_sel_regions');
 
    return result.recordset;
 };
@@ -29,7 +29,7 @@ export const getRegions = async (pool) => {
 export const getProvincesByRegion = async (pool, regionCode) => {
     const result = await pool.request()
     .input('region_code', sql.VarChar(2), regionCode)
-    .execute('usp_sel_provinces_by_region');
+    .execute('bes.usp_sel_provinces_by_region');
 
     return result.recordset;
 };
@@ -37,7 +37,7 @@ export const getProvincesByRegion = async (pool, regionCode) => {
 export const getCitiesByProvince = async (pool, provinceCode) => {
     const result = await pool.request()
     .input('province_code', sql.VarChar(4), provinceCode)
-    .execute('usp_sel_cities_by_province');
+    .execute('bes.usp_sel_cities_by_province');
 
     return result.recordset;
 };
@@ -45,7 +45,7 @@ export const getCitiesByProvince = async (pool, provinceCode) => {
 export const getBarangaysByCity = async (pool, cityCode) => {
     const result = await pool.request()
     .input('city_municipality_code', sql.VarChar(6), cityCode)
-    .execute('usp_lst_barangays_by_city');
+    .execute('bes.usp_lst_barangays_by_city');
 
     return result.recordset;
 };
@@ -62,7 +62,7 @@ export const getBarangaysByCity = async (pool, cityCode) => {
 export const barangayExists = async (pool, barangayId) => {
     const result = await pool.request()
     .input('brgy_code', sql.VarChar(9), barangayId)
-    .query(`SELECT 1 FROM dbo.barangay WHERE brgy_code = @brgy_code`);
+    .query(`SELECT 1 FROM bes.barangay WHERE brgy_code = @brgy_code`);
 
     return result.recordset.length > 0;
 };

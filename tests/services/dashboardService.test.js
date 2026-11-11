@@ -102,7 +102,7 @@ describe("DashboardService.getStats — HR", () => {
     await DashboardService.getStats(pool, HR);
 
     const invitationCalls = calls.filter(
-      (c) => c.procedure === "usp_sel_enrollment_invitations_by_user",
+      (c) => c.procedure === "bes.usp_sel_enrollment_invitations_by_user",
     );
 
     assert.equal(invitationCalls.length, 2);
@@ -119,9 +119,9 @@ describe("DashboardService.getStats — HR", () => {
     assert.deepEqual(
       [...new Set(calls.map((c) => c.procedure))].sort(),
       [
-        "usp_sel_client_change_request_pending_count",
-        "usp_sel_enrollment_invitations_by_user",
-        "usp_sel_hr_employees",
+        "bes.usp_sel_client_change_request_pending_count",
+        "bes.usp_sel_enrollment_invitations_by_user",
+        "bes.usp_sel_hr_employees",
       ],
     );
 
@@ -253,7 +253,7 @@ describe("DashboardService.getStats — Administrator", () => {
 
     assert.deepEqual(
       [...new Set(calls.map((c) => c.procedure))].sort(),
-      ["usp_sel_employers", "usp_sel_hr_employees"],
+      ["bes.usp_sel_employers", "bes.usp_sel_hr_employees"],
     );
   });
 });

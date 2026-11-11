@@ -25,11 +25,11 @@ const {
 // rows below are the real ones for enrollment 74, the example the format was
 // copied from: pasted from GET /admin/enrollments/96 on 2026-09-11.
 
-const DETAILS = "usp_get_insurance_enrollment_by_id";
-const BENEFITS = "usp_get_enrollment_benefits_by_id";
-const BENEFICIARIES = "usp_sel_beneficiaries";
+const DETAILS = "bes.usp_get_insurance_enrollment_by_id";
+const BENEFITS = "bes.usp_get_enrollment_benefits_by_id";
+const BENEFICIARIES = "bes.usp_sel_beneficiaries";
 // The company's automatic-certificate setting, DBA request 19.
-const SETTING = "usp_sel_coc_email_by_client";
+const SETTING = "bes.usp_sel_coc_email_by_client";
 const COC_ON = [{ employer_id: "1", send_coc_email: true }];
 const COC_OFF = [{ employer_id: "1", send_coc_email: false }];
 
