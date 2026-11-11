@@ -345,18 +345,36 @@ describe("model bindings — output parameters", () => {
       assert.deepEqual(Object.keys(calls[0].outputs), []);
     });
 
-  // A BIT, so false reaches the procedure as 0 rather than as a string.
-  test("updateEmployerSettings binds the setting as a bit and the ids as BigInt", async () => {
+  // BITs, so false reaches the procedure as 0 rather than as a string.
+  // @messages_enabled is mandatory on the re-created procedure (UAT,
+  // 2026-11-11): leaving it out is error 201, which no fake pool would show,
+  // so its presence is pinned here.
+  test("updateEmployerSettings binds both settings as bits and the ids as BigInt", async () => {
     const { pool, calls } = anyProcedure();
 
-    await EmployerModel.updateEmployerSettings(pool, { employerId: 1, sendCocEmail: false, userId: 3 });
+    await EmployerModel.updateEmployerSettings(pool, { employerId: 1, sendCocEmail: false, messagesEnabled: true, userId: 3 });
 
     const { bindings } = callTo(calls, "bes.usp_upd_employer_settings");
 
     assert.equal(declarationOf(bindings.send_coc_email.type), declarationOf(sql.Bit));
     assert.equal(bindings.send_coc_email.value, false);
+    assert.equal(declarationOf(bindings.messages_enabled.type), declarationOf(sql.Bit));
+    assert.equal(bindings.messages_enabled.value, true);
     assert.equal(declarationOf(bindings.employer_id.type), declarationOf(sql.BigInt));
     assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
+  });
+
+  // HCL's setting was NULL on 2026-11-11. It goes back as NULL, still bound,
+  // rather than being left out.
+  test("updateEmployerSettings still binds messages_enabled when it is NULL", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await EmployerModel.updateEmployerSettings(pool, { employerId: 2, sendCocEmail: true, messagesEnabled: null, userId: 3 });
+
+    const { bindings } = callTo(calls, "bes.usp_upd_employer_settings");
+
+    assert.ok("messages_enabled" in bindings, "messages_enabled was not bound");
+    assert.equal(bindings.messages_enabled.value, null);
   });
 
   // Resend-credentials is HR's way to unlock somebody at once. A reissued

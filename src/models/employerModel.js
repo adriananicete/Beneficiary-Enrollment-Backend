@@ -43,10 +43,16 @@ const getEmployerSettings = async (pool, userId) => {
 
 // THROWs 50140 for a company that does not exist or is inactive, and 50141
 // for HR changing a company that is not theirs. Answers the updated row.
-const updateEmployerSettings = async (pool, { employerId, sendCocEmail, userId }) => {
+//
+// Both settings are mandatory and both are written as given (read on UAT
+// 2026-11-11): @messages_enabled has no default, and a call without it is
+// error 201. EmployerSettingsService sends the one not being changed as it
+// stands.
+const updateEmployerSettings = async (pool, { employerId, sendCocEmail, messagesEnabled, userId }) => {
     const result = await pool.request()
     .input('employer_id', sql.BigInt, employerId)
     .input('send_coc_email', sql.Bit, sendCocEmail)
+    .input('messages_enabled', sql.Bit, messagesEnabled)
     .input('us01_user_id', sql.BigInt, userId)
     .execute('bes.usp_upd_employer_settings');
 

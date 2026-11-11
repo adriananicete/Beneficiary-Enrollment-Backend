@@ -1,5 +1,6 @@
 import { getPool } from "../config/db.js";
 import EmployerModel from "../models/employerModel.js";
+import EmployerSettingsService from "../services/employerSettingsService.js";
 import { AppError } from "../utils/AppError.js";
 
 // Per-company settings, DBA request 19. One setting today: whether the
@@ -46,7 +47,7 @@ export const updateEmployerSettings = async (req, res, next) => {
 
     const pool = await getPool();
 
-    const row = await EmployerModel.updateEmployerSettings(pool, {
+    const row = await EmployerSettingsService.updateSettings(pool, {
       employerId: req.params.employer_id,
       sendCocEmail: send_coc_email,
       userId: req.user.user_id,
