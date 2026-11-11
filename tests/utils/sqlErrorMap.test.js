@@ -1,7 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { sqlErrorMap } from "../../src/utils/sqlErrorMap.js";
+import { sqlErrorMap, sqlNumberOf } from "../../src/utils/sqlErrorMap.js";
 
 // Each of these was mapped because somebody met it as a bare "Server Error".
 // The status code is the part worth pinning: it decides whether the frontend
@@ -303,4 +303,53 @@ describe("the numbers deliberately left unmapped", () => {
       assert.equal(sqlErrorMap[number], undefined);
     });
   }
+});
+
+// sqlNumberOf: a duplicate on one of sec.us01_users' two unique indexes is read
+// as the field it stands for. The messages are SQL Server's own wording: 2601
+// for a unique index, which uq_email and uq_username are (UAT, 2026-11-11), and
+// 2627 for a unique constraint, in case either is ever made one.
+describe("sqlNumberOf", () => {
+  const duplicate = (number, index) => ({
+    number,
+    message:
+      number === 2601
+        ? `Cannot insert duplicate key row in object 'sec.us01_users' with unique index '${index}'. The duplicate key value is (x).`
+        : `Violation of UNIQUE KEY constraint '${index}'. Cannot insert duplicate key in object 'sec.us01_users'. The duplicate key value is (x).`,
+  });
+
+  for (const number of [2601, 2627]) {
+    test(`${number} on uq_email is read as 50036, the email`, () => {
+      assert.equal(sqlNumberOf(duplicate(number, "uq_email")), 50036);
+    });
+
+    test(`${number} on uq_username is read as 50035, the employee ID`, () => {
+      assert.equal(sqlNumberOf(duplicate(number, "uq_username")), 50035);
+    });
+  }
+
+  // The words the two numbers answer, so the field named is the right one.
+  test("50036 and 50035 say which field is taken", () => {
+    assert.equal(sqlErrorMap[50036].message, "Email address already registered");
+    assert.equal(sqlErrorMap[50035].message, "Employee ID number already registered");
+  });
+
+  test("the number and the message one level down are found too", () => {
+    const nested = { originalError: duplicate(2601, "uq_email") };
+
+    assert.equal(sqlNumberOf(nested), 50036);
+  });
+
+  // An index whose name only starts like one of ours is not ours.
+  test("a duplicate on another index keeps its own number", () => {
+    for (const index of ["UX_claims_open", "uq_policy_no", "uq_email_staff"])
+      assert.equal(sqlNumberOf(duplicate(2601, index)), 2601, index);
+  });
+
+  test("any other error keeps its number, and none stays none", () => {
+    assert.equal(sqlNumberOf({ number: 50007, message: "'uq_email'" }), 50007);
+    assert.equal(sqlNumberOf({ originalError: { number: 50037 } }), 50037);
+    assert.equal(sqlNumberOf(new Error("plain")), undefined);
+    assert.equal(sqlNumberOf(undefined), undefined);
+  });
 });

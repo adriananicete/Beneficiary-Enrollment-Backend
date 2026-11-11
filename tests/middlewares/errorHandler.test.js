@@ -39,6 +39,31 @@ describe("errorHandler", () => {
     assert.match(res.body.message, /same name/i);
   });
 
+  // A duplicate on uq_email used to answer "Duplicate record", naming no
+  // field. The index is named in SQL Server's own message; that is what is
+  // read. The duplicate value that message carries is never sent back.
+  test("a duplicate on uq_email says the email is taken, and not what it was", () => {
+    const res = handle({
+      number: 2601,
+      message:
+        "Cannot insert duplicate key row in object 'sec.us01_users' with unique index 'uq_email'. The duplicate key value is (ana@example.com).",
+    });
+
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.message, "Email address already registered");
+    assert.doesNotMatch(JSON.stringify(res.body), /ana@example\.com/);
+  });
+
+  test("a duplicate on any other index is still 'Duplicate record'", () => {
+    const res = handle({
+      number: 2601,
+      message: "Cannot insert duplicate key row in object 'bes.claims' with unique index 'UX_claims_open'.",
+    });
+
+    assert.equal(res.statusCode, 409);
+    assert.equal(res.body.message, "Duplicate record");
+  });
+
   test("a SQL number nested one level down is still found", () => {
     // The number arrives at different depths depending on the failure. Missing
     // the nested case is what once turned a non-existent-user login into a 500
