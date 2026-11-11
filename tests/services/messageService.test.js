@@ -64,8 +64,9 @@ describe("messageService.sendMessage", () => {
 
     const message = await MessageService.sendMessage(pool, { conversationId: "7", userId: 12, body: "Hello" });
 
-    assert.deepEqual(Object.keys(message).sort(), ["attachments", "body", "conversation_id", "created_date", "message_id", "sender_role"]);
+    assert.deepEqual(Object.keys(message).sort(), ["attachments", "body", "conversation_id", "created_date", "edited_date", "message_id", "sender_role"]);
     assert.deepEqual(message.attachments, []);
+    assert.equal(message.edited_date, null, "a new message has never been edited");
   });
 
   test("a failed save announces nothing", async () => {
@@ -346,5 +347,92 @@ describe("MessageModel.insertMessageWithAttachment", () => {
     assert.equal(declarationOf(bindings.content.type), "varbinary");
     assert.ok(bindings.content.type.length > 8000, "content must be VARBINARY(MAX), not cut at 8000 bytes");
     assert.deepEqual(outputs, {}, "no OUTPUT parameter");
+  });
+});
+const { messageOf } = await import("../../src/services/messageService.js");
+
+// DBA request 30: the sender corrects their own message within 15 minutes.
+describe("messageService.editMessage", () => {
+  const UPDATE = "bes.usp_upd_message";
+  const EDITED = {
+    message_id: "120",
+    conversation_id: "7",
+    client_id: "75",
+    employer_id: "1",
+    sender_role: "Employee",
+    body: "Hello, corrected",
+    created_date: new Date("2026-10-12T02:00:00Z"),
+    edited_date: new Date("2026-10-12T02:05:00Z"),
+  };
+
+  test("one call to the procedure, with the message, the caller and the text", async () => {
+    const { pool, calls } = fakePool({ [UPDATE]: [EDITED] });
+
+    await MessageService.editMessage(pool, { conversationId: "7", messageId: "120", userId: 12, body: "Hello, corrected" });
+
+    assert.deepEqual(inputsFor(calls, UPDATE), {
+      conversation_id: "7",
+      message_id: "120",
+      us01_user_id: 12,
+      body: "Hello, corrected",
+    });
+  });
+
+  test("answers and announces message:updated to both sides, with what changed and no attachments list", async () => {
+    const { io, events } = fakeIo();
+    setRealtimeServer(io);
+    const { pool } = fakePool({ [UPDATE]: [EDITED] });
+
+    const message = await MessageService.editMessage(pool, { conversationId: "7", messageId: "120", userId: 12, body: "Hello, corrected" });
+
+    assert.deepEqual(message, {
+      conversation_id: "7",
+      message_id: "120",
+      sender_role: "Employee",
+      body: "Hello, corrected",
+      created_date: EDITED.created_date,
+      edited_date: EDITED.edited_date,
+    });
+    assert.deepEqual(events, [{ kind: "emit", rooms: ["client:75", "hr:1"], event: "message:updated", payload: message }]);
+  });
+
+  test("a refused edit (not theirs, too late, read-only) announces nothing", async () => {
+    for (const number of [50225, 50226, 50173]) {
+      const { io, events } = fakeIo();
+      setRealtimeServer(io);
+      const { pool } = fakePool({
+        [UPDATE]: () => {
+          throw Object.assign(new Error("refused"), { number });
+        },
+      });
+
+      await assert.rejects(MessageService.editMessage(pool, { conversationId: "7", messageId: "120", userId: 12, body: "x" }));
+      assert.deepEqual(events, [], String(number));
+    }
+  });
+
+  test("the model binds the text as NVARCHAR(4000), wider than the column, so the procedure refuses an overlong one", async () => {
+    const { pool, calls } = fakePool({ [UPDATE]: [EDITED] });
+    await MessageModel.updateMessage(pool, { conversationId: "7", messageId: "120", userId: 12, body: "x" });
+
+    const { bindings, outputs } = callTo(calls, UPDATE);
+    assert.equal(declarationOf(bindings.body.type), "nvarchar");
+    assert.equal(bindings.body.type.length, 4000);
+    assert.equal(declarationOf(bindings.message_id.type), "bigint");
+    assert.deepEqual(outputs, {});
+  });
+
+  test("the conversation view shows when a message was edited", () => {
+    assert.equal(messageOf({ ...EDITED }).edited_date, EDITED.edited_date);
+  });
+});
+
+describe("the edit's error numbers", async () => {
+  const { sqlErrorMap } = await import("../../src/utils/sqlErrorMap.js");
+
+  test("50225, not the caller's or not there, is 404; 50226, too late, is 409", () => {
+    assert.equal(sqlErrorMap[50225].statusCode, 404);
+    assert.equal(sqlErrorMap[50226].statusCode, 409);
+    assert.match(sqlErrorMap[50226].message, /15 minutes/);
   });
 });

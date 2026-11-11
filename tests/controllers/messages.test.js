@@ -32,8 +32,10 @@ describe("what leaves, field by field", () => {
     });
 
     // attachments since 2026-11-11: its files' metadata, empty when it has none.
-    assert.deepEqual(Object.keys(shown).sort(), ["attachments", "body", "created_date", "message_id", "sender_role"]);
+    // edited_date since DBA request 30: null until the message is edited.
+    assert.deepEqual(Object.keys(shown).sort(), ["attachments", "body", "created_date", "edited_date", "message_id", "sender_role"]);
     assert.deepEqual(shown.attachments, []);
+    assert.equal(shown.edited_date, null);
   });
 
   test("a conversation carries the named fields, and nothing a procedure adds later", () => {

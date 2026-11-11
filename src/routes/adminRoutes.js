@@ -14,7 +14,7 @@ import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { getEmployerSettings, updateEmployerSettings } from '../controllers/employerSettingsController.js';
 import { closeDeathClaim, fileDeathClaim, getClaimDetails, getClaimDocument, getClaims, getHrClaimTypes, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
 import { parseDocuments } from '../middlewares/parseDocuments.js';
-import { getConversation, getConversations, getMessageAttachment, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
+import { editMessage, getConversation, getConversations, getMessageAttachment, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
 import { getMessagingAccess } from '../controllers/messagingAccessController.js';
 import { getBookedCompanies } from '../controllers/bookedCompanyController.js';
@@ -182,6 +182,9 @@ router.get('/conversations/:conversation_id', verifyToken, allowedRoles(ADMIN), 
 // against it: the same message, with the file required and named `file`.
 router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(ADMIN), conversationId, messageSendLimiter, requireCompanyMessaging, parseMessageAttachment, sendMessage);
 router.post('/conversations/:conversation_id/attachments', verifyToken, allowedRoles(ADMIN), conversationId, messageSendLimiter, requireCompanyMessaging, parseAttachmentUpload, sendMessage);
+// The sender corrects their own message, within 15 minutes (DBA request 30).
+// On the sending budget: an edit is a write like a send.
+router.patch('/conversations/:conversation_id/messages/:message_id', verifyToken, allowedRoles(ADMIN), conversationId, validateIdParam('message_id', 'Message not found'), messageSendLimiter, requireCompanyMessaging, editMessage);
 router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, markConversationRead);
 // A file attached to a message, as a download (2026-11-11). Both ids are
 // checked, then the limit, then the switch.

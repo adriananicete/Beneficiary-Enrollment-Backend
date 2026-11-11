@@ -61,6 +61,24 @@ const insertMessageWithAttachment = async (
   return result.recordset[0];
 };
 
+// The sender's own message, within 15 minutes of sending (DBA request 30). The
+// procedure keeps the text before the edit in bes.message_edits, in its own
+// transaction, so it is called on its own. It THROWs 50225 for a message that
+// is not the caller's or not in this conversation, and 50226 after the window,
+// besides the checks of sending (50170, 50172–50175). Returns the message as
+// edited, with the conversation's client and company and `edited_date`.
+const updateMessage = async (pool, { conversationId, messageId, userId, body }) => {
+  const result = await pool
+    .request()
+    .input("conversation_id", sql.BigInt, conversationId)
+    .input("message_id", sql.BigInt, messageId)
+    .input("us01_user_id", sql.BigInt, userId)
+    .input("body", sql.NVarChar(4000), body)
+    .execute("bes.usp_upd_message");
+
+  return result.recordset[0];
+};
+
 // HR's list, unread first. `page_size` undefined reaches it as NULL, the
 // whole set, as with the other HR lists.
 const getConversationsByUser = async (pool, userId, paging = {}) => {
@@ -154,6 +172,7 @@ export default {
   openConversation,
   insertMessage,
   insertMessageWithAttachment,
+  updateMessage,
   getConversationsByUser,
   getConversationById,
   markConversationRead,
