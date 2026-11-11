@@ -92,6 +92,57 @@ describe("employerSettingsService — messages_enabled goes back as it stands", 
   });
 });
 
+// The Administrator changes messaging, 2026-11-11. The COC setting is then
+// the one left out, and goes back as it stands.
+describe("employerSettingsService — changing messaging", () => {
+  const saveMessaging = (employerId, messagesEnabled, sendCocEmail) => {
+    const { pool, calls } = fakePool({ [LIST]: COMPANIES, [UPDATE]: [{ employer_id: employerId }] });
+
+    return {
+      calls,
+      result: EmployerSettingsService.updateSettings(pool, { employerId, messagesEnabled, sendCocEmail, userId: 1 }),
+    };
+  };
+
+  test("sends messages_enabled as asked, and send_coc_email as it stands", async () => {
+    const { calls, result } = saveMessaging("1", false);
+    await result;
+
+    const sent = inputsFor(calls, UPDATE);
+
+    assert.equal(sent.messages_enabled, false);
+    assert.equal(sent.send_coc_email, true);
+  });
+
+  // false is a value, not "left out". `??` keeps it; `||` would not.
+  test("false is sent as false, not replaced by the stored value", async () => {
+    const { calls, result } = saveMessaging("1", false);
+    await result;
+
+    assert.equal(inputsFor(calls, UPDATE).messages_enabled, false);
+  });
+
+  test("turning HCL's NULL on sends true", async () => {
+    const { calls, result } = saveMessaging("2", true);
+    await result;
+
+    assert.equal(inputsFor(calls, UPDATE).messages_enabled, true);
+  });
+
+  // Nothing is left out, so nothing is read.
+  test("with both settings sent, the list is not read", async () => {
+    const { calls, result } = saveMessaging("1", true, false);
+    await result;
+
+    assert.deepEqual(
+      calls.map((call) => call.procedure),
+      [UPDATE],
+    );
+    assert.equal(inputsFor(calls, UPDATE).send_coc_email, false);
+    assert.equal(inputsFor(calls, UPDATE).messages_enabled, true);
+  });
+});
+
 describe("employerSettingsService — a company the caller cannot see", () => {
   // Missing from the caller's list means the update refuses it before writing:
   // 50140 inactive or unknown, 50141 another company's. So the refusal is the

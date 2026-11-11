@@ -9,6 +9,8 @@ const { parseDocuments } = await import("../../src/middlewares/parseDocuments.js
 const { claimSubmitLimiter, messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
 const claims = await import("../../src/controllers/claimController.js");
 const messages = await import("../../src/controllers/messageController.js");
+const { requireCompanyMessaging } = await import("../../src/middlewares/requireCompanyMessaging.js");
+const { getMessagingAccess } = await import("../../src/controllers/messagingAccessController.js");
 
 const handlersFor = (method, path) => {
   const layer = router.stack.find(
@@ -96,6 +98,7 @@ describe("the employee messaging routes", () => {
     ["get", "/conversations/:conversation_id", messages.getConversation],
     ["post", "/conversations/:conversation_id/messages", messages.sendMessage],
     ["post", "/conversations/:conversation_id/read", messages.markConversationRead],
+    ["get", "/messaging-access", getMessagingAccess],
   ];
 
   // The role check is the second handler. Run it with each role and read
@@ -130,10 +133,35 @@ describe("the employee messaging routes", () => {
     assert.ok(handlersFor("get", "/conversations/unread-count").includes(pendingCountLimiter));
   });
 
-  test("sending is rate limited, after the id check", () => {
+  test("sending is rate limited, after the id check, and the company switch after that", () => {
     const handlers = handlersFor("post", "/conversations/:conversation_id/messages");
 
-    assert.equal(handlers.length, 5);
+    assert.equal(handlers.length, 6);
     assert.equal(handlers.indexOf(messageSendLimiter), 3);
+    assert.equal(handlers.indexOf(requireCompanyMessaging), 4);
+  });
+});
+
+// The company messaging switch, 2026-11-11, on the employee's side.
+describe("the company messaging switch on the employee's routes", () => {
+  for (const [method, path] of [
+    ["post", "/conversation"],
+    ["get", "/conversations/unread-count"],
+    ["get", "/conversations/:conversation_id"],
+    ["post", "/conversations/:conversation_id/messages"],
+    ["post", "/conversations/:conversation_id/read"],
+  ])
+    test(`${method.toUpperCase()} ${path} is behind the switch, last before its controller`, () => {
+      const handlers = handlersFor(method, path);
+
+      assert.equal(handlers.indexOf(requireCompanyMessaging), handlers.length - 2);
+    });
+
+  // Its session and role checks are with the other messaging routes above.
+  test("GET /messaging-access is rate limited, and not behind the switch", () => {
+    const handlers = handlersFor("get", "/messaging-access");
+
+    assert.ok(handlers.includes(pendingCountLimiter));
+    assert.equal(handlers.includes(requireCompanyMessaging), false);
   });
 });

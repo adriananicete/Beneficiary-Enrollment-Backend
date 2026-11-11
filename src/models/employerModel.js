@@ -41,6 +41,18 @@ const getEmployerSettings = async (pool, userId) => {
     return result.recordset;
 };
 
+// The companies the caller belongs to, with each one's messaging switch: HR
+// through its mappings, an employee through their current employer, an
+// Administrator none. messages_enabled is NULL-as-0 already. No THROW. Read on
+// UAT 2026-11-11.
+const getMessagingAccessByUser = async (pool, userId) => {
+    const result = await pool.request()
+    .input('us01_user_id', sql.BigInt, userId)
+    .execute('bes.usp_sel_messaging_access_by_user');
+
+    return result.recordset;
+};
+
 // THROWs 50140 for a company that does not exist or is inactive, and 50141
 // for HR changing a company that is not theirs. Answers the updated row.
 //
@@ -63,5 +75,6 @@ export default {
     insertClientEmployer,
     getCocEmailSetting,
     getEmployerSettings,
+    getMessagingAccessByUser,
     updateEmployerSettings,
 }

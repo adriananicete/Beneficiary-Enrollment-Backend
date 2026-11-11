@@ -3,9 +3,10 @@ import cookieParser from "cookie-parser";
 import jwt from "jsonwebtoken";
 import config from "../config/env.js";
 import { ADMIN, EMPLOYEE } from "../utils/constants.js";
-import InvitationModel from "../models/invitationModel.js";
+import EmployerModel from "../models/employerModel.js";
 import MessageModel from "../models/messageModel.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
+import { messagingAllowed } from "../utils/messagingAccess.js";
 import { rooms } from "./realtime.js";
 
 // The socket half of messaging, branch 9 of md/CLAIMS-AND-MESSAGING-DECISIONS.md.
@@ -26,6 +27,10 @@ export const SOCKET_PATH = "/api/v1/socket.io";
 // account closed or a session ended some other way loses its socket within
 // five minutes. Logout, password changes, reissued credentials and a closing
 // claim cut it at once, through realtime.js.
+//
+// The company messaging switch is read again on the same interval. A company
+// switched off leaves its messaging rooms within five minutes; its REST routes
+// refuse at once, so nothing new can be sent in the meantime.
 export const SESSION_RECHECK_MS = 5 * 60 * 1000;
 
 // A screen sends `typing` about every two seconds while keys are pressed.
@@ -43,7 +48,7 @@ export const createSocketServer = ({
   httpServer,
   getPool,
   verifySession,
-  getEmployersByUser = InvitationModel.getEmployersByUser,
+  getMessagingAccessByUser = EmployerModel.getMessagingAccessByUser,
   getConversationById = MessageModel.getConversationById,
   recheckMs = SESSION_RECHECK_MS,
   typingThrottleMs = TYPING_THROTTLE_MS,
@@ -53,6 +58,21 @@ export const createSocketServer = ({
     cors: { origin: config.corsOrigin, credentials: true },
     serveClient: false,
   });
+
+  // The messaging rooms a user belongs in: the employee's client room, or HR's
+  // company rooms. None when messaging is off for them, by the same rule as
+  // the REST gate (utils/messagingAccess.js). The socket still connects then,
+  // in its user room only, so a session ending still reaches it; it just hears
+  // no messaging.
+  const messagingRoomsFor = async (pool, session, user) => {
+    const companies = await getMessagingAccessByUser(pool, session.user_id);
+
+    if (!messagingAllowed(companies)) return [];
+
+    return session.role_name === EMPLOYEE
+      ? [rooms.client(user.client_id)]
+      : companies.map((company) => rooms.hr(company.employer_id));
+  };
 
   // The session cookie, read the way Express reads it for every request.
   io.engine.use(cookieParser());
@@ -81,18 +101,11 @@ export const createSocketServer = ({
       const pool = await getPool();
       const user = await verifySession(pool, session);
 
-      let joined;
-
-      if (session.role_name === EMPLOYEE) {
-        if (!user.client_id) return next(refusal("forbidden"));
-        joined = [rooms.client(user.client_id)];
-      } else {
-        const employers = await getEmployersByUser(pool, session.user_id);
-        joined = employers.map((employer) => rooms.hr(employer.employer_id));
-      }
+      if (session.role_name === EMPLOYEE && !user.client_id) return next(refusal("forbidden"));
 
       socket.data.session = session;
-      socket.data.rooms = [rooms.user(session.user_id), ...joined];
+      socket.data.messagingRooms = await messagingRoomsFor(pool, session, user);
+      socket.data.rooms = [rooms.user(session.user_id), ...socket.data.messagingRooms];
 
       next();
     } catch (error) {
@@ -114,7 +127,16 @@ export const createSocketServer = ({
     const recheck = setInterval(async () => {
       try {
         const pool = await getPool();
-        await verifySession(pool, session);
+        const user = await verifySession(pool, session);
+
+        // The company switch may have moved since the last look.
+        const before = socket.data.messagingRooms;
+        const now = await messagingRoomsFor(pool, session, user);
+
+        for (const room of before) if (!now.includes(room)) socket.leave(room);
+        for (const room of now) if (!before.includes(room)) socket.join(room);
+
+        socket.data.messagingRooms = now;
       } catch (error) {
         // An outage is not a reason to drop everybody. Only an ended
         // session is.
@@ -145,6 +167,10 @@ export const createSocketServer = ({
 
     socket.on("typing", async (payload) => {
       try {
+        // Messaging is off for this user: nothing to relay, and nothing to ask
+        // the database. Read from the rooms the socket holds, not per event.
+        if (socket.data.messagingRooms.length === 0) return;
+
         const raw = payload?.conversation_id;
 
         if (!(typeof raw === "string" || typeof raw === "number") || !isNumericId(raw)) return;

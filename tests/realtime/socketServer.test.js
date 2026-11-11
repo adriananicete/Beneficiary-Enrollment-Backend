@@ -42,7 +42,21 @@ const fakeVerifySession = async (pool, session) => {
   return { us01_user_id: session.user_id, client_id: isEmployee && session.user_id !== 13 ? "75" : null };
 };
 
-const EMPLOYERS = { 3: [{ employer_id: "1" }], 4: [{ employer_id: "2" }] };
+// The company messaging switch, by user, as usp_sel_messaging_access_by_user
+// answers: the caller's companies, each with messages_enabled. Anybody not
+// listed is in Coforge (1), with messaging on. Mutable, so a test can switch a
+// company and watch the re-check.
+const ACCESS = {
+  3: [{ employer_id: "1", messages_enabled: true }],
+  4: [{ employer_id: "2", messages_enabled: true }],
+};
+const accessOutages = new Set();
+
+const fakeMessagingAccess = async (pool, userId) => {
+  if (accessOutages.has(userId)) throw new Error("database unreachable");
+
+  return ACCESS[userId] ?? [{ employer_id: "1", messages_enabled: true }];
+};
 
 // Conversation 7 is Coforge's with client 75, and open. Conversation 8 is
 // read-only. Anything else is not the caller's.
@@ -64,7 +78,7 @@ before(async () => {
     httpServer,
     getPool: async () => ({}),
     verifySession: fakeVerifySession,
-    getEmployersByUser: async (pool, userId) => EMPLOYERS[userId] ?? [],
+    getMessagingAccessByUser: fakeMessagingAccess,
     getConversationById: async (pool, conversationId) => {
       lookups.push(conversationId);
       return { conversation: CONVERSATIONS[conversationId] ?? null, messages: [], hasMore: false };
@@ -315,6 +329,109 @@ describe("the session re-check", () => {
     assert.equal(socket.connected, true);
 
     outages.delete(16);
+  });
+});
+
+// The company switch, 2026-11-11. With messaging off the socket still
+// connects, in its user room only, so a session ending still reaches it.
+describe("the company messaging switch", () => {
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  test("an employee whose company has messaging off connects, but hears no client room", async () => {
+    ACCESS[17] = [{ employer_id: "1", messages_enabled: false }];
+    const employee = await connected(client(sign({ ...EMPLOYEE, user_id: 17 })));
+
+    const heard = collect(employee, "probe");
+    io.to("client:75").emit("probe", "client");
+    io.to("user:17").emit("probe", "user");
+
+    assert.deepEqual(await heard, ["user"]);
+  });
+
+  test("HR whose company has messaging off hears no company room", async () => {
+    ACCESS[5] = [{ employer_id: "3", messages_enabled: false }];
+    const hr = await connected(client(sign({ ...HR_COFORGE, user_id: 5 })));
+
+    const heard = collect(hr, "probe");
+    io.to("hr:3").emit("probe", "hr");
+    io.to("user:5").emit("probe", "user");
+
+    assert.deepEqual(await heard, ["user"]);
+  });
+
+  // "Every company", not "any": one company off shuts both.
+  test("HR mapped to two companies, one of them off, hears neither", async () => {
+    ACCESS[20] = [
+      { employer_id: "1", messages_enabled: true },
+      { employer_id: "2", messages_enabled: false },
+    ];
+    const hr = await connected(client(sign({ ...HR_COFORGE, user_id: 20 })));
+
+    const heard = collect(hr, "probe");
+    io.to("hr:1").emit("probe", "coforge");
+    io.to("hr:2").emit("probe", "hcl");
+
+    assert.deepEqual(await heard, []);
+  });
+
+  // And it asks the database nothing per keystroke to learn that.
+  test("typing with messaging off is not relayed, and nothing is looked up", async () => {
+    ACCESS[17] = [{ employer_id: "1", messages_enabled: false }];
+    const employee = await connected(client(sign({ ...EMPLOYEE, user_id: 17 })));
+    const coforge = await connected(client(sign(HR_COFORGE)));
+
+    const before = lookups.length;
+    const heard = collect(coforge, "typing", 400);
+
+    employee.emit("typing", { conversation_id: "7" });
+
+    assert.deepEqual(await heard, []);
+    assert.equal(lookups.length, before);
+  });
+
+  test("switched off, a socket leaves its messaging rooms at the next re-check, and stays connected", async () => {
+    ACCESS[18] = [{ employer_id: "1", messages_enabled: true }];
+    const employee = await connected(client(sign({ ...EMPLOYEE, user_id: 18 })));
+
+    ACCESS[18] = [{ employer_id: "1", messages_enabled: false }];
+    await wait(300);
+
+    const heard = collect(employee, "probe");
+    io.to("client:75").emit("probe", "client");
+    io.to("user:18").emit("probe", "user");
+
+    assert.deepEqual(await heard, ["user"]);
+    assert.equal(employee.connected, true);
+  });
+
+  test("switched on, a socket joins its messaging rooms at the next re-check", async () => {
+    ACCESS[19] = [{ employer_id: "5", messages_enabled: false }];
+    const hr = await connected(client(sign({ ...HR_COFORGE, user_id: 19 })));
+
+    ACCESS[19] = [{ employer_id: "5", messages_enabled: true }];
+    await wait(300);
+
+    const heard = collect(hr, "probe");
+    io.to("hr:5").emit("probe", "hr");
+
+    assert.deepEqual(await heard, ["hr"]);
+  });
+
+  // An outage reading the switch is not a reason to change anything.
+  test("a re-check that cannot read the switch keeps the rooms it had", async () => {
+    ACCESS[21] = [{ employer_id: "6", messages_enabled: true }];
+    const hr = await connected(client(sign({ ...HR_COFORGE, user_id: 21 })));
+
+    accessOutages.add(21);
+    await wait(300);
+
+    const heard = collect(hr, "probe");
+    io.to("hr:6").emit("probe", "hr");
+
+    assert.deepEqual(await heard, ["hr"]);
+    assert.equal(hr.connected, true);
+
+    accessOutages.delete(21);
   });
 });
 
