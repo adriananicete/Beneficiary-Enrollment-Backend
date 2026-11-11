@@ -108,9 +108,12 @@ describe("model bindings — the types that destroy a value when they are wrong"
 
     await ReferenceModel.barangayExists(pool, "012801001");
 
-    const { brgy_code } = calls[0].bindings;
+    // A procedure since 2026-11-11, bes.usp_sel_barangay_exists, with
+    // @brgy_code varchar(9).
+    const { brgy_code } = callTo(calls, "bes.usp_sel_barangay_exists").bindings;
 
     assert.equal(declarationOf(brgy_code.type), "varchar");
+    assert.equal(brgy_code.type.length, 9);
     assert.equal(brgy_code.value, "012801001");
   });
 
@@ -377,30 +380,61 @@ describe("model bindings — output parameters", () => {
     assert.equal(bindings.messages_enabled.value, null);
   });
 
-  // Resend-credentials is HR's way to unlock somebody at once. A reissued
-  // password with any of these left set is a working password and a closed
-  // door, with everything appearing to have worked.
-  // The shared fakePool, because resetPassword reads rowsAffected and the local
-  // recorder does not supply it.
-  test("resetPassword clears the permanent lock, the count and the temporary lock", async () => {
-    const { pool, calls } = fakePool({});
+  // Resend-credentials is HR's way to unlock somebody at once. Until
+  // 2026-11-11 the UPDATE was a raw query here, and these tests read its SET
+  // list: the lock, the count and the temporary lock cleared, the token
+  // version raised. It is sec.usp_upd_user_password_reset now, so that SET
+  // list is in the procedure, where no fake pool can see it. It was read on
+  // UAT the same day and matches clause for clause (DBA-PROCEDURES.md), and
+  // the comment on UserModel.resetPassword says what it must keep doing. What
+  // a test here can pin is the call: the procedure, its three parameters as
+  // the procedure declares them, and the count it answers.
+  test("resetPassword calls the reset procedure with the id, the hash and who did it", async () => {
+    const { pool, calls } = fakePool({ "sec.usp_upd_user_password_reset": [{ affected_count: 1 }] });
 
-    await UserModel.resetPassword(pool, { us01_user_id: 12 });
+    await UserModel.resetPassword(pool, { us01_user_id: 12, us01_password: "$2b$10$hash", us01_modified_by: "3" });
 
-    const { query } = calls[0];
+    const { bindings } = callTo(calls, "sec.usp_upd_user_password_reset");
 
-    assert.match(query, /us01_is_locked\s*=\s*0/);
-    assert.match(query, /us01_failed_login_attempts\s*=\s*0/);
-    assert.match(query, /us01_locked_until\s*=\s*NULL/);
+    assert.deepEqual(Object.keys(bindings).sort(), ["us01_modified_by", "us01_password", "us01_user_id"]);
+    assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
+    assert.equal(bindings.us01_user_id.value, 12);
+    assert.equal(declarationOf(bindings.us01_password.type), "varchar");
+    assert.equal(bindings.us01_password.type.length, 255);
+    assert.equal(bindings.us01_password.value, "$2b$10$hash");
+    assert.equal(declarationOf(bindings.us01_modified_by.type), "varchar");
+    assert.equal(bindings.us01_modified_by.type.length, 50);
   });
 
-  // And ends the sessions the old password had, in the same statement.
-  test("resetPassword raises the token version", async () => {
-    const { pool, calls } = fakePool({});
+  // The callers refuse when nothing was updated: an account that is not
+  // active. The procedure says so with affected_count 0 rather than no row.
+  test("resetPassword answers affected_count: 1 when it reset, 0 when no active account matched", async () => {
+    for (const count of [1, 0]) {
+      const { pool } = fakePool({ "sec.usp_upd_user_password_reset": [{ affected_count: count }] });
 
-    await UserModel.resetPassword(pool, { us01_user_id: 12 });
+      assert.equal(await UserModel.resetPassword(pool, { us01_user_id: 12 }), count);
+    }
+  });
 
-    assert.match(calls[0].query, /us01_token_version\s*=\s*us01_token_version\s*\+\s*1/);
+  // The three that were raw queries, by name and by type.
+  test("findUserByClientId binds the client id as BigInt", async () => {
+    const { pool, calls } = fakePool({ "sec.usp_sel_user_by_client_id": [{ us01_user_id: "9" }] });
+
+    assert.deepEqual(await UserModel.findUserByClientId(pool, 75), { us01_user_id: "9" });
+    assert.equal(declarationOf(callTo(calls, "sec.usp_sel_user_by_client_id").bindings.client_id.type), declarationOf(sql.BigInt));
+  });
+
+  test("checkUsernameExists binds the username as nvarchar(50), and answers whether a row came back", async () => {
+    for (const [rows, expected] of [[[{ exists_flag: 1 }], true], [[], false]]) {
+      const { pool, calls } = fakePool({ "sec.usp_sel_username_exists": rows });
+
+      assert.equal(await UserModel.checkUsernameExists(pool, "EMP-099"), expected);
+
+      const { username } = callTo(calls, "sec.usp_sel_username_exists").bindings;
+      assert.equal(declarationOf(username.type), "nvarchar");
+      assert.equal(username.type.length, 50);
+      assert.equal(username.value, "EMP-099");
+    }
   });
 
   // The thresholds are ints, and the id is a BigInt like every user id.

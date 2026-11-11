@@ -16,10 +16,10 @@
 // an empty set: a service that quietly reads a procedure the test never
 // considered is exactly what this should surface.
 // `queryAnswers` scripts the raw-query calls, as [pattern, recordset] pairs
-// matched against the SQL text. A few model functions read `recordset.length`
-// from a query rather than a procedure — barangayExists and checkUsernameExists
-// both decide a guard that way — so answering every query with nothing would
-// pin one branch and make the other unreachable.
+// matched against the SQL text, so a guard that reads `recordset.length` from
+// a query can be taken both ways. Since 2026-11-11 the only raw query left is
+// getClientAddressId; barangayExists and checkUsernameExists, which decided
+// guards that way, are procedures now.
 //
 // The models call procedures by schema-qualified name (bes.usp_ins_message). A
 // test may script and look up the bare name and still match; a test that names
@@ -62,11 +62,9 @@ export const fakePool = (answers, queryAnswers = []) => {
           : { recordset: answer, output: {} };
       },
 
-      // A handful of model functions use a raw query rather than a procedure —
-      // getClientAddressId, checkUsernameExists, resetPassword. They are
-      // recorded by their SQL text so a test can assert one of them ran, and
-      // they answer empty rather than needing a script: none of them is read
-      // for its rows by the code that calls it.
+      // A raw query rather than a procedure: getClientAddressId, the one left
+      // since 2026-11-11. Recorded by its SQL text so a test can assert it
+      // ran, and answered empty unless scripted.
       async query(text) {
         const sqlText = String(text).trim();
         calls.push({ query: sqlText, inputs });
