@@ -4,13 +4,14 @@ import { verifyToken } from '../middlewares/verifyToken.js';
 import { allowedRoles } from '../middlewares/allowedRoles.js';
 import { EMPLOYEE } from '../utils/constants.js';
 import { verifyResetToken } from '../middlewares/verifyResetToken.js';
-import { authIpLimiter, claimSubmitLimiter, messageSendLimiter, passwordChangeLimiter, pendingCountLimiter, strictLimiter } from '../middlewares/rateLimiter.js';
+import { attachmentDownloadLimiter, authIpLimiter, claimSubmitLimiter, messageSendLimiter, passwordChangeLimiter, pendingCountLimiter, strictLimiter } from '../middlewares/rateLimiter.js';
 import {
     getConversation,
     getUnreadMessageCount,
     markConversationRead,
     openMyConversation,
     sendMessage,
+    getMessageAttachment,
 } from '../controllers/messageController.js';
 import { getMyAgreements, getMySignature } from '../controllers/enrollmentController.js';
 import { validateEnrollmentUpdate } from '../middlewares/validateEnrollmentUpdate.js';
@@ -75,5 +76,7 @@ router.get('/conversations/unread-count', verifyToken, allowedRoles(EMPLOYEE), p
 router.get('/conversations/:conversation_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, getConversation);
 router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(EMPLOYEE), conversationId, messageSendLimiter, requireCompanyMessaging, sendMessage);
 router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(EMPLOYEE), conversationId, requireCompanyMessaging, markConversationRead);
+// A file attached to a message, as a download (2026-11-11), as on HR's side.
+router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(EMPLOYEE), conversationId, validateIdParam('attachment_id', 'Attachment not found'), attachmentDownloadLimiter, requireCompanyMessaging, getMessageAttachment);
 
 export default router;

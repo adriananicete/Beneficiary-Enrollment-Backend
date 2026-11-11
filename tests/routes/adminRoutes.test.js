@@ -12,7 +12,7 @@ const claims = await import("../../src/controllers/claimController.js");
 const messages = await import("../../src/controllers/messageController.js");
 const deceased = await import("../../src/controllers/deceasedController.js");
 const { verifyClientAccess } = await import("../../src/middlewares/verifyClientAccess.js");
-const { certificateDownloadLimiter, claimSubmitLimiter, messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
+const { attachmentDownloadLimiter, certificateDownloadLimiter, claimSubmitLimiter, messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
 const { downloadCertificate } = await import("../../src/controllers/adminController.js");
 const { parseDocuments } = await import("../../src/middlewares/parseDocuments.js");
 const { requireCompanyMessaging } = await import("../../src/middlewares/requireCompanyMessaging.js");
@@ -424,6 +424,7 @@ describe("the HR messaging routes", () => {
     ["get", "/conversations/:conversation_id", messages.getConversation],
     ["post", "/conversations/:conversation_id/messages", messages.sendMessage],
     ["post", "/conversations/:conversation_id/read", messages.markConversationRead],
+    ["get", "/conversations/:conversation_id/attachments/:attachment_id", messages.getMessageAttachment],
     ["get", "/messaging-access", getMessagingAccess],
   ];
 
@@ -513,12 +514,29 @@ describe("the company messaging switch on HR's routes", () => {
     ["get", "/conversations/:conversation_id"],
     ["post", "/conversations/:conversation_id/messages"],
     ["post", "/conversations/:conversation_id/read"],
+    ["get", "/conversations/:conversation_id/attachments/:attachment_id"],
   ])
     test(`${method.toUpperCase()} ${path} is behind the switch, last before its controller`, () => {
       const handlers = handlersFor(method, path);
 
       assert.equal(handlers.indexOf(requireCompanyMessaging), handlers.length - 2);
     });
+
+  // A file download, 2026-11-11: both ids, then its own limit, then the switch.
+  test("a file download checks both ids, then its own limit, then the switch", () => {
+    const handlers = handlersFor("get", "/conversations/:conversation_id/attachments/:attachment_id");
+
+    assert.equal(handlers.length, 7);
+    assert.equal(handlers[4], attachmentDownloadLimiter);
+    assert.equal(handlers[5], requireCompanyMessaging);
+
+    let refused;
+    handlers[3]({ params: { conversation_id: "7", attachment_id: "x" } }, {}, (error) => {
+      refused = error;
+    });
+    assert.equal(refused?.statusCode, 404);
+    assert.equal(refused.message, "Attachment not found");
+  });
 
   // It must answer when messaging is off, or the screen could never learn it.
   // Its session and role checks are with the other messaging routes above.

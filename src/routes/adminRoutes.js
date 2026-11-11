@@ -8,13 +8,13 @@ import { ADMIN, SUPER_ADMIN } from '../utils/constants.js';
 import { verifyClientAccess } from '../middlewares/verifyClientAccess.js';
 import { cancelInvitationJob, downloadInvitationTemplate, getInvitationJobStatus, getInvitations, resendInvitation, revokeInvitation, sendInvitations } from '../controllers/invitationController.js';
 import { validateInvitations } from '../middlewares/validateInvitations.js';
-import { bulkInvitationLimiter, certificateDownloadLimiter, certificateResendLimiter, claimSubmitLimiter, credentialsResendLimiter, jobStatusLimiter, messageSendLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
+import { attachmentDownloadLimiter, bulkInvitationLimiter, certificateDownloadLimiter, certificateResendLimiter, claimSubmitLimiter, credentialsResendLimiter, jobStatusLimiter, messageSendLimiter, pendingCountLimiter } from '../middlewares/rateLimiter.js';
 import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { getEmployerSettings, updateEmployerSettings } from '../controllers/employerSettingsController.js';
 import { closeDeathClaim, fileDeathClaim, getClaimDetails, getClaimDocument, getClaims, getHrClaimTypes, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
 import { parseDocuments } from '../middlewares/parseDocuments.js';
-import { getConversation, getConversations, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
+import { getConversation, getConversations, getMessageAttachment, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
 import { getMessagingAccess } from '../controllers/messagingAccessController.js';
 import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
@@ -171,6 +171,9 @@ router.get('/conversations/unread-count', verifyToken, allowedRoles(ADMIN), pend
 router.get('/conversations/:conversation_id', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, getConversation);
 router.post('/conversations/:conversation_id/messages', verifyToken, allowedRoles(ADMIN), conversationId, messageSendLimiter, requireCompanyMessaging, sendMessage);
 router.post('/conversations/:conversation_id/read', verifyToken, allowedRoles(ADMIN), conversationId, requireCompanyMessaging, markConversationRead);
+// A file attached to a message, as a download (2026-11-11). Both ids are
+// checked, then the limit, then the switch.
+router.get('/conversations/:conversation_id/attachments/:attachment_id', verifyToken, allowedRoles(ADMIN), conversationId, validateIdParam('attachment_id', 'Attachment not found'), attachmentDownloadLimiter, requireCompanyMessaging, getMessageAttachment);
 
 
 export default router;

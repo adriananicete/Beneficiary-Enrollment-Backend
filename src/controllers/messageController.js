@@ -3,6 +3,7 @@ import MessageModel from "../models/messageModel.js";
 import MessageService, { messageOf } from "../services/messageService.js";
 import { AppError } from "../utils/AppError.js";
 import { buildPage, parsePaging } from "../utils/parsePaging.js";
+import { sendStoredFile } from "../utils/storedFileResponse.js";
 import {
   conversationClientIdOf,
   lastReadIdOf,
@@ -117,7 +118,8 @@ export const getConversation = async (req, res, next) => {
 
     const pool = await getPool();
 
-    const { conversation, messages, hasMore } = await MessageModel.getConversationById(
+    // Each message with its files' metadata (2026-11-11).
+    const found = await MessageService.getConversation(
       pool,
       req.params.conversation_id,
       req.user.user_id,
@@ -126,16 +128,37 @@ export const getConversation = async (req, res, next) => {
 
     // Another employee's, or another company's, comes back empty and is
     // answered exactly like one that does not exist.
-    if (!conversation) throw new AppError("Conversation not found", 404);
+    if (!found) throw new AppError("Conversation not found", 404);
 
     return res.status(200).json({
       success: true,
       data: {
-        conversation: conversationOf(conversation),
-        messages: messages.map(messageOf),
-        has_more: hasMore,
+        conversation: conversationOf(found.conversation),
+        messages: found.messages,
+        has_more: found.hasMore,
       },
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// One file attached to a message, as a download (2026-11-11). The service reads
+// the conversation as the caller first, since the procedure that hands over
+// the file takes no user id. Always `attachment`, never shown in place, and
+// never cached on a shared HR machine.
+export const getMessageAttachment = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    const file = await MessageService.getAttachment(
+      pool,
+      req.params.conversation_id,
+      req.params.attachment_id,
+      req.user.user_id,
+    );
+
+    return sendStoredFile(res, { ...file, disposition: "attachment" });
   } catch (error) {
     next(error);
   }
