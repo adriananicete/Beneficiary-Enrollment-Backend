@@ -55,18 +55,23 @@ const sendWithRetry = async (payload) => {
   }
 };
 
-// The class retired, or the affiliate deactivated, between the upload reading
-// the codes and this row being created. The row is HR's to fix, so it is
-// reported with a reason rather than as a failure of the send.
-const NO_LONGER_AVAILABLE = {
+// A row the procedure refuses for a reason HR can fix: the class retired, or
+// the affiliate deactivated, between the upload reading the codes and this row
+// being created; or the Employee ID given is taken (DBA request 32). It is
+// reported with its reason rather than as a failure of the send.
+const REFUSED_ROW = {
   50181: "Classification is no longer available",
   50209: "Affiliate is no longer available",
+  // DBA request 32: the Employee ID HR gave the row.
+  50227: "Employee ID is already someone's login",
+  50228: "Employee ID is already on another person's invitation",
+  50229: "Employee ID is longer than 50 characters",
 };
 
 // Returns the status it recorded so the caller can judge the run as a whole.
 // Never throws — a failure here is one address, not the job.
 const processAddress = async (pool, jobId, userId, employer, invitee) => {
-  const { email, classificationId, affiliateId } = invitee;
+  const { email, classificationId, affiliateId, employeeId = null } = invitee;
   const token = crypto.randomBytes(32).toString("hex");
 
   try {
@@ -77,6 +82,7 @@ const processAddress = async (pool, jobId, userId, employer, invitee) => {
       created_by: userId,
       classification_id: classificationId,
       affiliate_id: affiliateId,
+      employee_id_number: employeeId,
     });
 
     try {
@@ -129,11 +135,11 @@ const processAddress = async (pool, jobId, userId, employer, invitee) => {
       return "already_enrolled";
     }
 
-    if (number in NO_LONGER_AVAILABLE) {
+    if (number in REFUSED_ROW) {
       InvitationJobStore.appendResult(jobId, {
         email,
         status: "invalid",
-        reason: NO_LONGER_AVAILABLE[number],
+        reason: REFUSED_ROW[number],
       });
 
       return "invalid";

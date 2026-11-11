@@ -64,6 +64,9 @@ const createInvitation = async (pool, invitationData) => {
     .input('created_by', sql.VarChar(50), invitationData.created_by)
     .input('classification_id', sql.BigInt, invitationData.classification_id ?? null)
     .input('affiliate_id', sql.BigInt, invitationData.affiliate_id ?? null)
+    // DBA request 32. VarChar(100), as the procedure declares it, wider than
+    // the column's 50, so a long one is refused (50229) rather than cut.
+    .input('employee_id_number', sql.VarChar(100), invitationData.employee_id_number ?? null)
     .output('invitation_id', sql.BigInt)
     .execute('bes.usp_ins_enrollment_invitation')
 

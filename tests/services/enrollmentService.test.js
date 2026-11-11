@@ -415,3 +415,33 @@ describe("enrollmentService — reading an enrollment back", () => {
     assert.ok(!calls.some((call) => call.procedure === BENEFITS));
   });
 });
+
+// DBA request 32: the Employee ID HR gave on the invitation is the one used,
+// whatever the form sent. usernameTaken stops a passing submission at the
+// username guard, which shows which ID it judged.
+describe("enrollmentService — the Employee ID HR gave", async () => {
+  const { assignedEmployeeId } = await import("../../src/services/enrollmentService.js");
+
+  test("the invitation's ID replaces the form's, before the username check", async () => {
+    const { calls, result } = enrol(submission({ employee_id_number: "SOMEONE-ELSE" }), {
+      invitation: validInvitation({ employee_id_number: "EMP-123" }),
+      usernameTaken: true,
+    });
+
+    await assert.rejects(() => result, (error) => error.statusCode === 409);
+    assert.equal(inputsFor(calls, USERNAME).username, "EMP-123");
+  });
+
+  test("with none on the invitation, the form's ID is used as before", async () => {
+    const { calls, result } = enrol(submission({ employee_id_number: "EMP-099" }), { usernameTaken: true });
+
+    await assert.rejects(() => result);
+    assert.equal(inputsFor(calls, USERNAME).username, "EMP-099");
+  });
+
+  test("assignedEmployeeId: the invitation's when set, the form's otherwise", () => {
+    assert.equal(assignedEmployeeId({ employee_id_number: "EMP-123" }, { employee_id_number: "X" }), "EMP-123");
+    assert.equal(assignedEmployeeId({ employee_id_number: null }, { employee_id_number: "X" }), "X");
+    assert.equal(assignedEmployeeId({}, { employee_id_number: "X" }), "X");
+  });
+});

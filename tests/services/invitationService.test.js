@@ -2,7 +2,7 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 import "../helpers/env.js";
-import { fakePool, inputsFor } from "../helpers/fakePool.js";
+import { callTo, declarationOf, fakePool, inputsFor } from "../helpers/fakePool.js";
 
 const { default: InvitationService } = await import(
   "../../src/services/invitationService.js"
@@ -281,6 +281,10 @@ describe("invitationService — the codes of a bulk send", () => {
   for (const [number, reason] of [
     [50181, "Classification is no longer available"],
     [50209, "Affiliate is no longer available"],
+    // DBA request 32: the Employee ID HR gave the row.
+    [50227, "Employee ID is already someone's login"],
+    [50228, "Employee ID is already on another person's invitation"],
+    [50229, "Employee ID is longer than 50 characters"],
   ])
     test(`a row the insert refuses with ${number} is reported as invalid: ${reason}`, async () => {
       const { pool, calls } = fakePool({
@@ -345,5 +349,42 @@ describe("invitationService — the template", () => {
       () => InvitationService.getTemplate(pool, 7),
       (error) => error.statusCode === 403 && /No company is assigned/.test(error.message),
     );
+  });
+});
+
+// DBA request 32: the Employee ID reaches the insert, or NULL when none.
+describe("invitationService — the Employee ID reaches the insert", () => {
+  for (const [given, expected] of [
+    ["  ABC-00123 ", "ABC-00123"],
+    [undefined, null],
+  ])
+    test(`${JSON.stringify(given)} is sent as ${JSON.stringify(expected)}`, async () => {
+      const { pool, calls } = fakePool({
+        ...ABCC_CODES,
+        [INSERT]: () => {
+          throw sqlError(50181);
+        },
+      });
+
+      const answer = await InvitationService.sendInvitations(pool, 34, [
+        { email_address: "juan@alakor.com.ph", classification_code: "CLASS 4", affiliate_code: "ALAKOR", employee_id_number: given },
+      ]);
+      await settled(answer.jobId);
+
+      assert.equal(inputsFor(calls, INSERT).employee_id_number, expected);
+
+      // VarChar(100), as the procedure declares it: wider than the column, so
+      // a long one is refused (50229) rather than cut by the driver.
+      const type = callTo(calls, INSERT).bindings.employee_id_number.type;
+      assert.equal(declarationOf(type), "varchar");
+      assert.equal(type.length, 100);
+    });
+
+  test("the procedure's refusals, for any caller but the bulk job: taken is 409, too long is 400", async () => {
+    const { sqlErrorMap } = await import("../../src/utils/sqlErrorMap.js");
+
+    assert.equal(sqlErrorMap[50227].statusCode, 409);
+    assert.equal(sqlErrorMap[50228].statusCode, 409);
+    assert.equal(sqlErrorMap[50229].statusCode, 400);
   });
 });

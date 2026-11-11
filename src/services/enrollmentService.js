@@ -76,6 +76,11 @@ export const assignedClassAndAffiliate = (invitation, body, activeClasses) => {
   return { classification_id: body.classification_id, affiliate_id };
 };
 
+// The Employee ID the employee enrolls under. HR's, when the invitation carries
+// one (DBA request 32), whatever the form sent, so nobody can enroll under
+// another person's ID; it becomes their login. Otherwise the form's, as before.
+export const assignedEmployeeId = (invitation, body) => invitation.employee_id_number || body.employee_id_number;
+
 // Takes the pool, like every other service since PR #102. The controller
 // fetches it; this decides.
 //
@@ -123,6 +128,9 @@ const createEnrollment = async (pool, enrollmentData) => {
   );
   enrollmentData.classification_id = classification_id;
   enrollmentData.affiliate_id = affiliate_id;
+
+  // Before the username check below, which must judge the ID that is used.
+  enrollmentData.employee_id_number = assignedEmployeeId(invitation, enrollmentData);
 
   // The third reference id, checked the same way as the two above. It was the
   // only one going unvalidated, and six fabricated barangay codes reached the

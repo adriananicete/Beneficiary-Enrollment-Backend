@@ -194,6 +194,10 @@ export const publicInvitation = (row) => ({
           affiliate_code: row.affiliate_code,
           affiliate_name: row.affiliate_name,
         },
+  // The Employee ID HR gave (DBA request 32), for the form to show read-only;
+  // the submit uses it whatever the form sends. null when HR gave none, and the
+  // employee types their own as before.
+  employee_id_number: row.employee_id_number ?? null,
 });
 
 export const getInvitationByToken = async (req, res, next) => {

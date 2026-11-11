@@ -37,8 +37,9 @@ const assigned = {
 };
 
 describe("publicInvitation — what the public lookup may show", () => {
-  // Pinned as a literal: the ten FRONTEND-API.md documents, and the class and
-  // the affiliate branch 6 adds. Changing the list changes that contract.
+  // Pinned as a literal: the ten FRONTEND-API.md documents, the class and the
+  // affiliate branch 6 adds, and the Employee ID of DBA request 32. Changing the
+  // list changes that contract.
   test("answers with the ten documented fields, the class and the affiliate", () => {
     assert.deepEqual(Object.keys(publicInvitation(row)).sort(), [
       "affiliate",
@@ -47,6 +48,7 @@ describe("publicInvitation — what the public lookup may show", () => {
       "company_code",
       "company_name",
       "email_address",
+      "employee_id_number",
       "employer_id",
       "expiry_date",
       "invitation_id",
@@ -58,11 +60,17 @@ describe("publicInvitation — what the public lookup may show", () => {
 
   // An invitation sent before branch 6: the form shows the class dropdown.
   test("passes each value through as it came, with no class and no affiliate", () => {
-    assert.deepEqual(publicInvitation(row), { ...row, classification: null, affiliate: null });
+    assert.deepEqual(publicInvitation(row), { ...row, classification: null, affiliate: null, employee_id_number: null });
     assert.deepEqual(
       publicInvitation({ ...row, classification_id: null, affiliate_id: null }),
-      { ...row, classification: null, affiliate: null },
+      { ...row, classification: null, affiliate: null, employee_id_number: null },
     );
+  });
+
+  // DBA request 32: the ID HR gave, for the form to show read-only; null when none.
+  test("the Employee ID HR gave is shown; none is null", () => {
+    assert.equal(publicInvitation({ ...row, employee_id_number: "ABC-00123" }).employee_id_number, "ABC-00123");
+    assert.equal(publicInvitation(row).employee_id_number, null);
   });
 
   test("the assigned class and affiliate each come as one object", () => {
