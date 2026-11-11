@@ -17,6 +17,7 @@ import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { getConversation, getConversations, getMessageAttachment, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
 import { getMessagingAccess } from '../controllers/messagingAccessController.js';
+import { getBookedCompanies } from '../controllers/bookedCompanyController.js';
 import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
 import { createAffiliate, createClassification, createCompany, createHrAccount, deleteCompany, getAffiliates, getClassificationSchedule, getCompanies, getCompany, resendHrCredentials, updateAffiliate, updateClassification, updateCompany } from '../controllers/companyController.js';
 import { validateHrAccount } from '../middlewares/validateHrAccount.js';
@@ -99,6 +100,10 @@ router.patch('/employers/:employer_id/settings', verifyToken, allowedRoles(ADMIN
 const companyId = validateIdParam('employer_id', 'Company not found');
 
 router.get('/companies', verifyToken, allowedRoles(SUPER_ADMIN), getCompanies);
+// The companies GIS has booked (2026-11-11), each marked with the BES company it
+// is once set up. Before /companies/:employer_id, which would take "booked" for
+// an id and answer 404.
+router.get('/companies/booked', verifyToken, allowedRoles(SUPER_ADMIN), getBookedCompanies);
 router.post('/companies', verifyToken, allowedRoles(SUPER_ADMIN), validateNewCompany, createCompany);
 router.get('/companies/:employer_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, getCompany);
 router.patch('/companies/:employer_id', verifyToken, allowedRoles(SUPER_ADMIN), companyId, validateCompanyChanges, updateCompany);
