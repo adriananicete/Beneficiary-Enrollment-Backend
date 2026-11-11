@@ -27,6 +27,8 @@ const MUST_BE_MAPPED = [
   [50109, 400, /Invalid beneficiary reference/i],
   [50134, 403, /cannot view employee enrollment/i],
   [50078, 409, /already completed an enrollment/i],
+  // DBA request 27 Part 2, 2026-11-11: HR sending the messaging setting.
+  [50223, 403, /^Only the Administrator can change the company messaging setting\.$/],
   // Renumbered by the DBA on 2026-09-08. Submit keeps 110/111/112, approve
   // moved to 118/119/120, and reject throws 50121 — which was never mapped
   // until the same day.
