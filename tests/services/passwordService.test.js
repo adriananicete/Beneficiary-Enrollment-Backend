@@ -194,14 +194,14 @@ describe("passwordService — refusing", () => {
 });
 
 describe("passwordService — the password policy", () => {
-  // 8 to 64 characters, with an uppercase letter, a lowercase letter, a number
+  // 9 to 64 characters, with an uppercase letter, a lowercase letter, a number
   // and a special character. The rule itself is tested case by case in
   // validatePassword.test.js; these prove the service applies it. Pinned as
   // literals, so changing the rule has to change these too.
   for (const [label, password] of [
-    ["seven characters", "Pa$$w0r"],
+    ["eight characters, the minimum until 2026-11-11", "Pa$$w0rd"],
     ["missing a special character", "Password1"],
-    ["missing an uppercase letter", "pa$$w0rd"],
+    ["missing an uppercase letter", "pa$$w0rd1"],
     ["letters and digits only, which the old rule accepted", "abcd1234"],
     ["not text", 12345678],
   ]) {
@@ -210,7 +210,7 @@ describe("passwordService — the password policy", () => {
         () => change(userRow(), { newPassword: password }).result,
         (error) =>
           error.statusCode === 400 &&
-          /8 to 64 characters/.test(error.message),
+          /9 to 64 characters/.test(error.message),
       );
     });
   }
@@ -233,7 +233,7 @@ describe("passwordService — the password policy", () => {
   });
 
   for (const [label, password] of [
-    ["the example agreed on 2026-10-06", "Pa$$w0rd"],
+    ["exactly nine characters", "Pa$$w0rd1"],
     ["long with symbols", "NewPass@456"],
   ]) {
     test(`accepts a new password that is ${label}`, async () => {
