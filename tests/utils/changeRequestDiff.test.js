@@ -195,6 +195,81 @@ describe("buildBeneficiaryChanges", () => {
     );
   });
 
+  // 2026-11-20: bes.usp_sel_beneficiaries returned no beneficiary_id (DBA
+  // request 37). The form had no ids to send back, so the stored list and the
+  // submitted one were both id-less. Before this guard, that built a delete with
+  // a null id plus an insert for every beneficiary, and the procedure refused it
+  // with 50109.
+  describe("when the stored beneficiaries came back without their ids", () => {
+    const withoutId = ({ beneficiary_id, ...rest }) => rest;
+
+    const captureThrow = (run) => {
+      try {
+        run();
+      } catch (error) {
+        return error;
+      }
+      return null;
+    };
+
+    const quietly = (run) => {
+      const logged = [];
+      const restore = console.error;
+      console.error = (...args) => logged.push(args.join(" "));
+
+      try {
+        return { error: captureThrow(run), logged };
+      } finally {
+        console.error = restore;
+      }
+    };
+
+    test("refuses with a 500 rather than building a delete with no id", () => {
+      const stored = [withoutId(current())];
+
+      const { error } = quietly(() =>
+        buildBeneficiaryChanges(stored.map((b) => ({ ...b })), stored, 130),
+      );
+
+      assert.ok(error, "an id-less stored list was turned into changes");
+      assert.equal(error.statusCode, 500);
+      assert.match(error.message, /could not be read, so the change request was not sent/);
+    });
+
+    test("says in the log how many came back without an id, for which enrollment, and from where", () => {
+      const stored = [withoutId(current()), current({ beneficiary_id: "6", full_name: "Maria Reyes" })];
+
+      const { logged } = quietly(() => buildBeneficiaryChanges([], stored, 130));
+
+      assert.equal(logged.length, 1);
+      assert.match(logged[0], /1 of 2 stored beneficiaries for enrollment 130/);
+      assert.match(logged[0], /bes\.usp_sel_beneficiaries/);
+    });
+
+    // A null or blank id is as useless as a missing one.
+    for (const beneficiary_id of [null, "", "  "]) {
+      test(`refuses a stored id of ${JSON.stringify(beneficiary_id)}`, () => {
+        const { error } = quietly(() =>
+          buildBeneficiaryChanges([], [current({ beneficiary_id })], 130),
+        );
+
+        assert.equal(error?.statusCode, 500);
+      });
+    }
+
+    // The guard must not get in the way of an enrollment with no beneficiaries
+    // yet. Adding the first one is a real edit.
+    test("an enrollment with no stored beneficiaries is not refused", () => {
+      const changes = buildBeneficiaryChanges(
+        [{ full_name: "Baby Reyes", relationship: "Child", age: 1, coverage_percent: 100 }],
+        [],
+        130,
+      );
+
+      assert.deepEqual(changes.map((row) => row.action), ["I"]);
+    });
+  });
+
   // OPENJSON's contract, and the only camelCase in this API. A key it does not
   // recognise reads as NULL rather than erroring, so a renamed key here would
   // surface as a row of nulls at approval time — long after the employee has

@@ -22,7 +22,33 @@ import { AppError } from "./AppError.js";
 // submit.
 export const same = (a, b) => String(a ?? "").trim() === String(b ?? "").trim();
 
+const hasId = (beneficiary) => String(beneficiary.beneficiary_id ?? "").trim() !== "";
+
 export const buildBeneficiaryChanges = (submitted, current, enrollmentId) => {
+  // Every stored beneficiary must carry its id, or nothing below can match
+  // anyone. Without the ids, each stored row reads as a removal whose id is
+  // Number("undefined"), NaN, which JSON writes as null, and each submitted
+  // row reads as new. The procedure refuses that document with 50109, which
+  // tells nobody what is wrong. If it accepted it, every beneficiary would be
+  // inserted a second time.
+  //
+  // This happened on 2026-11-20. bes.usp_sel_beneficiaries had had
+  // beneficiary_id commented out since 9 Nov (DBA request 37). It is a defect
+  // on our side of the call, not in the employee's form, so it answers 500 and
+  // says in the log exactly what came back.
+  const missing = current.filter((b) => !hasId(b)).length;
+  if (missing) {
+    console.error(
+      `Change request refused: ${missing} of ${current.length} stored beneficiaries ` +
+        `for enrollment ${enrollmentId} came back without beneficiary_id. ` +
+        `bes.usp_sel_beneficiaries must return it.`,
+    );
+    throw new AppError(
+      "Your current beneficiaries could not be read, so the change request was not sent. Please try again later.",
+      500,
+    );
+  }
+
   const currentIds = new Set(current.map((b) => String(b.beneficiary_id)));
   const currentById = new Map(
     current.map((b) => [String(b.beneficiary_id), b]),
