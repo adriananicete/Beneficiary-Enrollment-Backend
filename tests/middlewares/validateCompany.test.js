@@ -16,6 +16,7 @@ const company = (overrides = {}) => ({
   policy_no: "G-TLI-26-177",
   send_coc_email: true,
   online_enrollment_max_age: 65,
+  company_prefix: "ABCC",
   ...overrides,
 });
 
@@ -39,7 +40,7 @@ describe("validateNewCompany — a whole company", () => {
     assert.equal(req.body.policy_no, "G-TLI-26-177");
   });
 
-  // The optional three get their defaults, so the procedure receives all seven.
+  // The optional three get their defaults, so the procedure receives all eight.
   test("the optional fields default: CoC email on, no office no., no age limit", () => {
     const body = company();
     delete body.send_coc_email;
@@ -62,7 +63,7 @@ describe("validateNewCompany — a whole company", () => {
     assert.equal(req.body.online_enrollment_max_age, null);
   });
 
-  for (const field of ["company_code", "company_name", "work_address", "policy_no"])
+  for (const field of ["company_code", "company_name", "work_address", "policy_no", "company_prefix"])
     test(`${field} is required, and blank counts as missing`, () => {
       for (const value of [undefined, null, "", "   "]) {
         const body = company({ [field]: value });
@@ -185,11 +186,22 @@ describe("validateCompanyChanges — part of a company", () => {
 
 // The login prefix, DBA request 40: every employee's username is PREFIX-ID.
 describe("the login prefix on the company form", () => {
-  test("optional on create, and absent reaches the procedure as null", () => {
-    const { req, next } = run(validateNewCompany, company());
+  // Required on create (Adrian, 2026-11-23): nobody can be invited to a
+  // company without one (50266), so a new company starts with it.
+  test("required on create: a company without one is refused by name", () => {
+    const body = company();
+    delete body.company_prefix;
 
-    assert.ok(next.passed());
-    assert.equal(req.body.company_prefix, null);
+    const { req, next } = run(validateNewCompany, body);
+
+    assert.deepEqual(next.refusal(), { statusCode: 400, message: "company_prefix is required" });
+    assert.equal(req.body.company_prefix, undefined);
+  });
+
+  // The six companies older than request 40 have none until the Administrator
+  // edits them, and every other change to them must still go through.
+  test("a PATCH that does not send it does not need it", () => {
+    assert.ok(run(validateCompanyChanges, { company_name: "Abacus Book and Card Corp." }).next.passed());
   });
 
   test("trimmed and upper-cased before it is checked, so cf is stored as CF", () => {

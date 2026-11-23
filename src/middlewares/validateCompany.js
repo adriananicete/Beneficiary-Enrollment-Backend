@@ -4,6 +4,7 @@ import { COMPANY_FIELDS, companyProblem, normaliseCompany } from "../utils/valid
 // The Administrator's company routes. The rules are in utils/validateCompany.js.
 
 // POST: a whole company. send_coc_email defaults to on, as the column does.
+// company_prefix has no default: it is required (400 by name).
 export const validateNewCompany = (req, res, next) => {
   const problem = normaliseCompany(req.body);
   if (problem) return next(new AppError(problem, 400));
@@ -11,7 +12,6 @@ export const validateNewCompany = (req, res, next) => {
   if (req.body.send_coc_email === undefined) req.body.send_coc_email = true;
   if (req.body.office_no === undefined) req.body.office_no = null;
   if (req.body.online_enrollment_max_age === undefined) req.body.online_enrollment_max_age = null;
-  if (req.body.company_prefix === undefined) req.body.company_prefix = null;
 
   const invalid = companyProblem(req.body, COMPANY_FIELDS);
   if (invalid) return next(new AppError(invalid, 400));
