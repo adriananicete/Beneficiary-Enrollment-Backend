@@ -91,6 +91,8 @@ const MUST_BE_MAPPED = [
   [50173, 409, /can be read but no longer added to/i],
   [50174, 400, /cannot be empty/i],
   [50175, 400, /at most 2000 characters/i],
+  // The company messaging switch, in the four write procedures since 2026-11.
+  [50199, 403, /^Messaging is disabled for this company\.$/],
   // Classifications belong to a company, DBA request 23, read back 2026-10-15.
   [50180, 400, /^That classification is not available for your company$/],
   [50181, 400, /^That classification is not available for this company$/],

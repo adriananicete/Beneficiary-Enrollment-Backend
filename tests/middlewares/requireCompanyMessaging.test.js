@@ -2,8 +2,10 @@ import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 
 import "../helpers/env.js";
+import { makeNext, makeReq, makeRes, silenceConsoleError } from "../helpers/http.js";
 
 const { createRequireCompanyMessaging } = await import("../../src/middlewares/requireCompanyMessaging.js");
+const { errorHandler } = await import("../../src/middlewares/errorHandler.js");
 
 // The gate in front of every conversation route. Its rule is tested in
 // messagingAccess.test.js; this proves the gate applies it, asks for the right
@@ -74,5 +76,22 @@ describe("requireCompanyMessaging", () => {
 
     assert.equal(passed, false);
     assert.equal(refused, failure);
+  });
+
+  // The four write procedures check the same switch and throw 50199. Whether
+  // the gate refuses or a procedure does, the caller gets one answer.
+  test("a procedure's 50199 is answered exactly as this gate refuses", async () => {
+    const { refused } = await run([{ employer_id: "1", messages_enabled: false }]);
+
+    const restoreConsole = silenceConsoleError();
+    const res = makeRes();
+    try {
+      errorHandler({ number: 50199 }, makeReq(), res, makeNext());
+    } finally {
+      restoreConsole();
+    }
+
+    assert.equal(res.statusCode, refused.statusCode);
+    assert.deepEqual(res.body, { success: false, message: refused.message });
   });
 });
