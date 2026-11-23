@@ -81,6 +81,19 @@ export const assignedClassAndAffiliate = (invitation, body, activeClasses) => {
 // another person's ID; it becomes their login. Otherwise the form's, as before.
 export const assignedEmployeeId = (invitation, body) => invitation.employee_id_number || body.employee_id_number;
 
+export const NO_LOGIN_PREFIX = "Your company is not set up for enrollment yet. Please contact your HR.";
+
+// The login the employee gets: their company's prefix, a hyphen, and the
+// Employee ID as issued (DBA request 40, decided 2026-11-23). Two companies may
+// issue the same ID; their prefixes keep the usernames apart. The prefix comes
+// from the invitation's company. A company without one cannot have invited
+// anybody since request 40 (50266), so only an older invitation meets this.
+export const loginUsernameOf = (invitation, employeeId) => {
+  if (!invitation.company_prefix) throw new AppError(NO_LOGIN_PREFIX, 409);
+
+  return `${invitation.company_prefix}-${employeeId}`;
+};
+
 export const ALREADY_ENROLLED_AS_HR =
   "You are already enrolled with your HR account. Sign in as HR to see your enrollment.";
 
@@ -118,7 +131,7 @@ export const accountFor = async (transaction, enrollmentData, clientId) => {
   const hashedPassword = await bcrypt.hash(tempPassword, 10);
 
   const userId = await UserModel.createUser(transaction, {
-    us01_username: enrollmentData.employee_id_number,
+    us01_username: enrollmentData.username,
     us01_password: hashedPassword,
     us01_first_name: enrollmentData.first_name,
     us01_middle_name: enrollmentData.middle_name,
@@ -140,9 +153,22 @@ export const accountFor = async (transaction, enrollmentData, clientId) => {
 // The confirmation for the account accountFor made. An HR person is told their
 // login is the HR login they already have, at the site's root as in the HR
 // account email, with no password. Anyone else gets their new account's.
+// What the confirmation carries, from the enrollment as submitted. Its own
+// function so the username in it can be tested: the call is after the commit,
+// which no test drives, and the email is where the employee learns their login.
+export const confirmationMailOf = (enrollmentData, policyNo, certificate) => ({
+  to: enrollmentData.email_address,
+  policyNo,
+  firstName: enrollmentData.first_name,
+  username: enrollmentData.username,
+  attachments: certificate ? [certificate] : [],
+});
+
+// `username` is the new account's login, PREFIX-ID since DBA request 40: the
+// email is where the employee learns it.
 export const sendEnrollmentConfirmation = (
   account,
-  { to, policyNo, firstName, employeeIdNumber, attachments },
+  { to, policyNo, firstName, username, attachments },
   senders = { employee: sendConfirmationEmail, hr: sendHrEnrollmentEmail },
 ) =>
   account.hrUsername
@@ -151,7 +177,7 @@ export const sendEnrollmentConfirmation = (
         to,
         policyNo,
         firstName,
-        username: employeeIdNumber,
+        username,
         password: account.tempPassword,
         loginUrl: `${config.appUrl}/employee-login`,
         attachments,
@@ -207,6 +233,7 @@ const createEnrollment = async (pool, enrollmentData) => {
 
   // Before the username check below, which must judge the ID that is used.
   enrollmentData.employee_id_number = assignedEmployeeId(invitation, enrollmentData);
+  enrollmentData.username = loginUsernameOf(invitation, enrollmentData.employee_id_number);
 
   // The third reference id, checked the same way as the two above. It was the
   // only one going unvalidated, and six fabricated barangay codes reached the
@@ -223,9 +250,11 @@ const createEnrollment = async (pool, enrollmentData) => {
   if (!barangayIsReal)
     throw new AppError("Invalid barangay", 400);
 
+  // The whole login, prefix and all: the same ID at another company is a
+  // different username, and is not refused.
   const userNameExists = await UserModel.checkUsernameExists(
     pool,
-    enrollmentData.employee_id_number,
+    enrollmentData.username,
   );
   if (userNameExists)
     throw new AppError("Employee ID number already exists", 409);
@@ -316,13 +345,7 @@ const createEnrollment = async (pool, enrollmentData) => {
     const certificate = await autoCertificateFor(pool, clientId);
 
     try {
-      await sendEnrollmentConfirmation(account, {
-        to: enrollmentData.email_address,
-        policyNo,
-        firstName: enrollmentData.first_name,
-        employeeIdNumber: enrollmentData.employee_id_number,
-        attachments: certificate ? [certificate] : [],
-      });
+      await sendEnrollmentConfirmation(account, confirmationMailOf(enrollmentData, policyNo, certificate));
     } catch (error) {
       console.error("Confirmation email failed:", {
         client_id: clientId,

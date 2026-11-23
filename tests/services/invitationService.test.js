@@ -284,7 +284,9 @@ describe("invitationService — the codes of a bulk send", () => {
     // DBA request 32: the Employee ID HR gave the row.
     [50227, "Employee ID is already someone's login"],
     [50228, "Employee ID is already on another person's invitation"],
-    [50229, "Employee ID is longer than 50 characters"],
+    [50229, "Employee ID is longer than 39 characters"],
+    // DBA request 40: a company with no login prefix yet.
+    [50266, "The company has no login prefix yet. Ask the Administrator to set it"],
   ])
     test(`a row the insert refuses with ${number} is reported as invalid: ${reason}`, async () => {
       const { pool, calls } = fakePool({

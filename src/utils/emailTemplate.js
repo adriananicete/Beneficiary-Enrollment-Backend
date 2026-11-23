@@ -14,9 +14,10 @@ import {
 // shadow, a footer, and **no logo at all** — the only one of the five without
 // one. Nothing suggests that was a decision; it predates the other four.
 //
-// `username` is the employee id straight off the enrollment form. It is
-// required and capped at 50 characters and its shape is not validated, so it
-// can carry markup. It goes only to the person who typed it, which is why
+// `username` is the login: the company's prefix, a hyphen and the employee id
+// (DBA request 40), the id from the invitation or the enrollment form. The id
+// is capped at 39 characters and its shape is not validated, so it can carry
+// markup. It goes only to the person who typed it, which is why
 // escaping it is consistency rather than a fix — but the same two values are
 // escaped in credentialsEmailTemplate, and one of the two had to be wrong.
 export const emailTemplate = ({

@@ -15,9 +15,11 @@ const codeText = (value) => {
 
 const keyOf = (code) => code.toUpperCase();
 
-// The Employee ID HR may give each row (DBA request 32). It becomes the
-// employee's login name, whose column is varchar(50); the form allows 50 too.
-export const MAX_EMPLOYEE_ID_LENGTH = 50;
+// The Employee ID HR may give each row (DBA request 32). Since DBA request 40
+// it becomes the login name with the company's prefix in front, PREFIX-ID, and
+// that column is varchar(50): a prefix of at most 10 and the hyphen leave 39.
+// The form and usp_ins_enrollment_invitation (50229) hold the same cap.
+export const MAX_EMPLOYEE_ID_LENGTH = 39;
 
 // What Excel makes of a long number typed into a General cell: 1234567890123 is
 // shown, and read back, as 1.23457E+12. It is never what HR meant, and it would

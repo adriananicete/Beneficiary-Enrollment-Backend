@@ -16,6 +16,12 @@ const COMPANY_CODE = /^[A-Za-z0-9-]+$/;
 // spaces, as the design has it; a space inside a policy number is a typo.
 const POLICY_NO = /^\S+$/;
 
+// The login prefix, DBA request 40: every employee's username is PREFIX-ID.
+// Upper-cased before it is checked (normaliseCompany), so "cf" is stored as
+// "CF". No hyphen, so the one between the prefix and the ID is the only one it
+// adds. The CHECK on bes.employers holds the same rule.
+const COMPANY_PREFIX = /^[A-Z0-9]{2,10}$/;
+
 const text = (field, value, { max, required, pattern, describe }) => {
   if (value === undefined || value === null || value === "")
     return required ? `${field} is required` : null;
@@ -59,12 +65,21 @@ const RULES = {
     (Number.isInteger(value) && value >= 18 && value <= 100)
       ? null
       : "online_enrollment_max_age must be empty or a whole number from 18 to 100",
+  // Optional: a company is created without one and given it later, but none
+  // of its people can be invited until it has one (50266). Locked once a
+  // login uses it (50265), which only the database can see.
+  company_prefix: (value) => {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== "string") return "company_prefix must be text";
+
+    return COMPANY_PREFIX.test(value) ? null : "company_prefix must be 2 to 10 letters or digits";
+  },
 };
 
 export const COMPANY_FIELDS = Object.keys(RULES);
 
-// The two optional fields, where an empty string means "none".
-const OPTIONAL = ["office_no", "online_enrollment_max_age"];
+// The optional fields, where an empty string means "none".
+const OPTIONAL = ["office_no", "online_enrollment_max_age", "company_prefix"];
 
 // Trims, turns an empty optional field into null, and refuses a field the form
 // does not have. A misspelt key would otherwise be dropped without a word, and
@@ -81,6 +96,8 @@ export const normaliseCompany = (body) => {
 
   for (const field of OPTIONAL)
     if (body[field] === "") body[field] = null;
+
+  if (typeof body.company_prefix === "string") body.company_prefix = body.company_prefix.toUpperCase();
 
   return null;
 };

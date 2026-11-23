@@ -78,6 +78,12 @@ const MUST_BE_MAPPED = [
   [50249, 409, /another active enrollment/i],
   [50250, 409, /closed by a claim/i],
   [50251, 409, /employment has ended/i],
+  // The login prefix, DBA request 40. 50229 is 39 since then.
+  [50229, 400, /^The employee ID can be at most 39 characters\.$/],
+  [50263, 400, /login prefix must be 2 to 10 letters or digits/i],
+  [50264, 409, /already used by another company/i],
+  [50265, 409, /cannot change once an employee signs in with it/i],
+  [50266, 409, /no login prefix yet/i],
   // Messaging, DBA request 22, read back 2026-10-12.
   [50170, 403, /not authorized to use messaging/i],
   [50171, 404, /Employee not found/i],

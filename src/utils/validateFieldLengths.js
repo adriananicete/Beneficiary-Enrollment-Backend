@@ -1,3 +1,5 @@
+import { MAX_EMPLOYEE_ID_LENGTH } from "./partitionInvitations.js";
+
 export const BENEFICIARY_FIELD_LENGTHS = {
   full_name: 255,
   relationship: 50,
@@ -17,9 +19,10 @@ export const CLIENT_FIELD_LENGTHS = {
   // sec.us01_usp_first_login once declared @us01_username varchar(20), so an id
   // of 21 to 50 characters enrolled and then could not change its password. It
   // is varchar(50) now, like the login procedures (read in SP.sql, UAT,
-  // 2026-11-11), so 50 holds the whole way. HR's Employee ID on the invitation
-  // has the same cap (partitionInvitations, DBA request 32).
-  employee_id_number: 50,
+  // 2026-11-11). Since DBA request 40 the login is PREFIX-ID, with a prefix of
+  // at most 10 and a hyphen, so the ID itself is capped at 39. HR's Employee ID
+  // on the invitation has the same cap (MAX_EMPLOYEE_ID_LENGTH, 50229).
+  employee_id_number: MAX_EMPLOYEE_ID_LENGTH,
   // Stored in bes.client_employers, not bes.clients, and here because this map
   // is the personal payload rather than one table. It had no cap until
   // 2026-09-23, so a title past the column reached SQL Server, whose truncation

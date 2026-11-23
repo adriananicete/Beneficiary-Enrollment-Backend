@@ -11,6 +11,7 @@ export const validateNewCompany = (req, res, next) => {
   if (req.body.send_coc_email === undefined) req.body.send_coc_email = true;
   if (req.body.office_no === undefined) req.body.office_no = null;
   if (req.body.online_enrollment_max_age === undefined) req.body.online_enrollment_max_age = null;
+  if (req.body.company_prefix === undefined) req.body.company_prefix = null;
 
   const invalid = companyProblem(req.body, COMPANY_FIELDS);
   if (invalid) return next(new AppError(invalid, 400));
@@ -27,6 +28,11 @@ export const validateCompanyChanges = (req, res, next) => {
 
   const sent = Object.keys(req.body);
   if (sent.length === 0) return next(new AppError("Nothing to change", 400));
+
+  // The procedure reads NULL as "keep it" (DBA request 40), so an emptied
+  // prefix would be dropped without a word. It can be changed, not removed.
+  if ("company_prefix" in req.body && req.body.company_prefix === null)
+    return next(new AppError("company_prefix can be changed but not removed", 400));
 
   const invalid = companyProblem(req.body, sent);
   if (invalid) return next(new AppError(invalid, 400));

@@ -28,10 +28,12 @@ const CLASSIFICATIONS = "bes.usp_sel_classifications_by_employer";
 const BARANGAY = "bes.usp_sel_barangay_exists";
 const USERNAME = "sec.usp_sel_username_exists";
 
+// company_prefix since DBA request 40: the login is PREFIX-ID.
 const validInvitation = (overrides = {}) => ({
   invitation_id: 54,
   employer_id: 1,
   email_address: "invited@coforge.com",
+  company_prefix: "CF",
   is_valid: 1,
   is_enrolled: 0,
   ...overrides,
@@ -444,19 +446,71 @@ describe("enrollmentService — the Employee ID HR gave", async () => {
     });
 
     await assert.rejects(() => result, (error) => error.statusCode === 409);
-    assert.equal(inputsFor(calls, USERNAME).username, "EMP-123");
+    assert.equal(inputsFor(calls, USERNAME).username, "CF-EMP-123");
   });
 
   test("with none on the invitation, the form's ID is used as before", async () => {
     const { calls, result } = enrol(submission({ employee_id_number: "EMP-099" }), { usernameTaken: true });
 
     await assert.rejects(() => result);
-    assert.equal(inputsFor(calls, USERNAME).username, "EMP-099");
+    assert.equal(inputsFor(calls, USERNAME).username, "CF-EMP-099");
   });
 
   test("assignedEmployeeId: the invitation's when set, the form's otherwise", () => {
     assert.equal(assignedEmployeeId({ employee_id_number: "EMP-123" }, { employee_id_number: "X" }), "EMP-123");
     assert.equal(assignedEmployeeId({ employee_id_number: null }, { employee_id_number: "X" }), "X");
     assert.equal(assignedEmployeeId({}, { employee_id_number: "X" }), "X");
+  });
+});
+
+// DBA request 40: the login is the company's prefix, a hyphen and the Employee
+// ID, so two companies may issue the same ID.
+describe("enrollmentService — the login prefix", async () => {
+  const { loginUsernameOf } = await import("../../src/services/enrollmentService.js");
+
+  test("the same ID at two companies is two usernames, and each is what is checked", async () => {
+    for (const [prefix, expected] of [["CF", "CF-123-123"], ["HCL", "HCL-123-123"]]) {
+      const { calls, result } = enrol(submission({ employee_id_number: "123-123" }), {
+        invitation: validInvitation({ company_prefix: prefix }),
+        usernameTaken: true,
+      });
+
+      await assert.rejects(() => result);
+      assert.equal(inputsFor(calls, USERNAME).username, expected);
+    }
+  });
+
+  // An invitation from before request 40, of a company that still has no
+  // prefix. Refused before the username is checked or anything is written.
+  test("a company without a prefix is 409, before the username check", async () => {
+    const { calls, result } = enrol(submission(), { invitation: validInvitation({ company_prefix: null }) });
+
+    await assert.rejects(
+      () => result,
+      (error) => error.statusCode === 409 && error.message === "Your company is not set up for enrollment yet. Please contact your HR.",
+    );
+    assert.equal(inputsFor(calls, USERNAME), undefined);
+  });
+
+  // The email is where the employee learns their login, so it carries the
+  // prefixed username, not the bare ID.
+  test("the confirmation carries the PREFIX-ID login, and the certificate when there is one", async () => {
+    const { confirmationMailOf } = await import("../../src/services/enrollmentService.js");
+    const data = { email_address: "ana@coforge.com", first_name: "Ana", employee_id_number: "123-123", username: "CF-123-123" };
+
+    assert.deepEqual(confirmationMailOf(data, "G-TLI-26-001-2600007", null), {
+      to: "ana@coforge.com",
+      policyNo: "G-TLI-26-001-2600007",
+      firstName: "Ana",
+      username: "CF-123-123",
+      attachments: [],
+    });
+    assert.deepEqual(confirmationMailOf(data, "P", { filename: "coc.pdf" }).attachments, [{ filename: "coc.pdf" }]);
+  });
+
+  test("loginUsernameOf: PREFIX-ID, the ID exactly as issued", () => {
+    assert.equal(loginUsernameOf({ company_prefix: "CF" }, "2012-0053"), "CF-2012-0053");
+    assert.throws(() => loginUsernameOf({ company_prefix: "" }, "X"), (error) => error.statusCode === 409);
+    assert.throws(() => loginUsernameOf({}, "X"), (error) => error.statusCode === 409);
   });
 });

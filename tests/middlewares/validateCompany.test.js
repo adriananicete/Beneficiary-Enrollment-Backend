@@ -182,3 +182,52 @@ describe("validateCompanyChanges — part of a company", () => {
     });
   });
 });
+
+// The login prefix, DBA request 40: every employee's username is PREFIX-ID.
+describe("the login prefix on the company form", () => {
+  test("optional on create, and absent reaches the procedure as null", () => {
+    const { req, next } = run(validateNewCompany, company());
+
+    assert.ok(next.passed());
+    assert.equal(req.body.company_prefix, null);
+  });
+
+  test("trimmed and upper-cased before it is checked, so cf is stored as CF", () => {
+    const { req, next } = run(validateNewCompany, company({ company_prefix: "  cf " }));
+
+    assert.ok(next.passed());
+    assert.equal(req.body.company_prefix, "CF");
+  });
+
+  // 2 to 10 letters or digits, and no hyphen: the one between the prefix and
+  // the ID is the only one it adds.
+  test("2 to 10 letters or digits, and nothing else", () => {
+    for (const ok of ["CF", "HCL", "1PENTAGON", "ABCDEFGHIJ"])
+      assert.ok(run(validateNewCompany, company({ company_prefix: ok })).next.passed(), ok);
+
+    for (const bad of ["C", "ABCDEFGHIJK", "CF-1", "C F", "CF.", 12])
+      assert.equal(run(validateNewCompany, company({ company_prefix: bad })).next.refusal()?.statusCode, 400, String(bad));
+
+    assert.deepEqual(run(validateNewCompany, company({ company_prefix: "CF-1" })).next.refusal(), {
+      statusCode: 400,
+      message: "company_prefix must be 2 to 10 letters or digits",
+    });
+  });
+
+  test("a PATCH may set or change it", () => {
+    const { req, next } = run(validateCompanyChanges, { company_prefix: "lean" });
+
+    assert.ok(next.passed());
+    assert.equal(req.body.company_prefix, "LEAN");
+  });
+
+  // The procedure reads NULL as "keep it", so an emptied prefix would be
+  // dropped without a word.
+  test("a PATCH cannot remove it, as null or as an empty string", () => {
+    for (const empty of [null, "", "   "])
+      assert.deepEqual(run(validateCompanyChanges, { company_prefix: empty }).next.refusal(), {
+        statusCode: 400,
+        message: "company_prefix can be changed but not removed",
+      }, JSON.stringify(empty));
+  });
+});
