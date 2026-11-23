@@ -5,6 +5,7 @@ import { changeRequestEmailTemplate } from "../utils/changeRequestEmailTemplate.
 import { credentialsEmailTemplate } from "../utils/credentialsEmailTemplate.js";
 import { certificateEmailTemplate } from "../utils/certificateEmailTemplate.js";
 import { claimDecisionEmailTemplate } from "../utils/claimDecisionEmailTemplate.js";
+import { CLAIM_FILED_SUBJECT, claimFiledEmailTemplate } from "../utils/claimFiledEmailTemplate.js";
 import { hrAccountEmailTemplate } from "../utils/hrAccountEmailTemplate.js";
 import { hrEnrollmentEmailTemplate } from "../utils/hrEnrollmentEmailTemplate.js";
 
@@ -482,6 +483,38 @@ export const sendClaimDecisionEmail = async ({
           },
         },
       ],
+    },
+    saveToSentItems: "false",
+  };
+
+  const response = await fetch(sendMailUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(mailPayload),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw graphSendError(response, errorText);
+  }
+};
+
+// Sent to the employee when HR or the Administrator files a claim in their
+// name (DBA request 36). The caller swallows a failure: the claim is filed
+// whether or not Microsoft was reachable.
+export const sendClaimFiledEmail = async ({ to, employeeName, claimType }) => {
+  const accessToken = await getAccessToken();
+  const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${config.smtp.user}/sendMail`;
+  const loginUrl = `${config.appUrl}/employee-login`;
+
+  const mailPayload = {
+    message: {
+      subject: CLAIM_FILED_SUBJECT,
+      body: claimFiledEmailTemplate({ employeeName, claimType, loginUrl }),
+      toRecipients: [{ emailAddress: { address: to } }],
     },
     saveToSentItems: "false",
   };

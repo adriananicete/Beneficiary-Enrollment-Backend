@@ -7,7 +7,7 @@ import { silenceConsoleError } from "../helpers/http.js";
 import { fakeIo } from "../helpers/fakeIo.js";
 import { AppError } from "../../src/utils/AppError.js";
 
-const { default: ClaimService, asOpenClaimConflict, reviewDecisionOf } = await import(
+const { default: ClaimService, asHrFilerError, asOpenClaimConflict, notifyClaimFiled, reviewDecisionOf } = await import(
   "../../src/services/claimService.js"
 );
 const { setRealtimeServer } = await import("../../src/realtime/realtime.js");
@@ -583,5 +583,258 @@ describe("asOpenClaimConflict", () => {
     for (const error of [{ number: 2627 }, { number: 50152 }, new AppError("x", 400), new Error("boom"), undefined]) {
       assert.equal(asOpenClaimConflict(error), error);
     }
+  });
+});
+
+// ── DBA request 36: HR files an employee's claim for them ────────────────
+
+// The fake pool for HR's filing: the employee's active enrollment, and the
+// employee types (TEST-CLAIM and NO-DOCS, as SEEDED above).
+const hrScripted = ({ enrollment = { client_id: "75", date_of_death: null } } = {}) => {
+  const fake = fakePool({
+    [ENROLLMENT]: enrollment ? [enrollment] : [],
+    [TYPES]: () => ({ recordsets: [SEEDED.types, SEEDED.requirements], recordset: SEEDED.types }),
+  });
+
+  fake.transactions = 0;
+  fake.pool.acquire = (transaction, callback) => {
+    fake.transactions++;
+    callback(new Error(REACHED_TRANSACTION));
+  };
+
+  return fake;
+};
+
+const fileForEmployee = (pool, overrides = {}) =>
+  ClaimService.fileClaimForEmployee(pool, {
+    userId: 3,
+    roleName: "HR",
+    clientId: "75",
+    claimTypeId: "1",
+    documents: [doc("requirement_1")],
+    ...overrides,
+  });
+
+describe("claimService.fileClaimForEmployee — refused before anything is written", () => {
+  test("a claim_type_id that is not a whole number is 400, and the database is not asked", async () => {
+    const { pool, calls } = hrScripted();
+
+    await assert.rejects(fileForEmployee(pool, { claimTypeId: "abc" }), refusedWith(400, /^claim_type_id is required$/));
+    assert.equal(calls.length, 0);
+  });
+
+  // The active enrollment only: no enrollment, or an ended employment (DBA
+  // request 39), files nothing.
+  test("an employee with no active enrollment is 404", async () => {
+    const fake = hrScripted({ enrollment: null });
+
+    await assert.rejects(fileForEmployee(fake.pool), refusedWith(404, /^Enrollment not found$/));
+    assert.equal(fake.transactions, 0);
+  });
+
+  // For an employee who is alive (decided 2026-11-12). A deceased employee's
+  // claim is the death claim, on its own route.
+  test("a deceased employee is 409, before the types are read and before any write", async () => {
+    const fake = hrScripted({ enrollment: { client_id: "75", date_of_death: "2026-10-01" } });
+
+    await assert.rejects(fileForEmployee(fake.pool), refusedWith(409, /^This employee is marked deceased\. File the death claim instead\.$/));
+    assert.equal(callTo(fake.calls, TYPES), undefined);
+    assert.equal(fake.transactions, 0);
+  });
+
+  // The employee's types, read as such: HR's own type is not in the list, so
+  // the death claim cannot come in through this route by naming its id.
+  test("only the employee's types are read, and any other type is 400", async () => {
+    const fake = hrScripted();
+
+    await assert.rejects(fileForEmployee(fake.pool, { claimTypeId: "3" }), refusedWith(400, /^This claim type cannot be filed here$/));
+    assert.equal(inputsFor(fake.calls, TYPES).filed_by, "EMPLOYEE");
+    assert.equal(fake.transactions, 0);
+  });
+
+  test("a missing required document is 400 and names it", async () => {
+    const fake = hrScripted();
+
+    await assert.rejects(
+      fileForEmployee(fake.pool, { documents: [] }),
+      refusedWith(400, /^Missing required documents: Test document \(required\)$/),
+    );
+    assert.equal(fake.transactions, 0);
+  });
+
+  test("a complete filing for an employee who is alive reaches the transaction", async () => {
+    const fake = hrScripted();
+
+    await assert.rejects(fileForEmployee(fake.pool), reachedTransaction);
+    assert.equal(fake.transactions, 1);
+  });
+});
+
+describe("asHrFilerError — usp_ins_claim's numbers in HR's words", () => {
+  // 50150 is also the procedure's answer for an employee outside HR's
+  // companies: "not there", as everywhere else.
+  test("50150 is the employee's enrollment not found, at the top or one level down", () => {
+    for (const error of [{ number: 50150 }, { originalError: { number: 50150 } }]) {
+      const translated = asHrFilerError(error);
+
+      assert.ok(translated instanceof AppError);
+      assert.equal(translated.statusCode, 404);
+      assert.equal(translated.message, "No active enrollment was found for this employee");
+    }
+  });
+
+  // The procedure's own check and the unique index's race say the same thing.
+  test("50152 and 2601 are the employee's open claim of that type", () => {
+    for (const error of [{ number: 50152 }, { number: 2601 }, { originalError: { number: 50152 } }]) {
+      const translated = asHrFilerError(error);
+
+      assert.equal(translated.statusCode, 409);
+      assert.equal(translated.message, "This employee already has an open claim of this type");
+    }
+  });
+
+  test("anything else passes through untouched", () => {
+    for (const error of [{ number: 50151 }, new AppError("x", 400), new Error("boom"), undefined])
+      assert.equal(asHrFilerError(error), error);
+  });
+});
+
+describe("notifyClaimFiled — the employee is told", () => {
+  const realFetch = globalThis.fetch;
+  let restoreConsole = () => {};
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    restoreConsole();
+  });
+
+  const ok = (body = {}) => ({ ok: true, status: 200, json: async () => body, text: async () => "", headers: { get: () => null } });
+
+  const stubMail = ({ send = ok() } = {}) => {
+    const sent = [];
+
+    globalThis.fetch = async (url, options) => {
+      if (/login\.microsoftonline\.com/.test(String(url))) return ok({ access_token: "tok", expires_in: 0 });
+
+      sent.push(JSON.parse(options.body).message);
+      return send;
+    };
+
+    return sent;
+  };
+
+  const ENROLLED = { client_id: "75", first_name: "Ana", middle_name: "", last_name: "Reyes", suffix: "", email_address: "ana@coforge.com" };
+  const TYPE = { claim_type_id: "1", claim_type_desc: "Test claim" };
+
+  test("at the enrollment's address, by name, naming the type", async () => {
+    const sent = stubMail();
+
+    await notifyClaimFiled(ENROLLED, TYPE);
+
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].toRecipients[0].emailAddress.address, "ana@coforge.com");
+    assert.equal(sent[0].subject, "A claim was filed for you");
+    assert.match(sent[0].body.content, /Hi Ana Reyes,/);
+    assert.match(sent[0].body.content, /Your HR has filed a Test claim claim for you\./);
+  });
+
+  test("no address: nobody is emailed, and nothing throws", async () => {
+    restoreConsole = silenceConsoleError();
+    const sent = stubMail();
+
+    await notifyClaimFiled({ ...ENROLLED, email_address: null }, TYPE);
+
+    assert.equal(sent.length, 0);
+  });
+
+  // The claim is filed whether or not Microsoft was reachable.
+  test("a failed send is swallowed", async () => {
+    restoreConsole = silenceConsoleError();
+    stubMail({ send: { ok: false, status: 503, text: async () => "down", headers: { get: () => null } } });
+
+    await notifyClaimFiled(ENROLLED, TYPE);
+  });
+});
+
+describe("claimService.reviewClaim — nobody reviews a claim they filed", () => {
+  const realFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  const quietMail = () => {
+    globalThis.fetch = async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () => (/login\.microsoftonline\.com/.test(String(url)) ? { access_token: "tok", expires_in: 0 } : {}),
+      text: async () => "",
+      headers: { get: () => null },
+    });
+  };
+
+  const PENDING = { ...HEADER, claim_status: "PENDING" };
+
+  // Decided 2026-11-12: another HR of the company, or the Administrator,
+  // reviews it. Refused before the procedure runs.
+  test("the filer reviewing their own claim is 403, and nothing is decided", async () => {
+    quietMail();
+    const { pool, calls } = withClaim({ claim: { ...PENDING, filed_by: "3", filed_by_role: "HR" } });
+
+    await assert.rejects(
+      ClaimService.reviewClaim(pool, { userId: 3, claimId: "30", status: "APPROVED", remarks: null }),
+      refusedWith(403, /^You filed this claim, so another HR of the company or the Administrator must review it$/),
+    );
+    assert.equal(callTo(calls, REVIEW), undefined);
+  });
+
+  // The control: the same claim, reviewed by somebody else, is decided.
+  test("anybody else reviews it", async () => {
+    quietMail();
+    const { pool, calls } = withClaim({ claim: { ...PENDING, filed_by: "3", filed_by_role: "HR" } });
+
+    await ClaimService.reviewClaim(pool, { userId: 1, claimId: "30", status: "APPROVED", remarks: null });
+    assert.ok(callTo(calls, REVIEW));
+  });
+});
+
+describe("claimService.resubmitClaimForEmployee — HR's resubmit", () => {
+  const HR_FILED = { ...HEADER, filed_by: "3", filed_by_role: "HR" };
+
+  const hrResubmit = (pool, overrides = {}) =>
+    ClaimService.resubmitClaimForEmployee(pool, { userId: 3, claimId: "30", documents: [doc("requirement_2")], ...overrides });
+
+  // A claim the employee filed is theirs to resubmit. Refused before the
+  // upload is matched or written.
+  test("a claim the employee filed is 409, and no transaction opens", async () => {
+    const fake = withClaim({ claim: { ...HEADER, filed_by: "12", filed_by_role: "Employee" }, documents: [{ claim_document_id: "9", requirement_id: "1" }] });
+
+    await assert.rejects(hrResubmit(fake.pool), refusedWith(409, /^The employee filed this claim, so they resubmit it$/));
+    assert.equal(fake.transactions, 0);
+  });
+
+  test("a claim HR cannot see is 404, and a claim that is not RETURNED is 409", async () => {
+    await assert.rejects(hrResubmit(withClaim({ claim: null }).pool), refusedWith(404, /^Claim not found$/));
+    await assert.rejects(
+      hrResubmit(withClaim({ claim: { ...HR_FILED, claim_status: "PENDING" } }).pool),
+      refusedWith(409, /^Only a returned claim can be resubmitted$/),
+    );
+  });
+
+  test("no documents is 400, and the database is not asked", async () => {
+    const { pool, calls } = withClaim({ claim: HR_FILED });
+
+    await assert.rejects(hrResubmit(pool, { documents: [] }), refusedWith(400, /^Add at least one document to resubmit$/));
+    assert.equal(calls.length, 0);
+  });
+
+  // The client is the claim's own, after HR's scoped read: HR has no client
+  // of its own, so its user row is never read for one.
+  test("a returned claim HR filed reaches the transaction, without reading HR's user row", async () => {
+    const fake = withClaim({ claim: HR_FILED, documents: [{ claim_document_id: "9", requirement_id: "1" }] });
+
+    await assert.rejects(hrResubmit(fake.pool), reachedTransaction);
+    assert.equal(fake.transactions, 1);
+    assert.equal(callTo(fake.calls, USER), undefined);
   });
 });

@@ -34,12 +34,14 @@ export const AUDITED_ROUTES = {
   "POST /admin/enrollments/:client_id/employment-end": entry("Employment end", "U", "param.client_id"),
   "DELETE /admin/enrollments/:client_id/employment-end": entry("Employment end", "D", "param.client_id"),
   "POST /admin/enrollments/:client_id/death-claim": entry("Claim", "I", "data.claim_id", "param.client_id"),
+  "POST /admin/enrollments/:client_id/claims": entry("Claim", "I", "data.claim_id", "param.client_id"),
 
   // The decision carries what changed (changeRequestAudit.js): the approve and
   // reject procedures write no audit row of their own.
   "PATCH /admin/change-requests/:request_id": entry("Profile change request", "U", "param.request_id"),
   "PATCH /admin/claims/:claim_id": entry("Claim", "U", "param.claim_id"),
   "PATCH /admin/claims/:claim_id/close": entry("Claim", "U", "param.claim_id"),
+  "POST /admin/claims/:claim_id/resubmit": entry("Claim", "U", "param.claim_id"),
 
   "PATCH /admin/employers/:employer_id/settings": entry("Company settings", "U", "param.employer_id"),
   "POST /admin/companies": entry("Company", "I", "data.employer_id"),
