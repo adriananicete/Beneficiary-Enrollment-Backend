@@ -3,6 +3,7 @@ import InvitationModel from "../models/invitationModel.js";
 import ChangeRequestModel from "../models/changeRequestModel.js";
 import * as ReferenceModel from "../models/referenceModel.js";
 import { SUPER_ADMIN } from "../utils/constants.js";
+import { isActivelyEnrolled } from "../utils/employmentEnd.js";
 
 // Two dashboards, because the two roles do different jobs.
 //
@@ -69,7 +70,7 @@ const countByCompany = (employers, employees) => {
       enrolled: 0,
     };
 
-    if (row.enrollment_id != null) company.enrolled += 1;
+    if (isActivelyEnrolled(row)) company.enrolled += 1;
 
     byCode.set(row.company_code, company);
   }
@@ -123,7 +124,9 @@ const getStats = async (pool, { user_id, role_name }) => {
   // procedure from the DBA, not a raw query here.
   const employees = await ClientModel.getHrEmployees(pool, user_id);
 
-  const enrolled = employees.filter((row) => row.enrollment_id != null).length;
+  // An employee whose employment ended keeps their closed enrollment on the
+  // row (DBA request 39), and is not counted.
+  const enrolled = employees.filter(isActivelyEnrolled).length;
 
   // `scope` is here so the frontend can branch on a field rather than sniff
   // which keys arrived. Two shapes from one endpoint is worth saying out loud.

@@ -393,6 +393,21 @@ describe("enrollmentService — reading an enrollment back", () => {
     assert.equal(inputsFor(calls, DETAILS).client_id, 75);
   });
 
+  // DBA request 39: HR and the Administrator still see an employee whose
+  // employment ended, with its closed enrollment and benefits. Only this
+  // detail asks for them.
+  test("asks for an enrollment closed when the employment ended, and its benefits", async () => {
+    const { pool, calls } = fakePool({
+      [DETAILS]: [{ enrollment_id: 54, client_id: 75, status: "I", employment_end_reason: "RESIGNED" }],
+      [BENEFITS]: [],
+    });
+
+    await EnrollmentService.getFullEnrollmentDetails(pool, 75);
+
+    assert.equal(inputsFor(calls, DETAILS).include_ended, true);
+    assert.equal(inputsFor(calls, BENEFITS).include_ended, true);
+  });
+
   // 404 rather than an empty envelope. An enrollment that is not there is not
   // the same answer as one with nothing in it.
   test("refuses a client with no enrollment", async () => {

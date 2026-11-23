@@ -96,6 +96,20 @@ describe("DashboardService.getStats — HR", () => {
     assert.notEqual(stats.enrolled, HR_EMPLOYEES[0].total_count);
   });
 
+  // DBA request 39: the list brings the closed enrollment of an employee whose
+  // employment ended. They have an enrollment_id and are not enrolled.
+  test("does not count an employee whose employment ended", async () => {
+    const { pool } = fakePool({
+      ...HR_ANSWERS,
+      usp_sel_hr_employees: [
+        ...HR_EMPLOYEES,
+        { client_id: 5, enrollment_id: 15, status: "I", employment_end_reason: "RESIGNED", company_code: "CFG", company_name: "Coforge", total_count: 5 },
+      ],
+    });
+
+    assert.equal((await DashboardService.getStats(pool, HR)).enrolled, 3);
+  });
+
   test("asks the invitation procedure for one row, not the whole list", async () => {
     const { pool, calls } = fakePool(HR_ANSWERS);
 
@@ -164,6 +178,23 @@ describe("DashboardService.getStats — Administrator", () => {
         { employer_id: 3, company_code: "ZZZ", company_name: "Zenith", enrolled: 0 },
       ],
     });
+  });
+
+  // DBA request 39, as on the HR side: the closed enrollment of an ended
+  // employment counts in neither the total nor its company.
+  test("an employee whose employment ended counts in neither the total nor the split", async () => {
+    const { pool } = fakePool({
+      ...ADMIN_ANSWERS,
+      usp_sel_hr_employees: [
+        ...ALL_EMPLOYEES,
+        { client_id: 6, enrollment_id: 16, status: "I", employment_end_reason: "RETIRED", company_code: "HCL", company_name: "HCL", total_count: 6 },
+      ],
+    });
+
+    const stats = await DashboardService.getStats(pool, ADMINISTRATOR);
+
+    assert.equal(stats.enrolled, 3);
+    assert.equal(stats.byCompany.find((c) => c.company_code === "HCL").enrolled, 1);
   });
 
   test("a company with no employees at all still appears, at zero", async () => {

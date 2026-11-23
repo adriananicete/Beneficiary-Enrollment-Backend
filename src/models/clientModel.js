@@ -64,19 +64,27 @@ const getHrEmployeeByClient = async (pool, userId, clientId) => {
   return result.recordset[0];
 };
 
-const getEnrollmentByClientId = async (pool, clientId) => {
+// The active enrollment. With includeEnded, also the enrollment closed when
+// the employment ended (DBA request 39, @include_ended): only HR's and the
+// Administrator's detail asks for it. The certificate, marking deceased and
+// the death claim keep the default, so an ended employee has no enrollment to
+// them and they refuse as before.
+const getEnrollmentByClientId = async (pool, clientId, { includeEnded = false } = {}) => {
   const result = await pool
     .request()
     .input("client_id", sql.BigInt, clientId)
+    .input("include_ended", sql.Bit, includeEnded)
     .execute("bes.usp_get_insurance_enrollment_by_id");
 
   return result.recordset;
 };
 
-const getEnrollmentBenefitsByClientId = async (pool, clientId) => {
+// The same choice as getEnrollmentByClientId, for the same callers.
+const getEnrollmentBenefitsByClientId = async (pool, clientId, { includeEnded = false } = {}) => {
   const result = await pool
     .request()
     .input("client_id", sql.BigInt, clientId)
+    .input("include_ended", sql.Bit, includeEnded)
     .execute("bes.usp_get_enrollment_benefits_by_id");
 
   return result.recordset;

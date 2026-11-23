@@ -11,6 +11,7 @@ const { getEmployerSettings, updateEmployerSettings } = await import(
 const claims = await import("../../src/controllers/claimController.js");
 const messages = await import("../../src/controllers/messageController.js");
 const deceased = await import("../../src/controllers/deceasedController.js");
+const employmentEnd = await import("../../src/controllers/employmentEndController.js");
 const { verifyClientAccess } = await import("../../src/middlewares/verifyClientAccess.js");
 const { attachmentDownloadLimiter, certificateDownloadLimiter, claimSubmitLimiter, messageSendLimiter, pendingCountLimiter } = await import("../../src/middlewares/rateLimiter.js");
 const { downloadCertificate } = await import("../../src/controllers/adminController.js");
@@ -122,6 +123,32 @@ describe("the deceased routes", () => {
     assert.equal(handlers[0], verifyToken);
     assert.equal(handlers[2], verifyClientAccess);
     assert.equal(handlers.at(-1), deceased.undoDeceased);
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "HR"), 403);
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+});
+
+// Ending an employment, DBA request 39. HR and the Administrator end it; only
+// the Administrator undoes it (decided 2026-11-23).
+describe("the employment end routes", () => {
+  test("POST ends it, for HR and the Administrator, behind verifyToken and verifyClientAccess", () => {
+    const handlers = handlersFor("post", "/enrollments/:client_id/employment-end");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers[2], verifyClientAccess);
+    assert.equal(handlers.at(-1), employmentEnd.endEmployment);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+  });
+
+  test("DELETE undoes it, for the Administrator only", () => {
+    const handlers = handlersFor("delete", "/enrollments/:client_id/employment-end");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(handlers[2], verifyClientAccess);
+    assert.equal(handlers.at(-1), employmentEnd.undoEmploymentEnd);
     assert.equal(roleAnswer(handlers, "Administrator"), "passed");
     assert.equal(roleAnswer(handlers, "HR"), 403);
     assert.equal(roleAnswer(handlers, "Employee"), 403);
