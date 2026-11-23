@@ -7,10 +7,13 @@ import { MESSAGING_OFF, messagingAllowed } from "../utils/messagingAccess.js";
 // switch, bes.employers.messages_enabled, set by the Administrator. The rule is
 // messagingAllowed's: every company of the caller has messaging on.
 //
-// The conversation procedures do not look at the switch themselves (UAT,
-// 2026-11-11), so this is where it is enforced. They still do the scoping:
-// another company's employee or conversation is 50171 or 50172 whatever this
-// says.
+// The procedures that write a conversation or a message check the switch too
+// since 2026-11 (50199, in the SP.sql of 2026-11-23 and not in the one of
+// 11-12), for the conversation's own company. sqlErrorMap answers 50199 with
+// this same 403 and sentence. This gate stays: it runs before any write, and it
+// is what the screen's messaging-access answer is built from. The procedures
+// still do the scoping: another company's employee or conversation is 50171 or
+// 50172 whatever this says.
 //
 // It costs a query, so on a route with a rate limiter it runs after it: a
 // flood is refused before it reaches the database.

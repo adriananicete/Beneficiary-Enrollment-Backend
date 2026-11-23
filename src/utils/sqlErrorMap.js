@@ -471,6 +471,17 @@ export const sqlErrorMap = {
     // Both checked by messageBodyOf first; the database's own guards.
     50174: { statusCode: 400, message: 'A message cannot be empty' },
     50175: { statusCode: 400, message: 'A message can be at most 2000 characters' },
+    // The company switch, bes.employers.messages_enabled. Not from one of our
+    // requests: it is in the SP.sql of 2026-11-23 and not in the one of 11-12.
+    // usp_ins_conversation, usp_ins_message, usp_ins_message_with_attachment
+    // and usp_upd_message throw it unless the conversation's company is active
+    // ('A') with messaging on. requireCompanyMessaging refuses first, with the
+    // same 403 and the same sentence (MESSAGING_OFF), so this answers what gets
+    // past the gate: the switch turned off mid-request, or a conversation of a
+    // company that is no longer active. The gate's procedure,
+    // usp_sel_messaging_access_by_user, lists only active companies, so it
+    // passes a caller whose other companies are active and on.
+    50199: { statusCode: 403, message: 'Messaging is disabled for this company.' },
 
     // ── The Administrator's companies, DBA request 24, read back 2026-10-15 ──
     //
