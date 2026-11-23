@@ -31,6 +31,8 @@ export const AUDITED_ROUTES = {
   "POST /admin/enrollments/:client_id/resend-certificate": entry("Certificate of Coverage", "U", "param.client_id"),
   "POST /admin/enrollments/:client_id/deceased": entry("Deceased status", "U", "param.client_id"),
   "DELETE /admin/enrollments/:client_id/deceased": entry("Deceased status", "D", "param.client_id"),
+  "POST /admin/enrollments/:client_id/employment-end": entry("Employment end", "U", "param.client_id"),
+  "DELETE /admin/enrollments/:client_id/employment-end": entry("Employment end", "D", "param.client_id"),
   "POST /admin/enrollments/:client_id/death-claim": entry("Claim", "I", "data.claim_id", "param.client_id"),
 
   // The decision carries what changed (changeRequestAudit.js): the approve and

@@ -16,6 +16,7 @@ import { closeDeathClaim, fileDeathClaim, getClaimDetails, getClaimDocument, get
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { editMessage, getConversation, getConversations, getMessageAttachment, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
+import { endEmployment, undoEmploymentEnd } from '../controllers/employmentEndController.js';
 import { getMessagingAccess } from '../controllers/messagingAccessController.js';
 import { getBookedCompanies } from '../controllers/bookedCompanyController.js';
 import { requireCompanyMessaging } from '../middlewares/requireCompanyMessaging.js';
@@ -79,6 +80,12 @@ router.get('/enrollments/:client_id/certificate', verifyToken, allowedRoles(ADMI
 // verifyClientAccess, and the procedures scope again.
 router.post('/enrollments/:client_id/deceased', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, markDeceased);
 router.delete('/enrollments/:client_id/deceased', verifyToken, allowedRoles(SUPER_ADMIN), verifyClientAccess, undoDeceased);
+// Ending an employee's employment, DBA request 39: resigned, terminated,
+// contract ended or retired. HR and the Administrator end it; only the
+// Administrator undoes it (decided 2026-11-23). The same shape as deceased
+// status, and the procedures scope again.
+router.post('/enrollments/:client_id/employment-end', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, endEmployment);
+router.delete('/enrollments/:client_id/employment-end', verifyToken, allowedRoles(SUPER_ADMIN), verifyClientAccess, undoEmploymentEnd);
 // The death claim, DBA request 21. Filed by HR or the Administrator for an
 // employee already marked deceased, approved on filing. The upload is read
 // only after the session, the role, the company and the limiter have passed,

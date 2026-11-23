@@ -126,6 +126,22 @@ describe("exportService — the report itself", () => {
     assert.equal(cell(FIRST_DATA_ROW + 1, "status"), "Not enrolled");
   });
 
+  // DBA request 39: an employee whose employment ended arrives with the closed
+  // enrollment ('I') and the reason. They read as the reason, not as enrolled
+  // and not as someone who never enrolled.
+  test("an ended employment reads as its reason", async () => {
+    const { cell } = await report(
+      [
+        employee({ status: "I", employment_end_reason: "RESIGNED" }),
+        employee({ client_id: 2, enrollment_id: 12, status: "I", employment_end_reason: "CONTRACT_ENDED" }),
+      ],
+      [],
+    );
+
+    assert.equal(cell(FIRST_DATA_ROW, "status"), "Resigned");
+    assert.equal(cell(FIRST_DATA_ROW + 1, "status"), "Contract ended");
+  });
+
   test("an empty report says so rather than opening on a header and nothing", async () => {
     const { cell, rowCount } = await report([], []);
 

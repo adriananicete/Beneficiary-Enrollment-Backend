@@ -17,6 +17,7 @@ import EmployerModel from "../../src/models/employerModel.js";
 import ClaimModel from "../../src/models/claimModel.js";
 import MessageModel from "../../src/models/messageModel.js";
 import DeathModel from "../../src/models/deathModel.js";
+import EmploymentEndModel from "../../src/models/employmentEndModel.js";
 import { sql } from "../../src/config/db.js";
 
 // One file rather than nine, and deliberately so.
@@ -579,6 +580,74 @@ describe("model bindings — deceased status", () => {
     assert.equal(declarationOf(bindings.client_id.type), declarationOf(sql.BigInt));
     assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
   });
+});
+
+// DBA request 39, read back 2026-11-23. No OUTPUT parameters.
+describe("model bindings — employment end", () => {
+  for (const [name, call, procedure] of [
+    [
+      "endEmployment",
+      (pool) => EmploymentEndModel.endEmployment(pool, { clientId: "75", reason: "RESIGNED", endDate: "2026-11-20", userId: 3 }),
+      "bes.usp_upd_employment_end",
+    ],
+    ["undoEmploymentEnd", (pool) => EmploymentEndModel.undoEmploymentEnd(pool, { clientId: "75", userId: 1 }), "bes.usp_del_employment_end"],
+  ])
+    test(`${name} calls ${procedure} and declares no output`, async () => {
+      const { pool, calls } = anyProcedure();
+
+      await call(pool);
+
+      assert.ok(callTo(calls, procedure), `${name} does not call ${procedure}`);
+      assert.deepEqual(Object.keys(callTo(calls, procedure).outputs), []);
+    });
+
+  // The reason is varchar(20), as the column and @end_reason are. The date is
+  // bound from its text as a date, as the date of death is.
+  test("the reason is varchar(20), the date a date, and the ids BigInt", async () => {
+    const { pool, calls } = anyProcedure();
+
+    await EmploymentEndModel.endEmployment(pool, { clientId: "75", reason: "CONTRACT_ENDED", endDate: "2026-11-20", userId: 3 });
+
+    const { bindings } = callTo(calls, "bes.usp_upd_employment_end");
+
+    assert.equal(declarationOf(bindings.end_reason.type), "varchar");
+    assert.equal(bindings.end_reason.type.length, 20);
+    assert.equal(bindings.end_reason.value, "CONTRACT_ENDED");
+    assert.equal(declarationOf(bindings.end_date.type), "date");
+    assert.equal(bindings.end_date.value, "2026-11-20");
+    assert.equal(declarationOf(bindings.client_id.type), declarationOf(sql.BigInt));
+    assert.equal(declarationOf(bindings.us01_user_id.type), declarationOf(sql.BigInt));
+  });
+
+  // @include_ended BIT = 0 on both detail procedures. Only HR's and the
+  // Administrator's detail passes true; the certificate, marking deceased and
+  // the death claim keep false, so an ended employee has no enrollment there.
+  for (const [name, call, procedure] of [
+    ["getEnrollmentByClientId", (pool, options) => ClientModel.getEnrollmentByClientId(pool, "75", options), "bes.usp_get_insurance_enrollment_by_id"],
+    [
+      "getEnrollmentBenefitsByClientId",
+      (pool, options) => ClientModel.getEnrollmentBenefitsByClientId(pool, "75", options),
+      "bes.usp_get_enrollment_benefits_by_id",
+    ],
+  ]) {
+    test(`${name} binds include_ended as a bit, false unless asked`, async () => {
+      const { pool, calls } = anyProcedure();
+
+      await call(pool);
+      const { bindings } = callTo(calls, procedure);
+
+      assert.equal(declarationOf(bindings.include_ended.type), declarationOf(sql.Bit));
+      assert.equal(bindings.include_ended.value, false);
+    });
+
+    test(`${name} binds include_ended true when asked`, async () => {
+      const { pool, calls } = anyProcedure();
+
+      await call(pool, { includeEnded: true });
+
+      assert.equal(callTo(calls, procedure).bindings.include_ended.value, true);
+    });
+  }
 });
 
 // DBA request 22, read back 2026-10-12. No OUTPUT parameters.

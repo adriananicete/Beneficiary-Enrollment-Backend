@@ -339,17 +339,21 @@ const createEnrollment = async (pool, enrollmentData) => {
   }
 };
 
+// HR's and the Administrator's detail. It includes an enrollment closed when
+// the employment ended (DBA request 39), with employment_end_reason and
+// employment_end_date, so HR still sees the person.
 const getFullEnrollmentDetails = async (pool, clientId) => {
   const enrollmentDetails = await ClientModel.getEnrollmentByClientId(
     pool,
     clientId,
+    { includeEnded: true },
   );
 
   if (!enrollmentDetails || enrollmentDetails.length === 0)
     throw new AppError("Enrollment not found", 404);
 
   const enrollmentBenefitsById =
-    await ClientModel.getEnrollmentBenefitsByClientId(pool, clientId);
+    await ClientModel.getEnrollmentBenefitsByClientId(pool, clientId, { includeEnded: true });
 
   return {
     enrollment: enrollmentDetails,

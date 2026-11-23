@@ -3,6 +3,7 @@ import ClientModel from "../models/clientModel.js";
 import BeneficiaryModel from "../models/beneficiaryModel.js";
 import { AppError } from "../utils/AppError.js";
 import { fullName } from "../utils/fullName.js";
+import { EMPLOYMENT_END_LABELS } from "../utils/employmentEnd.js";
 
 // Taken from the email templates so a printed report and an email from the same
 // system look like they came from the same place.
@@ -90,11 +91,20 @@ const withinRange = (employees, { start, end }) => {
 
 // The column answers one question: has this person enrolled?
 //
-// usp_sel_hr_employees joins insurance_enrollment with ie.status = 'A' already
-// in the join, so a soft-deleted enrollment never comes back as 'D' — it arrives
-// as NULL, the same as somebody who never enrolled. Two values reach here, and
-// "Active" was the database's word for the first rather than the business's.
-const statusLabel = (status) => (status === "A" ? "Enrolled" : "Not enrolled");
+// usp_sel_hr_employees joins insurance_enrollment with ie.status = 'A' in the
+// join, so a soft-deleted enrollment never comes back as 'D' — it arrives as
+// NULL, the same as somebody who never enrolled. "Active" was the database's
+// word for that rather than the business's.
+//
+// Since DBA request 39 it also brings the enrollment closed when the
+// employment ended, with its reason. That person reads as the reason
+// ("Resigned"), not as enrolled and not as someone who never enrolled.
+const statusLabel = (employee) => {
+  if (employee.employment_end_reason)
+    return EMPLOYMENT_END_LABELS[employee.employment_end_reason] ?? "Employment ended";
+
+  return employee.status === "A" ? "Enrolled" : "Not enrolled";
+};
 
 // One row per beneficiary, employee columns repeated down the group. An employee
 // with none still produces a row, blank on the right — that is the "who has
@@ -120,7 +130,7 @@ const buildRows = (employees, beneficiaries) => {
       employeeNo: employee.employee_id_number,
       employeeName: fullName(employee),
       email: employee.email_address,
-      status: statusLabel(employee.status),
+      status: statusLabel(employee),
     };
 
     const owned = employee.enrollment_id

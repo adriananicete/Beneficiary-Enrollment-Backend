@@ -408,6 +408,39 @@ export const sqlErrorMap = {
     // The role guard on all four procedures.
     50169: { statusCode: 403, message: 'You are not authorized to manage deceased status or death claims' },
 
+    // ── Ending an employment, DBA request 39, read back 2026-11-23 ─────────
+    //
+    // usp_upd_employment_end. The route admits HR and the Administrator only,
+    // and parseEmploymentEnd checks the reason and the shape of the date
+    // first, so 50237 and 50238 are the stale-session and skipped-check cases.
+    50237: { statusCode: 403, message: 'You are not authorized to end an employment' },
+    50238: { statusCode: 400, message: 'reason must be one of RESIGNED, TERMINATED, CONTRACT_ENDED, RETIRED' },
+    // An HR person who enrolled themselves (request 31): ending it would close
+    // their own HR login. The Administrator does it.
+    50239: { statusCode: 403, message: 'You cannot end your own employment' },
+    // Not an active employee, or not in HR's companies. One answer for both.
+    50240: { statusCode: 404, message: 'Employee not found' },
+    50241: { statusCode: 409, message: 'This employment has already ended' },
+    50242: { statusCode: 409, message: 'This employee has no active enrollment' },
+    50243: { statusCode: 409, message: 'This employee is marked deceased' },
+    // The future is refused before the database; only the procedure knows the
+    // enrollment date.
+    50244: { statusCode: 400, message: 'The end date cannot be in the future or before the enrollment date' },
+    50245: { statusCode: 409, message: 'This employee has an open claim. It must be decided before the employment can end.' },
+    // usp_del_employment_end, the undo. The route allows the Administrator
+    // alone, so 50246 is the stale-session case.
+    50246: { statusCode: 403, message: 'Only an Administrator can undo an employment end' },
+    50247: { statusCode: 409, message: 'This employment has not ended' },
+    // The employment ended but no closed enrollment goes with it. Only data
+    // written outside these procedures can do that.
+    50248: { statusCode: 409, message: 'The enrollment closed with this employment was not found' },
+    50249: { statusCode: 409, message: 'This person has another active enrollment' },
+    // An approved claim that ends coverage closed the login; reopening the
+    // employment must not reopen it.
+    50250: { statusCode: 409, message: 'This account was closed by a claim, so it cannot be reopened here' },
+    // usp_upd_client_death: marking an ended employee deceased.
+    50251: { statusCode: 409, message: "This employee's employment has ended" },
+
     // ── Messaging, DBA request 22, read back 2026-10-12 ────────────────────
     //
     // The role guard on all six procedures. The routes refuse other roles
