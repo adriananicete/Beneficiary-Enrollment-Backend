@@ -5,8 +5,9 @@ import UserModel from "../models/userModel.js";
 import { AppError } from "../utils/AppError.js";
 import { matchDocuments } from "../utils/claimDocuments.js";
 import { isNumericId } from "../middlewares/validateIdParam.js";
-import { sendClaimDecisionEmail } from "./emailService.js";
+import { sendClaimDecisionEmail, sendClaimFiledEmail } from "./emailService.js";
 import { endClientSessions } from "../realtime/realtime.js";
+import { fullName } from "../utils/fullName.js";
 
 // Employee claims, branch 3 of md/CLAIMS-AND-MESSAGING-DECISIONS.md, on the
 // procedures of DBA request 20.
@@ -23,6 +24,7 @@ const HR_FILER = "HR";
 
 const NOT_FILEABLE = "This claim type cannot be filed here";
 const DEATH_CLAIM_EXISTS = "A death claim has already been filed for this employee";
+const HR_OPEN_CLAIM = "This employee already has an open claim of this type";
 
 // The employee's own client id, from their user row and never from the
 // request. Both the submit and the cancel are scoped by it.
@@ -52,21 +54,40 @@ export const asOpenClaimConflict = (error, message = "You already have an open c
   return number === 2601 ? new AppError(message, 409) : error;
 };
 
+// usp_ins_claim's numbers are worded for the employee ("...for this account").
+// For a claim HR files, the same numbers in HR's words. 50150 is also the
+// procedure's answer for an employee outside HR's companies (DBA request 36),
+// "not there" rather than "not yours", as everywhere else.
+export const asHrFilerError = (error) => {
+  const number = error?.number ?? error?.originalError?.number;
+
+  if (number === 50150) return new AppError("No active enrollment was found for this employee", 404);
+  if (number === 50152 || number === 2601) return new AppError(HR_OPEN_CLAIM, 409);
+
+  return error;
+};
+
 // The claim type, checked against the filer's active list before its id is
 // bound to anything, and the documents matched to that type's requirements.
 // `filedBy` is 'EMPLOYEE' or 'HR', so neither side can reach the other's types
-// by naming an id.
-const matchedForType = async (pool, filedBy, typeId, documents) => {
+// by naming an id. Returns the type as well, for the email that names it.
+const typeAndDocuments = async (pool, filedBy, typeId, documents) => {
   const { types, requirements } = await ClaimModel.getClaimTypes(pool, filedBy);
 
-  if (!types.some((type) => String(type.claim_type_id) === typeId))
-    throw new AppError(NOT_FILEABLE, 400);
+  const type = types.find((candidate) => String(candidate.claim_type_id) === typeId);
+  if (!type) throw new AppError(NOT_FILEABLE, 400);
 
-  return matchDocuments(
-    requirements.filter((requirement) => String(requirement.claim_type_id) === typeId),
-    documents,
-  );
+  return {
+    type,
+    matched: matchDocuments(
+      requirements.filter((requirement) => String(requirement.claim_type_id) === typeId),
+      documents,
+    ),
+  };
 };
+
+const matchedForType = async (pool, filedBy, typeId, documents) =>
+  (await typeAndDocuments(pool, filedBy, typeId, documents)).matched;
 
 // One transaction, committed or rolled back whole, with the open-claim race
 // named. `work` gets the transaction and returns what the caller wants back.
@@ -165,6 +186,64 @@ const fileDeathClaim = async (pool, { userId, roleName, clientId, claimTypeId, d
   return { claimId };
 };
 
+// Sent after the claim has committed, and it swallows its own failures: the
+// claim is filed whether or not Microsoft was reachable. `enrollment` is the
+// row read before filing, which has the employee's name and address.
+export const notifyClaimFiled = async (enrollment, type) => {
+  try {
+    if (!enrollment?.email_address) {
+      console.error(`Claim filed email skipped: no address for client ${enrollment?.client_id}`);
+      return;
+    }
+
+    await sendClaimFiledEmail({
+      to: enrollment.email_address,
+      employeeName: fullName(enrollment),
+      claimType: type.claim_type_desc,
+    });
+  } catch (error) {
+    console.error(`Claim filed email failed for client ${enrollment?.client_id}:`, error);
+  }
+};
+
+// HR or the Administrator files an employee's claim for them: an employee who
+// is alive but cannot file it, in hospital say (DBA request 36, decided with
+// Adrian 2026-11-12). The types are the employee's; the death claim keeps its
+// own route. Created PENDING and reviewed like any other claim, by somebody
+// other than the filer (reviewClaim). The employee is emailed.
+//
+// `roleName` is the filer's real role, HR or Administrator, as on the death
+// claim. The route is behind verifyClientAccess, and usp_ins_claim scopes HR
+// to the employee's company again (50150).
+const fileClaimForEmployee = async (pool, { userId, roleName, clientId, claimTypeId, documents }) => {
+  const typeId = claimTypeIdOf(claimTypeId);
+  if (!typeId) throw new AppError("claim_type_id is required", 400);
+
+  // The active enrollment only: an ended employment has none here (DBA
+  // request 39), and an ended employee files no claims.
+  const [enrollment] = await ClientModel.getEnrollmentByClientId(pool, clientId);
+
+  if (!enrollment) throw new AppError("Enrollment not found", 404);
+  if (enrollment.date_of_death)
+    throw new AppError("This employee is marked deceased. File the death claim instead.", 409);
+
+  const { type, matched } = await typeAndDocuments(pool, EMPLOYEE_FILER, typeId, documents);
+
+  let claimId;
+
+  try {
+    claimId = await inClaimTransaction(pool, "Claim filed for an employee", HR_OPEN_CLAIM, (transaction) =>
+      insertClaimWithDocuments(transaction, { clientId, typeId, userId, roleName, matched }),
+    );
+  } catch (error) {
+    throw asHrFilerError(error);
+  }
+
+  await notifyClaimFiled(enrollment, type);
+
+  return { claimId };
+};
+
 // HR closes the death claim once it is finished outside the system, at any
 // time (decided 2026-10-12). The procedure closes the employee's account in
 // the same transaction and ends its sessions; the open sockets close here.
@@ -205,13 +284,17 @@ const rollbackQuietly = async (transaction, what) => {
 // 2026-10-12, so that new documents never land on a claim that is then not
 // resubmitted, or the reverse.
 //
+// The core of both resubmits. `clientIdFor(claim)` gives the client the
+// procedure checks the claim against, or refuses: the employee's own, from
+// their user row; for HR, the claim's own, after HR's scoped read.
+//
 // documents: req.documents from parseDocuments, as for submitClaim.
-const resubmitClaim = async (pool, { userId, claimId, documents }) => {
+const resubmitWith = async (pool, { userId, claimId, documents }, clientIdFor) => {
   // HR returned it for missing documents, so a resubmit adds at least one
   // (decided 2026-10-12). Checked before the database is asked.
   if (documents.length === 0) throw new AppError("Add at least one document to resubmit", 400);
 
-  // Scoped to the caller by the procedure: another employee's claim comes
+  // Scoped to the caller by the procedure: a claim they may not see comes
   // back empty and is answered like one that does not exist.
   const { claim, documents: existing, requirements } = await ClaimModel.getClaimById(
     pool,
@@ -225,14 +308,14 @@ const resubmitClaim = async (pool, { userId, claimId, documents }) => {
   if (claim.claim_status !== "RETURNED")
     throw new AppError("Only a returned claim can be resubmitted", 409);
 
+  const clientId = await clientIdFor(claim);
+
   // The documents the claim already has count toward what is required.
   const matched = matchDocuments(
     requirements,
     documents,
     existing.map((document) => document.requirement_id),
   );
-
-  const clientId = await clientIdOf(pool, userId);
 
   const transaction = new sql.Transaction(pool);
   await transaction.begin();
@@ -262,6 +345,21 @@ const resubmitClaim = async (pool, { userId, claimId, documents }) => {
     throw error;
   }
 };
+
+// The employee's own resubmit.
+const resubmitClaim = (pool, args) => resubmitWith(pool, args, () => clientIdOf(pool, args.userId));
+
+// HR resubmits a returned claim that HR or the Administrator filed, with the
+// same contract as the employee's (decided 2026-11-12). HR's read is scoped to
+// its companies, so the claim's own client is the right one to check it
+// against. A claim the employee filed is theirs to resubmit.
+const resubmitClaimForEmployee = (pool, args) =>
+  resubmitWith(pool, args, (claim) => {
+    if (claim.filed_by_role === EMPLOYEE_ROLE)
+      throw new AppError("The employee filed this claim, so they resubmit it", 409);
+
+    return claim.client_id;
+  });
 
 export const REVIEW_STATUSES = ["APPROVED", "REJECTED", "RETURNED"];
 
@@ -320,6 +418,15 @@ const reviewClaim = async (pool, { userId, claimId, status, remarks }) => {
 
   if (!claim) throw new AppError("Claim not found", 404);
 
+  // Nobody reviews a claim they filed themselves (decided 2026-11-12): another
+  // HR of the company, or the Administrator, does. An employee's own claim was
+  // filed by the employee, so this only ever stops HR's own filings.
+  if (String(claim.filed_by) === String(userId))
+    throw new AppError(
+      "You filed this claim, so another HR of the company or the Administrator must review it",
+      403,
+    );
+
   const outcome = await ClaimModel.reviewClaim(pool, {
     claim_id: claimId,
     us01_user_id: userId,
@@ -339,4 +446,13 @@ const reviewClaim = async (pool, { userId, claimId, status, remarks }) => {
   return { accountClosed };
 };
 
-export default { submitClaim, cancelClaim, resubmitClaim, reviewClaim, fileDeathClaim, closeDeathClaim };
+export default {
+  submitClaim,
+  cancelClaim,
+  resubmitClaim,
+  resubmitClaimForEmployee,
+  reviewClaim,
+  fileDeathClaim,
+  fileClaimForEmployee,
+  closeDeathClaim,
+};

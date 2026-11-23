@@ -76,4 +76,13 @@ describe("claimDecisionEmailTemplate", () => {
   test("only an approval mentions the account being closed", () => {
     assert.doesNotMatch(build({ status: "REJECTED", reviewRemarks: "x", accountClosed: true }), /has been closed/);
   });
+
+  // Since DBA request 36 HR may have filed the claim, so the note no longer
+  // says the employee did.
+  test("the closing note does not say the employee filed it", () => {
+    const html = build();
+
+    assert.doesNotMatch(html, /because you filed a claim/);
+    assert.match(html, /because a claim was filed in your\s+name/);
+  });
 });

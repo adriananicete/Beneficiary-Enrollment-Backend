@@ -57,6 +57,15 @@ export const employeeClaimDetailOf = (row) => ({
   cancel_remarks: row.cancel_remarks,
 });
 
+// Which kind of claim this is, from its type's own `filed_by` (DBA request 36
+// Part 2). Since HR files the employee types too, `filed_by_role` no longer
+// tells a death claim from the rest, and only a death claim can be closed
+// (50167). `is_death_claim` is what the screen asks.
+const typeFilerOf = (row) => ({
+  claim_type_filed_by: row.claim_type_filed_by,
+  is_death_claim: row.claim_type_filed_by === "HR",
+});
+
 // HR's view of a claim: the whole header, still named field by field, so a
 // column the procedure gains later stays out until somebody adds it here.
 // `filed_by`, `reviewed_by` and the rest are user ids, as text.
@@ -68,6 +77,7 @@ export const hrClaimOf = (row) => ({
   email_address: row.email_address,
   filed_by: row.filed_by,
   filed_by_role: row.filed_by_role,
+  ...typeFilerOf(row),
   reviewed_by: row.reviewed_by,
   cancelled_by: row.cancelled_by,
   closed_by: row.closed_by,
@@ -84,6 +94,7 @@ export const hrClaimListItemOf = (row) => ({
   claim_type_desc: row.claim_type_desc,
   claim_status: row.claim_status,
   filed_by_role: row.filed_by_role,
+  ...typeFilerOf(row),
   filed_date: row.filed_date,
   resubmitted_date: row.resubmitted_date,
   reviewed_by: row.reviewed_by,
@@ -144,8 +155,29 @@ const claimTypesFor = (filedBy) => async (req, res, next) => {
 
 export const getMyClaimTypes = claimTypesFor("EMPLOYEE");
 
-// HR's types: the death claim, today. Branch 6.
-export const getHrClaimTypes = claimTypesFor("HR");
+// What HR may file (DBA request 36): its own type, the death claim, and every
+// type an employee may file, which HR files for them. `filed_by` says which,
+// so the screen sends a death claim to its own route and the rest to
+// /enrollments/:client_id/claims.
+export const hrClaimTypesOf = (own, employees) => {
+  const listed = (found, filedBy) =>
+    found.types.map((type) => ({ ...claimTypeOf(type, found.requirements), filed_by: filedBy }));
+
+  return [...listed(own, "HR"), ...listed(employees, "EMPLOYEE")];
+};
+
+export const getHrClaimTypes = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    const own = await ClaimModel.getClaimTypes(pool, "HR");
+    const employees = await ClaimModel.getClaimTypes(pool, "EMPLOYEE");
+
+    return res.status(200).json({ success: true, data: hrClaimTypesOf(own, employees) });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // multipart/form-data, the same as an employee's claim: claim_type_id, and
 // one field per requirement. The employee must already be marked deceased.
@@ -165,6 +197,53 @@ export const fileDeathClaim = async (req, res, next) => {
       success: true,
       data: { claim_id: claimId, claim_status: "APPROVED" },
       message: "Death claim filed",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// multipart/form-data, as for the death claim: claim_type_id, and one field per
+// requirement. Any type an employee may file, filed by HR or the Administrator
+// for an employee who is alive (DBA request 36).
+export const fileClaimForEmployee = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    const { claimId } = await ClaimService.fileClaimForEmployee(pool, {
+      userId: req.user.user_id,
+      roleName: req.user.role_name,
+      clientId: req.params.client_id,
+      claimTypeId: req.body?.claim_type_id,
+      documents: req.documents ?? [],
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: { claim_id: claimId, claim_status: "PENDING" },
+      message: "Claim filed",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// HR's resubmit of a returned claim that HR or the Administrator filed. The
+// same contract as the employee's: multipart, at least one document.
+export const resubmitClaimForEmployee = async (req, res, next) => {
+  try {
+    const pool = await getPool();
+
+    await ClaimService.resubmitClaimForEmployee(pool, {
+      userId: req.user.user_id,
+      claimId: req.params.claim_id,
+      documents: req.documents ?? [],
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { claim_id: req.params.claim_id, claim_status: "PENDING" },
+      message: "Claim resubmitted",
     });
   } catch (error) {
     next(error);

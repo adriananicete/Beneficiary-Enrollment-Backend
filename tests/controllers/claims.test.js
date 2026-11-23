@@ -14,6 +14,7 @@ const {
   employeeClaimOf,
   hrClaimListItemOf,
   hrClaimOf,
+  hrClaimTypesOf,
   reviewClaim,
   statusFilterOf,
   getClaims,
@@ -38,6 +39,8 @@ const HEADER = {
   claim_status: "PENDING",
   filed_by: "12",
   filed_by_role: "Employee",
+  // DBA request 36 Part 2: the type's own filer, read back 2026-11-23.
+  claim_type_filed_by: "EMPLOYEE",
   filed_date: new Date("2026-10-12T02:00:00Z"),
   resubmitted_date: null,
   reviewed_by: "3",
@@ -148,10 +151,11 @@ describe("what leaves, field by field", () => {
 describe("HR's view, field by field", () => {
   // HR sees the whole header, but named, so a column the procedure gains
   // later stays out until somebody adds it on purpose.
+  // Every header column, plus is_death_claim, which is worked out from one.
   test("the claim detail carries every header column, and nothing a procedure adds later", () => {
     const shown = hrClaimOf({ ...HEADER, some_new_column: "x" });
 
-    assert.deepEqual(Object.keys(shown).sort(), Object.keys(HEADER).sort());
+    assert.deepEqual(Object.keys(shown).sort(), [...Object.keys(HEADER), "is_death_claim"].sort());
   });
 
   test("a list row carries the named fields, and not the paging total", () => {
@@ -163,6 +167,7 @@ describe("HR's view, field by field", () => {
       claim_type_desc: "Test claim",
       claim_status: "PENDING",
       filed_by_role: "Employee",
+      claim_type_filed_by: "EMPLOYEE",
       filed_date: new Date(),
       resubmitted_date: null,
       reviewed_by: null,
@@ -174,7 +179,44 @@ describe("HR's view, field by field", () => {
 
     assert.equal("total_count" in shown, false);
     assert.equal("some_new_column" in shown, false);
-    assert.equal(Object.keys(shown).length, 12);
+    assert.equal(Object.keys(shown).length, 14);
+  });
+
+  // DBA request 36: HR files the employee types too, so who filed the claim
+  // no longer says whether it is the death claim. The type's own filer does,
+  // and only a death claim can be closed (50167).
+  test("is_death_claim comes from the type's filer, not from who filed the claim", () => {
+    for (const shown of [hrClaimOf, hrClaimListItemOf]) {
+      assert.equal(shown({ ...HEADER, filed_by_role: "HR", claim_type_filed_by: "HR" }).is_death_claim, true);
+      assert.equal(shown({ ...HEADER, filed_by_role: "HR", claim_type_filed_by: "EMPLOYEE" }).is_death_claim, false);
+      assert.equal(shown({ ...HEADER, filed_by_role: "Employee", claim_type_filed_by: "EMPLOYEE" }).is_death_claim, false);
+    }
+  });
+});
+
+describe("hrClaimTypesOf — what HR may file", () => {
+  const own = {
+    types: [{ claim_type_id: "3", claim_type_code: "DEATH_HR", claim_type_desc: "Death claim", ends_coverage: true }],
+    requirements: [{ requirement_id: "4", claim_type_id: "3", requirement_desc: "Death certificate", is_required: true, sort_order: 1 }],
+  };
+  const employees = {
+    types: [{ claim_type_id: "6", claim_type_code: "TPD", claim_type_desc: "Total and Permanent Disability", ends_coverage: true }],
+    requirements: [{ requirement_id: "9", claim_type_id: "6", requirement_desc: "Medical report", is_required: true, sort_order: 1 }],
+  };
+
+  // HR's own type first, then the employee types, each saying who files it so
+  // the screen sends a death claim to its own route.
+  test("its own type and the employee types, each with filed_by and its requirements", () => {
+    const listed = hrClaimTypesOf(own, employees);
+
+    assert.deepEqual(
+      listed.map((type) => [type.claim_type_code, type.filed_by]),
+      [
+        ["DEATH_HR", "HR"],
+        ["TPD", "EMPLOYEE"],
+      ],
+    );
+    assert.equal(listed[1].requirements[0].field, "requirement_9");
   });
 });
 

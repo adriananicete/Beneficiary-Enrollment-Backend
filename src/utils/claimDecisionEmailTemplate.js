@@ -1,5 +1,7 @@
 // Sent to the employee when HR approves, rejects or returns their claim. The
-// wording was agreed with Adrian on 2026-10-12.
+// wording was agreed with Adrian on 2026-10-12. The closing note no longer says
+// "because you filed a claim" (2026-11-23): since DBA request 36, HR may have
+// filed it for them.
 //
 // The employee's name and the claim type come from the database and are
 // escaped like everything else that crosses into HTML. HR's remarks are
@@ -62,8 +64,8 @@ ${closedLine}
 ${emailRemarks({ remarks: reviewRemarks, accent: ACCENTS[status] })}
 ${button}
 ${emailNote(`
-                  You are receiving this because you filed a claim. If that
-                  wasn't you, please contact your HR.`)}`,
+                  You are receiving this because a claim was filed in your
+                  name. If you did not ask for it, please contact your HR.`)}`,
   });
 };
 

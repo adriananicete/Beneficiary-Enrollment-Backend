@@ -193,6 +193,38 @@ describe("the death claim routes", () => {
   });
 });
 
+// HR files an employee's claim for them, DBA request 36. The same chain as the
+// death claim: the upload is read last.
+describe("the routes for a claim HR files for an employee", () => {
+  test("POST /enrollments/:client_id/claims checks the company and the limiter before reading the upload", () => {
+    const handlers = handlersFor("post", "/enrollments/:client_id/claims");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+    assert.equal(handlers[2], verifyClientAccess);
+    assert.equal(handlers[3], claimSubmitLimiter);
+    assert.equal(handlers[4], parseDocuments);
+    assert.equal(handlers.at(-1), claims.fileClaimForEmployee);
+  });
+
+  // The id is checked, then the limiter, then the upload is read. The
+  // service's scoped read does the company check.
+  test("POST /claims/:claim_id/resubmit checks the id and the limiter before reading the upload", () => {
+    const handlers = handlersFor("post", "/claims/:claim_id/resubmit");
+
+    assert.equal(handlers[0], verifyToken);
+    assert.equal(roleAnswer(handlers, "HR"), "passed");
+    assert.equal(roleAnswer(handlers, "Administrator"), "passed");
+    assert.equal(roleAnswer(handlers, "Employee"), 403);
+    assert.equal(handlers.length, 6);
+    assert.equal(handlers[3], claimSubmitLimiter);
+    assert.equal(handlers[4], parseDocuments);
+    assert.equal(handlers.at(-1), claims.resubmitClaimForEmployee);
+  });
+});
+
 // The Administrator's companies, DBA request 24. The Administrator only; HR
 // keeps its own settings route.
 describe("the company routes", () => {

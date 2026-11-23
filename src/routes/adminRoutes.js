@@ -12,7 +12,7 @@ import { attachmentDownloadLimiter, bulkInvitationLimiter, certificateDownloadLi
 import { getChangeRequestDetails, getChangeRequests, getPendingChangeRequestCount, reviewChangeRequest } from '../controllers/changeRequestController.js';
 import { validateIdParam } from '../middlewares/validateIdParam.js';
 import { getEmployerSettings, updateEmployerSettings } from '../controllers/employerSettingsController.js';
-import { closeDeathClaim, fileDeathClaim, getClaimDetails, getClaimDocument, getClaims, getHrClaimTypes, getPendingClaimCount, reviewClaim } from '../controllers/claimController.js';
+import { closeDeathClaim, fileClaimForEmployee, fileDeathClaim, getClaimDetails, getClaimDocument, getClaims, getHrClaimTypes, getPendingClaimCount, resubmitClaimForEmployee, reviewClaim } from '../controllers/claimController.js';
 import { parseDocuments } from '../middlewares/parseDocuments.js';
 import { editMessage, getConversation, getConversations, getMessageAttachment, getUnreadMessageCount, markConversationRead, openConversation, sendMessage } from '../controllers/messageController.js';
 import { markDeceased, undoDeceased } from '../controllers/deceasedController.js';
@@ -91,6 +91,10 @@ router.delete('/enrollments/:client_id/employment-end', verifyToken, allowedRole
 // only after the session, the role, the company and the limiter have passed,
 // as on the employee's claim route.
 router.post('/enrollments/:client_id/death-claim', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, claimSubmitLimiter, parseDocuments, fileDeathClaim);
+// Any type an employee may file, filed for an employee who is alive and cannot
+// file it themselves (DBA request 36). The same chain as the death claim, for
+// the same reasons; usp_ins_claim scopes HR to the employee's company again.
+router.post('/enrollments/:client_id/claims', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), verifyClientAccess, claimSubmitLimiter, parseDocuments, fileClaimForEmployee);
 // /pending-count is declared before /:request_id on purpose. Express matches in
 // order, so the param route would otherwise swallow it and try to read
 // "pending-count" as an id.
@@ -164,6 +168,10 @@ router.get('/claims/pending-count', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN
 router.get('/claims/:claim_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), claimId, getClaimDetails);
 router.get('/claims/:claim_id/documents/:document_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), validateIdParam('claim_id', 'Document not found'), validateIdParam('document_id', 'Document not found'), getClaimDocument);
 router.patch('/claims/:claim_id', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), claimId, reviewClaim);
+// HR resubmits a returned claim that HR or the Administrator filed (DBA request
+// 36). The same contract as the employee's resubmit: the upload is read only
+// after the session, the role, the id and the limiter have passed.
+router.post('/claims/:claim_id/resubmit', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), claimId, claimSubmitLimiter, parseDocuments, resubmitClaimForEmployee);
 // Closes the death claim and the employee's account. The procedure accepts
 // only an APPROVED death claim in the caller's companies (50167).
 router.patch('/claims/:claim_id/close', verifyToken, allowedRoles(ADMIN, SUPER_ADMIN), claimId, closeDeathClaim);
