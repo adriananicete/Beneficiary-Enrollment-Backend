@@ -40,6 +40,11 @@ export const companyOf = (row) => ({
   // True once the company has any enrollment: the policy number can no
   // longer change (50188), so the form can disable the field.
   policy_no_locked: row.policy_no_locked,
+  // DBA request 40: every employee's username is PREFIX-ID. Null until the
+  // Administrator sets it, and nobody can be invited before then (50266).
+  // Locked once a login uses it (50265), so the form can disable the field.
+  company_prefix: row.company_prefix ?? null,
+  company_prefix_locked: Boolean(row.company_prefix_locked),
   created_by: row.created_by,
   created_date: row.created_date,
   modified_by: row.modified_by,

@@ -49,6 +49,9 @@ const stored = (overrides = {}) => ({
   active_classifications: 10,
   active_enrollments: 73,
   policy_no_locked: true,
+  // DBA request 40.
+  company_prefix: "CF",
+  company_prefix_locked: true,
   ...overrides,
 });
 
@@ -60,6 +63,8 @@ describe("companyOf — what leaves", () => {
       "active_enrollments",
       "company_code",
       "company_name",
+      "company_prefix",
+      "company_prefix_locked",
       "created_by",
       "created_date",
       "employer_id",
@@ -75,6 +80,15 @@ describe("companyOf — what leaves", () => {
       "status",
       "work_address",
     ]);
+  });
+
+  // DBA request 40. Null until the Administrator sets it; the lock is a BIT,
+  // read for truth, and false when the procedure says nothing.
+  test("the login prefix, and whether it is locked", () => {
+    assert.equal(companyOf(stored()).company_prefix, "CF");
+    assert.equal(companyOf(stored()).company_prefix_locked, true);
+    assert.equal(companyOf(stored({ company_prefix: null, company_prefix_locked: 0 })).company_prefix, null);
+    assert.equal(companyOf(stored({ company_prefix: undefined, company_prefix_locked: undefined })).company_prefix_locked, false);
   });
 
   test("the HR account is one object, or null before branch 4 creates it", () => {
@@ -169,6 +183,7 @@ describe("CompanyService — creating", () => {
     policy_no: "G-TLI-26-177",
     send_coc_email: true,
     online_enrollment_max_age: 65,
+    company_prefix: "ABC",
   };
 
   test("sends the company as the caller, and answers it as stored", async () => {
@@ -218,6 +233,18 @@ describe("CompanyService — a PATCH becomes the whole company", () => {
     assert.equal(sent.modified_by, String(ADMIN_ID));
   });
 
+  // The stored prefix goes back as it is when the PATCH does not name it, so
+  // the procedure sees no change and its lock (50265) is not tripped.
+  test("the prefix not sent goes back as stored; a new one replaces it", async () => {
+    const kept = editing();
+    await CompanyService.updateCompany(kept.pool, ADMIN_ID, "1", { company_name: "Coforge" });
+    assert.equal(inputsFor(kept.calls, UPDATE).company_prefix, "CF");
+
+    const changed = editing(stored({ company_prefix: null }));
+    await CompanyService.updateCompany(changed.pool, ADMIN_ID, "1", { company_prefix: "COF" });
+    assert.equal(inputsFor(changed.calls, UPDATE).company_prefix, "COF");
+  });
+
   // null is a value here: the field was sent, to clear it.
   test("a field sent as null clears it rather than keeping the stored value", async () => {
     const { pool, calls } = editing(stored({ online_enrollment_max_age: 65 }));
@@ -229,9 +256,9 @@ describe("CompanyService — a PATCH becomes the whole company", () => {
     assert.equal(sent.online_enrollment_max_age, null);
   });
 
-  // Only the seven company fields are sent; the counts and the HR account
-  // from the stored row are not the procedure's business.
-  test("sends the seven company fields and nothing read alongside them", async () => {
+  // Only the eight company fields are sent; the counts, the locks and the HR
+  // account from the stored row are not the procedure's business.
+  test("sends the eight company fields and nothing read alongside them", async () => {
     const { pool, calls } = editing();
 
     await CompanyService.updateCompany(pool, ADMIN_ID, "1", { company_name: "Coforge" });
@@ -239,6 +266,7 @@ describe("CompanyService — a PATCH becomes the whole company", () => {
     assert.deepEqual(Object.keys(inputsFor(calls, UPDATE)).sort(), [
       "company_code",
       "company_name",
+      "company_prefix",
       "employer_id",
       "modified_by",
       "office_no",

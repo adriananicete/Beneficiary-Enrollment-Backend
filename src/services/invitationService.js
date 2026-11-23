@@ -4,7 +4,7 @@ import ReferenceModel from "../models/referenceModel.js";
 import AffiliateModel from "../models/affiliateModel.js";
 import { AppError } from "../utils/AppError.js";
 import { sendInvitationEmail } from "./emailService.js";
-import { partitionInvitations } from "../utils/partitionInvitations.js";
+import { MAX_EMPLOYEE_ID_LENGTH, partitionInvitations } from "../utils/partitionInvitations.js";
 import { buildInvitationTemplate, invitationTemplateFileName } from "../utils/invitationTemplate.js";
 import { chunk, delay, runWithConcurrency } from "../utils/concurrency.js";
 import { buildPage } from "../utils/parsePaging.js";
@@ -65,7 +65,11 @@ const REFUSED_ROW = {
   // DBA request 32: the Employee ID HR gave the row.
   50227: "Employee ID is already someone's login",
   50228: "Employee ID is already on another person's invitation",
-  50229: "Employee ID is longer than 50 characters",
+  50229: `Employee ID is longer than ${MAX_EMPLOYEE_ID_LENGTH} characters`,
+  // DBA request 40: every username of the company starts with its prefix, so
+  // no row goes out until the Administrator has set it. Every row of the
+  // upload says so.
+  50266: "The company has no login prefix yet. Ask the Administrator to set it",
 };
 
 // Returns the status it recorded so the caller can judge the run as a whole.

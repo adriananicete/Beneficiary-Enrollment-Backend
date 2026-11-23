@@ -44,15 +44,16 @@ describe("validateFieldLengths", () => {
 });
 
 describe("the caps themselves", () => {
-  test("employee_id_number is capped at 50, matching us01_username", () => {
+  test("employee_id_number is capped at 39, so PREFIX-ID fits us01_username", () => {
     // It had no cap at all until 2026-09-04, and the live data showed what that
     // allowed: a thirty-character employee id sitting in sec.us01_users as
-    // somebody's login. 50 is the column width.
-    assert.equal(CLIENT_FIELD_LENGTHS.employee_id_number, 50);
+    // somebody's login. Since DBA request 40 the login is PREFIX-ID: a prefix
+    // of at most 10 and a hyphen leave 39 of the column's 50.
+    assert.equal(CLIENT_FIELD_LENGTHS.employee_id_number, 39);
 
     assert.equal(
       validateFieldLengths(
-        { employee_id_number: "H".repeat(50) },
+        { employee_id_number: "H".repeat(39) },
         CLIENT_FIELD_LENGTHS,
       ),
       null,
@@ -60,7 +61,7 @@ describe("the caps themselves", () => {
 
     assert.match(
       validateFieldLengths(
-        { employee_id_number: "H".repeat(51) },
+        { employee_id_number: "H".repeat(40) },
         CLIENT_FIELD_LENGTHS,
       ),
       /employee_id_number/,

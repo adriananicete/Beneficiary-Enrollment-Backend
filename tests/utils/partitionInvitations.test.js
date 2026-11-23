@@ -315,9 +315,11 @@ describe("partitionInvitations — the Employee ID", () => {
     }
   });
 
-  test("50 characters is accepted, 51 is refused", () => {
-    assert.equal(abcc([row({ employee_id_number: "x".repeat(50) })]).valid.length, 1);
-    assert.deepEqual(abcc([row({ employee_id_number: "x".repeat(51) })]).rejected[0]?.reason, "Employee ID is longer than 50 characters");
+  // 39 since DBA request 40: the login is PREFIX-ID, a prefix of at most 10
+  // and a hyphen within us01_username's 50.
+  test("39 characters is accepted, 40 is refused", () => {
+    assert.equal(abcc([row({ employee_id_number: "x".repeat(39) })]).valid.length, 1);
+    assert.deepEqual(abcc([row({ employee_id_number: "x".repeat(40) })]).rejected[0]?.reason, "Employee ID is longer than 39 characters");
   });
 
   test("the same ID twice in one upload, in any case, is a duplicate", () => {

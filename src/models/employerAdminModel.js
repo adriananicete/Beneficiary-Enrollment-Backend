@@ -18,7 +18,11 @@ const bindCompany = (request, company) =>
     .input('office_no', sql.VarChar(30), company.office_no)
     .input('policy_no', sql.NVarChar(50), company.policy_no)
     .input('send_coc_email', sql.Bit, company.send_coc_email)
-    .input('online_enrollment_max_age', sql.Int, company.online_enrollment_max_age);
+    .input('online_enrollment_max_age', sql.Int, company.online_enrollment_max_age)
+    // DBA request 40. VarChar(50) against a column of 10, as with the code: a
+    // value that is too long reaches the procedure whole and is refused
+    // (50263) rather than cut. On an update, NULL keeps the stored prefix.
+    .input('company_prefix', sql.VarChar(50), company.company_prefix ?? null);
 
 // Every company, any status, with its HR account and its counts.
 const getCompanies = async (pool, userId) => {

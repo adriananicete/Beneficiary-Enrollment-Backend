@@ -23,7 +23,9 @@ const ASSIGN = "sec.us04_usp_assign_role";
 const ENROLLMENT = {
   email_address: "  maria@abcc.example  ",
   employer_id: "5",
-  employee_id_number: "ABC-00123",
+  employee_id_number: "00123",
+  // DBA request 40: the login createEnrollment built, PREFIX-ID.
+  username: "ABC-00123",
   first_name: "Maria",
   middle_name: null,
   last_name: "Reyes",
@@ -62,7 +64,8 @@ describe("accountFor: the account an enrollment gives its person", () => {
     assert.equal(callTo(calls, ASSIGN), undefined);
   });
 
-  test("anyone else: an Employee account under their Employee ID, with a temporary password", async () => {
+  // The prefixed login, not the bare ID (DBA request 40).
+  test("anyone else: an Employee account under their PREFIX-ID login, with a temporary password", async () => {
     const { pool, calls } = transactionFor({ linked: null });
 
     const account = await accountFor(pool, { ...ENROLLMENT }, "90");
@@ -103,7 +106,7 @@ describe("sendEnrollmentConfirmation", () => {
     return { sent, senders: { employee: async (mail) => sent.employee.push(mail), hr: async (mail) => sent.hr.push(mail) } };
   };
 
-  const MAIL = { to: "maria@abcc.example", policyNo: "G-TLI-26-150-2600001", firstName: "Maria", employeeIdNumber: "ABC-00123", attachments: [] };
+  const MAIL = { to: "maria@abcc.example", policyNo: "G-TLI-26-150-2600001", firstName: "Maria", username: "ABC-00123", attachments: [] };
 
   test("an HR person gets the HR email: their HR username, the HR login, and no password", async () => {
     const { sent, senders } = capture();

@@ -57,7 +57,20 @@ export const sqlErrorMap = {
     // answers any other caller.
     50227: { statusCode: 409, message: 'This employee ID is already used as a login.' },
     50228: { statusCode: 409, message: "This employee ID is already on another person's invitation." },
-    50229: { statusCode: 400, message: 'The employee ID can be at most 50 characters.' },
+    // 39 since DBA request 40: the login is PREFIX-ID, at most 50.
+    50229: { statusCode: 400, message: 'The employee ID can be at most 39 characters.' },
+
+    // ── The login prefix, DBA request 40 ──────────────────────────────────
+    //
+    // usp_ins_employer / usp_upd_employer. validateCompany checks the shape
+    // first, so 50263 is the backstop; only the database sees a duplicate.
+    50263: { statusCode: 400, message: 'The login prefix must be 2 to 10 letters or digits.' },
+    50264: { statusCode: 409, message: 'The login prefix is already used by another company.' },
+    // Every username of the company starts with it.
+    50265: { statusCode: 409, message: 'The login prefix cannot change once an employee signs in with it.' },
+    // usp_ins_enrollment_invitation. The bulk upload reports it per row
+    // (invitationService); this answers any other caller.
+    50266: { statusCode: 409, message: 'This company has no login prefix yet. Ask the Administrator to set it.' },
 
     // Thrown by usp_ins_beneficiary, on the public enrollment submit path. Its
     // only caller is enrollmentService.js:107, once per beneficiary, inside the
